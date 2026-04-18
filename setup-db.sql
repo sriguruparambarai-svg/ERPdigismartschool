@@ -622,3 +622,20 @@ alter table students add column if not exists parent_password text;
 -- Total tables: 37
 -- All modules including Communication & Parent Portal ready!
 -- ═══════════════════════════════════════════════════════════════
+
+-- 38. DEMO REQUESTS TABLE (enquiries from schools wanting to buy)
+create table if not exists demo_requests (
+  id uuid default gen_random_uuid() primary key,
+  school_name text,
+  contact_name text,
+  mobile text,
+  email text,
+  city text,
+  students text,
+  plan text,
+  status text default 'new',
+  requested_at timestamptz default now()
+);
+alter table demo_requests enable row level security;
+create policy "Allow insert demo_requests" on demo_requests for insert using (true) with check (true);
+create policy "Allow super admin to read demo_requests" on demo_requests for select using (true);
