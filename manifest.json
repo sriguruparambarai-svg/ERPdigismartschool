@@ -1,0 +1,83 @@
+{
+  "name": "DigiSmart ERP — School Management",
+  "short_name": "DigiSmart ERP",
+  "description": "Complete School Management System for Tamil Nadu Schools",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#F7F4F0",
+  "theme_color": "#6B1A1A",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-IN",
+  "icons": [
+    {
+      "src": "assets/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "assets/screenshots/dashboard.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "DigiSmart ERP Dashboard"
+    },
+    {
+      "src": "assets/screenshots/mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Parent Portal on Mobile"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Admission",
+      "url": "/pages/admission.html",
+      "description": "Student Admission"
+    },
+    {
+      "name": "Attendance",
+      "url": "/pages/student-attendance.html",
+      "description": "Mark Attendance"
+    },
+    {
+      "name": "Fee Collection",
+      "url": "/pages/fee.html",
+      "description": "Collect Fees"
+    },
+    {
+      "name": "Parent Portal",
+      "url": "/parent/index.html",
+      "description": "Parent Login"
+    }
+  ]
+}
