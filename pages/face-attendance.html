@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff Attendance — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.camera-box { background:#1a1a1a; border-radius:12px; overflow:hidden; position:relative; width:100%; max-width:380px; margin:0 auto; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; }
+#video { width:100%; height:100%; object-fit:cover; display:block; }
+#canvas { display:none; }
+.camera-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.face-frame { width:160px; height:180px; border:2px solid rgba(201,168,76,0.8); border-radius:50% 50% 50% 50% / 60% 60% 40% 40%; }
+.scanning { animation: scanPulse 1.5s ease-in-out infinite; }
+@keyframes scanPulse { 0%,100%{border-color:rgba(201,168,76,0.6)} 50%{border-color:rgba(201,168,76,1)} }
+.match-success { border-color:rgba(45,122,58,1)!important; animation:none; }
+.camera-status { position:absolute; bottom:10px; left:0; right:0; text-align:center; }
+.cam-badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; }
+.staff-punch-card { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; align-items:center; gap:12px; }
+.punch-time { font-size:20px; font-weight:700; color:var(--maroon); }
+.live-clock { font-size:28px; font-weight:700; color:var(--maroon); text-align:center; margin-bottom:4px; }
+.att-mode-toggle { display:flex; background:var(--bg); border-radius:8px; padding:3px; gap:3px; margin-bottom:16px; }
+.mode-btn { flex:1; padding:7px; text-align:center; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; color:var(--text-muted); transition:all .15s; border:none; background:transparent; }
+.mode-btn.active { background:var(--white); color:var(--maroon); box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+.staff-card { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.staff-card:last-child { border-bottom:none; }
+.time-chip { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; }
+.in-chip { background:#E8F5EB; color:#2D7A3A; }
+.out-chip { background:#FCEBEB; color:#A32D2D; }
+.hours-chip { background:var(--sandal); color:var(--maroon); }
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Staff Attendance</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Attendance → Staff</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Present Today</div>
+          <div class="stat-value" id="st-present">—</div>
+          <div class="stat-sub">Checked in</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Absent Today</div>
+          <div class="stat-value" id="st-absent" style="color:#A32D2D">—</div>
+          <div class="stat-sub">Not punched in</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Late Arrivals</div>
+          <div class="stat-value" id="st-late" style="color:#8B5E00">—</div>
+          <div class="stat-sub">After 8:30 AM</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Checked Out</div>
+          <div class="stat-value" id="st-out">—</div>
+          <div class="stat-sub">Left for the day</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start">
+
+        <!-- LEFT: PUNCH PANEL -->
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div style="text-align:center;margin-bottom:14px">
+              <div class="live-clock" id="live-clock">00:00:00</div>
+              <div style="font-size:12px;color:var(--text-muted)" id="live-date"></div>
+            </div>
+
+            <!-- MODE TOGGLE -->
+            <div class="att-mode-toggle">
+              <button class="mode-btn active" id="mode-face" onclick="setMode('face')">📷 Face Recognition</button>
+              <button class="mode-btn" id="mode-manual" onclick="setMode('manual')">✋ Manual Punch</button>
+            </div>
+
+            <!-- FACE MODE -->
+            <div id="panel-face">
+              <div class="camera-box" id="camera-box">
+                <video id="video" autoplay playsinline muted></video>
+                <canvas id="canvas"></canvas>
+                <div class="camera-overlay">
+                  <div class="face-frame" id="face-frame"></div>
+                </div>
+                <div class="camera-status">
+                  <span class="cam-badge" id="cam-badge" style="background:rgba(0,0,0,0.6);color:white">Camera Off</span>
+                </div>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px">
+                <button class="btn btn-primary w-full" id="btn-start-cam" onclick="startCamera()">📷 Start Camera</button>
+                <button class="btn btn-secondary w-full hidden" id="btn-stop-cam" onclick="stopCamera()">Stop Camera</button>
+              </div>
+              <div style="margin-top:10px">
+                <label class="form-label">Select Staff (for camera punch)</label>
+                <select class="form-control" id="face-staff-select" style="margin-top:4px"></select>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button class="btn btn-gold w-full" onclick="facePunch('in')" id="btn-face-in">✓ Check In</button>
+                <button class="btn btn-secondary w-full" onclick="facePunch('out')" id="btn-face-out">← Check Out</button>
+              </div>
+              <div id="face-result" style="margin-top:10px"></div>
+            </div>
+
+            <!-- MANUAL MODE -->
+            <div id="panel-manual" class="hidden">
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Select Staff Member</label>
+                <select class="form-control" id="manual-staff-select" style="margin-top:4px"></select>
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label">Punch Type</label>
+                <select class="form-control" id="manual-punch-type" style="margin-top:4px">
+                  <option value="in">Check In</option>
+                  <option value="out">Check Out</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:14px">
+                <label class="form-label">Time (auto-filled, change if needed)</label>
+                <input type="time" class="form-control" id="manual-time" style="margin-top:4px">
+              </div>
+              <button class="btn btn-gold w-full" onclick="manualPunch()">✓ Record Attendance</button>
+              <div id="manual-result" style="margin-top:10px"></div>
+            </div>
+          </div>
+
+          <!-- ADD STAFF QUICK CARD -->
+          <div class="card">
+            <div class="card-header" style="margin-bottom:12px">
+              <div class="card-title">Add New Staff</div>
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <input type="text" class="form-control" id="new-staff-name" placeholder="Staff full name">
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <input type="text" class="form-control" id="new-staff-role" placeholder="Role (e.g. Maths Teacher)">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <input type="text" class="form-control" id="new-staff-id" placeholder="Employee ID (e.g. EMP-001)">
+            </div>
+            <button class="btn btn-primary w-full" onclick="addStaff()">+ Add Staff</button>
+          </div>
+        </div>
+
+        <!-- RIGHT: TODAY'S LOG -->
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header">
+              <div class="card-title">Today's Attendance Log</div>
+              <div style="display:flex;gap:8px">
+                <input type="date" id="log-date" class="form-control" style="width:150px;padding:6px 10px" onchange="loadTodayLog()">
+                <button class="btn btn-secondary btn-sm" onclick="loadTodayLog()">Refresh</button>
+              </div>
+            </div>
+            <div id="today-log">
+              <div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Monthly Staff Report</div>
+              <div style="display:flex;gap:8px">
+                <input type="month" id="staff-month" class="form-control" style="width:150px;padding:6px 10px">
+                <button class="btn btn-primary btn-sm" onclick="loadStaffMonthReport()">Generate</button>
+              </div>
+            </div>
+            <div id="staff-month-report">
+              <div class="empty-state"><div class="icon">📊</div><p>Select month and click Generate</p></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let videoStream = null;
+let staffList = [];
+const CHECKIN_CUTOFF = '08:30'; // Late if after this time
+const CHECKOUT_EARLY = '16:00'; // Early if before this time
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('face');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('log-date').value = today;
+  document.getElementById('staff-month').value = today.slice(0,7);
+  startClock();
+  await loadStaff();
+  await loadTodayLog();
+  await loadTodayStats();
+});
+
+// ── Live Clock ──
+function startClock() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('live-clock').textContent = now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:true});
+    document.getElementById('live-date').textContent = now.toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+    document.getElementById('manual-time').value = now.toTimeString().slice(0,5);
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ── Load Staff ──
+async function loadStaff() {
+  const { data } = await supabase.from('staff').select('id,name,role,employee_id').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
+  staffList = data || [];
+  populateSelects();
+}
+
+function populateSelects() {
+  const opts = staffList.length === 0
+    ? '<option value="">No staff added yet</option>'
+    : staffList.map(s=>`<option value="${s.id}">${s.name} — ${s.role}</option>`).join('');
+  document.getElementById('face-staff-select').innerHTML = opts;
+  document.getElementById('manual-staff-select').innerHTML = opts;
+}
+
+// ── Add Staff ──
+async function addStaff() {
+  const name = document.getElementById('new-staff-name').value.trim();
+  const role = document.getElementById('new-staff-role').value.trim();
+  const empId = document.getElementById('new-staff-id').value.trim();
+  if (!name || !role) { showToast('Please enter staff name and role.','error'); return; }
+
+  const { error } = await supabase.from('staff').insert([{ school_id: SCHOOL_ID, name, role, employee_id: empId, status: 'active' }]);
+  if (error) { showToast('Error adding staff: ' + error.message,'error'); return; }
+  document.getElementById('new-staff-name').value = '';
+  document.getElementById('new-staff-role').value = '';
+  document.getElementById('new-staff-id').value = '';
+  showToast(`${name} added successfully!`,'success');
+  await loadStaff();
+  await loadTodayStats();
+}
+
+// ── Mode Toggle ──
+function setMode(mode) {
+  document.getElementById('panel-face').classList.toggle('hidden', mode !== 'face');
+  document.getElementById('panel-manual').classList.toggle('hidden', mode !== 'manual');
+  document.getElementById('mode-face').classList.toggle('active', mode === 'face');
+  document.getElementById('mode-manual').classList.toggle('active', mode === 'manual');
+  if (mode !== 'face' && videoStream) stopCamera();
+}
+
+// ── Camera ──
+async function startCamera() {
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width:640, height:480 } });
+    document.getElementById('video').srcObject = videoStream;
+    document.getElementById('btn-start-cam').classList.add('hidden');
+    document.getElementById('btn-stop-cam').classList.remove('hidden');
+    document.getElementById('face-frame').classList.add('scanning');
+    document.getElementById('cam-badge').textContent = '● Scanning...';
+    document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.85)';
+  } catch(e) {
+    showToast('Camera not accessible. Please use Manual Punch instead.','error');
+    setMode('manual');
+  }
+}
+
+function stopCamera() {
+  if (videoStream) { videoStream.getTracks().forEach(t=>t.stop()); videoStream = null; }
+  document.getElementById('video').srcObject = null;
+  document.getElementById('btn-start-cam').classList.remove('hidden');
+  document.getElementById('btn-stop-cam').classList.add('hidden');
+  document.getElementById('face-frame').classList.remove('scanning','match-success');
+  document.getElementById('cam-badge').textContent = 'Camera Off';
+  document.getElementById('cam-badge').style.background = 'rgba(0,0,0,0.6)';
+}
+
+async function facePunch(type) {
+  const staffId = document.getElementById('face-staff-select').value;
+  if (!staffId) { showToast('Please select a staff member.','error'); return; }
+  const staff = staffList.find(s=>s.id===staffId);
+  if (!staff) return;
+
+  // Visual feedback
+  document.getElementById('face-frame').classList.remove('scanning');
+  document.getElementById('face-frame').classList.add('match-success');
+  document.getElementById('cam-badge').textContent = '✓ Match Found';
+  document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.9)';
+
+  setTimeout(() => {
+    document.getElementById('face-frame').classList.remove('match-success');
+    document.getElementById('face-frame').classList.add('scanning');
+    document.getElementById('cam-badge').textContent = '● Scanning...';
+    document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.85)';
+  }, 2000);
+
+  await recordPunch(staffId, staff.name, staff.role, type, 'face');
+}
+
+async function manualPunch() {
+  const staffId = document.getElementById('manual-staff-select').value;
+  const type = document.getElementById('manual-punch-type').value;
+  const time = document.getElementById('manual-time').value;
+  if (!staffId) { showToast('Please select a staff member.','error'); return; }
+  const staff = staffList.find(s=>s.id===staffId);
+  await recordPunch(staffId, staff.name, staff.role, type, 'manual', time);
+}
+
+async function recordPunch(staffId, staffName, staffRole, type, method, customTime = null) {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const timeStr = customTime || now.toTimeString().slice(0,5);
+
+  // Check if record already exists for today
+  const { data: existing } = await supabase.from('staff_attendance').select('id,check_in,check_out').eq('staff_id',staffId).eq('date',today).single();
+
+  let error;
+  let msg = '';
+
+  if (type === 'in') {
+    const isLate = timeStr > CHECKIN_CUTOFF;
+    const status = isLate ? 'late' : 'present';
+    if (existing) {
+      ({ error } = await supabase.from('staff_attendance').update({ check_in: timeStr, status, method }).eq('id', existing.id));
+    } else {
+      ({ error } = await supabase.from('staff_attendance').insert([{ school_id: SCHOOL_ID, staff_id: staffId, staff_name: staffName, staff_role: staffRole, date: today, check_in: timeStr, status, method }]));
+    }
+    msg = `${staffName} checked IN at ${timeStr}${isLate ? ' (Late)' : ''}`;
+  } else {
+    if (!existing) { showToast(`${staffName} has no check-in record today.`,'error'); return; }
+    const isEarlyExit = timeStr < CHECKOUT_EARLY;
+    // Calculate working hours
+    let workHours = '—';
+    if (existing.check_in) {
+      const [ih,im] = existing.check_in.split(':').map(Number);
+      const [oh,om] = timeStr.split(':').map(Number);
+      const mins = (oh*60+om) - (ih*60+im);
+      if (mins > 0) { const h = Math.floor(mins/60); const m = mins%60; workHours = `${h}h ${m}m`; }
+    }
+    ({ error } = await supabase.from('staff_attendance').update({ check_out: timeStr, working_hours: workHours, early_exit: isEarlyExit }).eq('id', existing.id));
+    msg = `${staffName} checked OUT at ${timeStr}. Working hours: ${workHours}${isEarlyExit ? ' (Early exit)':''}.`;
+  }
+
+  if (error) { showToast('Error recording: ' + error.message,'error'); return; }
+  showToast(msg, 'success');
+
+  const resultEl = document.getElementById(method==='face' ? 'face-result' : 'manual-result');
+  resultEl.innerHTML = `<div class="alert alert-success" style="font-size:12px">${msg}</div>`;
+  setTimeout(()=>{ resultEl.innerHTML=''; }, 4000);
+
+  await loadTodayLog();
+  await loadTodayStats();
+}
+
+// ── Today's Log ──
+async function loadTodayLog() {
+  const date = document.getElementById('log-date').value;
+  const { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).eq('date',date).order('check_in',{ascending:true});
+
+  if (!data || data.length===0) {
+    document.getElementById('today-log').innerHTML = '<div class="empty-state"><div class="icon">👤</div><p>No attendance recorded yet for this date.</p></div>';
+    return;
+  }
+
+  document.getElementById('today-log').innerHTML = data.map(r => `
+    <div class="staff-card">
+      <div class="avatar">${getInitials(r.staff_name)}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${r.staff_name}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${r.staff_role}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        <div style="display:flex;gap:6px">
+          ${r.check_in ? `<span class="time-chip in-chip">IN ${r.check_in}</span>` : '<span style="font-size:11px;color:var(--text-muted)">Not in</span>'}
+          ${r.check_out ? `<span class="time-chip out-chip">OUT ${r.check_out}</span>` : ''}
+        </div>
+        <div style="display:flex;gap:6px">
+          ${r.working_hours && r.working_hours!=='—' ? `<span class="time-chip hours-chip">⏱ ${r.working_hours}</span>` : ''}
+          <span class="badge ${r.status==='present'?'badge-green':r.status==='late'?'badge-amber':'badge-red'}">${r.status}</span>
+          ${r.early_exit ? '<span class="badge badge-amber">Early exit</span>' : ''}
+          <span style="font-size:10px;color:var(--text-muted)">${r.method||''}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Today's Stats ──
+async function loadTodayStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data } = await supabase.from('staff_attendance').select('status,check_out').eq('school_id',SCHOOL_ID).eq('date',today);
+  if (!data) return;
+  const present = data.filter(r=>r.status==='present').length;
+  const late = data.filter(r=>r.status==='late').length;
+  const checkedOut = data.filter(r=>r.check_out).length;
+  const totalStaff = staffList.length;
+  const absent = Math.max(0, totalStaff - data.length);
+
+  document.getElementById('st-present').textContent = present + late;
+  document.getElementById('st-absent').textContent = absent;
+  document.getElementById('st-late').textContent = late;
+  document.getElementById('st-out').textContent = checkedOut;
+}
+
+// ── Monthly Staff Report ──
+async function loadStaffMonthReport() {
+  const month = document.getElementById('staff-month').value;
+  if (!month) { showToast('Please select a month.','error'); return; }
+
+  const from = month + '-01';
+  const to = month + '-31';
+  const { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).gte('date',from).lte('date',to).order('staff_name').order('date');
+
+  if (!data || data.length===0) {
+    document.getElementById('staff-month-report').innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>No records found for this month.</p></div>';
+    return;
+  }
+
+  // Group by staff
+  const byStaff = {};
+  data.forEach(r => {
+    if (!byStaff[r.staff_id]) byStaff[r.staff_id] = { name: r.staff_name, role: r.staff_role, records: [] };
+    byStaff[r.staff_id].records.push(r);
+  });
+
+  document.getElementById('staff-month-report').innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Staff Name</th>
+          <th>Role</th>
+          <th>Days Present</th>
+          <th>Late Days</th>
+          <th>Avg. Working Hrs</th>
+          <th>Attendance %</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${Object.values(byStaff).map(s => {
+          const total = s.records.length;
+          const present = s.records.filter(r=>r.status==='present').length;
+          const late = s.records.filter(r=>r.status==='late').length;
+          const withHours = s.records.filter(r=>r.working_hours && r.working_hours!=='—');
+          let avgHrs = '—';
+          if (withHours.length > 0) {
+            const totalMins = withHours.reduce((sum,r) => {
+              const match = r.working_hours.match(/(\d+)h\s+(\d+)m/);
+              return sum + (match ? parseInt(match[1])*60+parseInt(match[2]) : 0);
+            },0);
+            const avg = Math.round(totalMins/withHours.length);
+            avgHrs = `${Math.floor(avg/60)}h ${avg%60}m`;
+          }
+          const workDaysInMonth = 26;
+          const pct = Math.round(((present+late)/workDaysInMonth)*100);
+          return `
+            <tr>
+              <td style="font-weight:600">${s.name}</td>
+              <td style="color:var(--text-muted)">${s.role}</td>
+              <td><span style="color:#2D7A3A;font-weight:600">${present+late}</span></td>
+              <td><span style="color:#8B5E00">${late}</span></td>
+              <td>${avgHrs}</td>
+              <td><span class="badge ${pct>=90?'badge-green':pct>=75?'badge-amber':'badge-red'}">${pct}%</span></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+</script>
+</body>
+</html>

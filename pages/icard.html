@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>I-Card & Timetable — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+
+/* ── I-CARD STYLES ── */
+.icard-preview-wrap{display:flex;flex-wrap:wrap;gap:20px;justify-content:center;padding:10px 0}
+.icard{width:240px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.12);font-family:'Segoe UI',sans-serif;page-break-inside:avoid}
+.icard-top{padding:14px 14px 10px;text-align:center}
+.icard-school-name{font-size:11px;font-weight:700;letter-spacing:.03em;line-height:1.3}
+.icard-tagline{font-size:9px;margin-top:2px;opacity:.8}
+.icard-photo-wrap{margin:8px auto;width:68px;height:68px;border-radius:50%;overflow:hidden;border:3px solid rgba(255,255,255,.4);background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;color:#fff}
+.icard-photo-wrap img{width:100%;height:100%;object-fit:cover}
+.icard-name{font-size:13px;font-weight:700;margin-top:6px}
+.icard-class{font-size:10px;opacity:.85;margin-top:1px}
+.icard-body{padding:10px 14px;background:#fff}
+.icard-row{display:flex;gap:6px;margin-bottom:5px;font-size:10px}
+.icard-label{color:#888;min-width:55px;flex-shrink:0}
+.icard-value{color:#222;font-weight:500;word-break:break-word}
+.icard-footer{padding:8px 14px;text-align:center;border-top:1px solid #eee}
+.icard-admno{font-size:11px;font-weight:700;letter-spacing:.08em}
+.icard-year{font-size:9px;color:#888;margin-top:1px}
+.icard-barcode{margin-top:6px;display:flex;justify-content:center;gap:1px}
+.bar{background:#333;border-radius:1px}
+
+/* Staff card variant */
+.icard-staff .icard-top{background:linear-gradient(135deg,#1a3a6b,#2d5fa6)}
+.icard-staff .icard-footer{border-top:2px solid #1a3a6b}
+.icard-staff .icard-admno{color:#1a3a6b}
+
+/* ── TIMETABLE STYLES ── */
+.tt-grid{border-collapse:collapse;width:100%;font-size:12px}
+.tt-grid th{background:var(--maroon);color:var(--sandal);padding:8px 10px;text-align:center;font-size:11px;font-weight:600;border:1px solid #8B2A2A}
+.tt-grid td{border:1px solid var(--border);padding:0;height:52px;vertical-align:top;min-width:90px}
+.tt-cell{padding:5px 6px;height:100%;display:flex;flex-direction:column;justify-content:center;cursor:pointer;transition:background .12s}
+.tt-cell:hover{background:var(--sandal-light)}
+.tt-cell.filled{background:#fdf8f0}
+.tt-cell.break-cell{background:#F1EFE8;cursor:default}
+.tt-cell.break-cell:hover{background:#F1EFE8}
+.tt-subject{font-weight:600;font-size:12px;color:var(--maroon)}
+.tt-teacher{font-size:10px;color:var(--text-muted);margin-top:2px}
+.tt-period-label{background:var(--bg);padding:6px 8px;font-size:11px;font-weight:600;color:var(--text-muted);text-align:center;border:1px solid var(--border);min-width:90px}
+.period-time{font-size:10px;font-weight:400;display:block;margin-top:1px}
+.subject-chip{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid transparent;transition:all .12s;margin:2px}
+.subject-chip:hover{border-color:var(--gold)}
+.subject-chip.selected{border-color:var(--maroon);font-weight:700}
+.day-col-header{min-width:100px}
+.print-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+@media print{
+  .no-print{display:none!important}
+  .icard{box-shadow:none;border:1px solid #ccc}
+  .sidebar,.topbar,.tab-bar,.filter-row,.card-header button{display:none!important}
+  .main-content{margin-left:0!important}
+  .page-body{padding:0!important}
+  .icard-preview-wrap{gap:10px}
+}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">I-Card & Timetable</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academic → I-Card & Timetable</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('student-icard',this)">🪪 Student I-Card</div>
+        <div class="tab" onclick="switchTab('staff-icard',this)">👤 Staff I-Card</div>
+        <div class="tab" onclick="switchTab('icard-settings',this)">⚙️ I-Card Settings</div>
+        <div class="tab" onclick="switchTab('timetable',this)">🗓 Timetable</div>
+        <div class="tab" onclick="switchTab('tt-settings',this)">⚙️ Timetable Settings</div>
+      </div>
+
+      <!-- ══ TAB: STUDENT I-CARD ══ -->
+      <div id="tab-student-icard">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+
+          <!-- Controls -->
+          <div class="card no-print">
+            <div class="card-title" style="margin-bottom:14px">Generate Student I-Cards</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Academic Year</label>
+              <select id="si-year" class="form-control" style="margin-top:4px">
+                <option>2025-26</option><option>2024-25</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Class</label>
+              <select id="si-class" class="form-control" style="margin-top:4px" onchange="loadStudentCards()">
+                <option value="">All Classes</option>
+                <option>LKG</option><option>UKG</option>
+                <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Section</label>
+              <select id="si-section" class="form-control" style="margin-top:4px" onchange="loadStudentCards()">
+                <option value="">All Sections</option>
+                <option>A</option><option>B</option><option>C</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Search by Name / Adm No</label>
+              <input type="text" id="si-search" class="form-control" placeholder="Optional search..." oninput="loadStudentCards()" style="margin-top:4px">
+            </div>
+            <div style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--text-muted)">
+              <b id="si-count">0</b> student cards ready to print
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn btn-gold w-full" onclick="loadStudentCards()">🔄 Load Cards</button>
+              <button class="btn btn-primary w-full" onclick="window.print()">🖨 Print All Cards</button>
+            </div>
+          </div>
+
+          <!-- Card Preview -->
+          <div class="card">
+            <div class="card-header no-print">
+              <div class="card-title">Preview</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px">
+                  <input type="checkbox" id="show-photo-check" checked onchange="loadStudentCards()"> Show photo placeholder
+                </label>
+              </div>
+            </div>
+            <div class="icard-preview-wrap" id="student-cards-area">
+              <div class="empty-state" style="width:100%"><div class="icon">🪪</div><p>Select class and click Load Cards</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: STAFF I-CARD ══ -->
+      <div id="tab-staff-icard" class="hidden">
+        <div style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+          <div class="card no-print">
+            <div class="card-title" style="margin-bottom:14px">Generate Staff I-Cards</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Department</label>
+              <select id="stf-dept" class="form-control" style="margin-top:4px" onchange="loadStaffCards()">
+                <option value="">All Departments</option>
+                <option>Teaching</option><option>Administrative</option>
+                <option>Support</option><option>Management</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Search by Name / ID</label>
+              <input type="text" id="stf-search" class="form-control" placeholder="Search..." oninput="loadStaffCards()" style="margin-top:4px">
+            </div>
+            <div style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--text-muted)">
+              <b id="stf-count">0</b> staff cards ready to print
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button class="btn btn-gold w-full" onclick="loadStaffCards()">🔄 Load Cards</button>
+              <button class="btn btn-primary w-full" onclick="window.print()">🖨 Print All Cards</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header no-print">
+              <div class="card-title">Staff Card Preview</div>
+            </div>
+            <div class="icard-preview-wrap" id="staff-cards-area">
+              <div class="empty-state" style="width:100%"><div class="icon">👤</div><p>Click Load Cards to generate staff I-Cards</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: I-CARD SETTINGS ══ -->
+      <div id="tab-icard-settings" class="hidden">
+        <div class="card" style="max-width:640px">
+          <div class="card-header">
+            <div class="card-title">I-Card Design Settings</div>
+            <button class="btn btn-gold btn-sm" onclick="saveCardSettings()">Save Settings</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div class="form-group">
+              <label class="form-label">School Name (Line 1)</label>
+              <input type="text" id="cs-name1" class="form-control" placeholder="School full name">
+            </div>
+            <div class="form-group">
+              <label class="form-label">School Name (Line 2 / Tamil)</label>
+              <input type="text" id="cs-name2" class="form-control" placeholder="Tamil name or tagline">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Address</label>
+              <input type="text" id="cs-address" class="form-control" placeholder="School address">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Phone</label>
+              <input type="text" id="cs-phone" class="form-control" placeholder="School phone number">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="text" id="cs-email" class="form-control" placeholder="school@email.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Website</label>
+              <input type="text" id="cs-website" class="form-control" placeholder="www.school.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Student Card Color (top)</label>
+              <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+                <div class="color-opt" data-color="#6B1A1A" onclick="selectCardColor(this,'student')" style="width:28px;height:28px;border-radius:6px;background:#6B1A1A;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt" data-color="#1a3a6b" onclick="selectCardColor(this,'student')" style="width:28px;height:28px;border-radius:6px;background:#1a3a6b;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt" data-color="#0F6E56" onclick="selectCardColor(this,'student')" style="width:28px;height:28px;border-radius:6px;background:#0F6E56;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt" data-color="#4A1070" onclick="selectCardColor(this,'student')" style="width:28px;height:28px;border-radius:6px;background:#4A1070;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt" data-color="#854F0B" onclick="selectCardColor(this,'student')" style="width:28px;height:28px;border-radius:6px;background:#854F0B;cursor:pointer;border:2px solid transparent"></div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Staff Card Color (top)</label>
+              <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+                <div class="color-opt-staff" data-color="#1a3a6b" onclick="selectCardColor(this,'staff')" style="width:28px;height:28px;border-radius:6px;background:#1a3a6b;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt-staff" data-color="#6B1A1A" onclick="selectCardColor(this,'staff')" style="width:28px;height:28px;border-radius:6px;background:#6B1A1A;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt-staff" data-color="#0F6E56" onclick="selectCardColor(this,'staff')" style="width:28px;height:28px;border-radius:6px;background:#0F6E56;cursor:pointer;border:2px solid transparent"></div>
+                <div class="color-opt-staff" data-color="#333" onclick="selectCardColor(this,'staff')" style="width:28px;height:28px;border-radius:6px;background:#333;cursor:pointer;border:2px solid transparent"></div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Academic Year on Card</label>
+              <input type="text" id="cs-acyear" class="form-control" value="2025-26">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Blood Group on Card</label>
+              <select id="cs-bloodgroup" class="form-control">
+                <option value="yes">Show Blood Group</option>
+                <option value="no">Hide Blood Group</option>
+              </select>
+            </div>
+          </div>
+          <!-- Live Preview -->
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:12px">LIVE PREVIEW</div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap">
+              <div id="preview-student-card"></div>
+              <div id="preview-staff-card"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: TIMETABLE ══ -->
+      <div id="tab-timetable" class="hidden">
+        <div class="filter-row no-print">
+          <div>
+            <label class="form-label">Class</label>
+            <select class="form-control" id="tt-class" style="width:160px;margin-top:4px" onchange="loadTimetable()">
+              <option value="">Select Class</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Section</label>
+            <select class="form-control" id="tt-section" style="width:100px;margin-top:4px" onchange="loadTimetable()">
+              <option value="">All</option>
+              <option>A</option><option>B</option><option>C</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Academic Year</label>
+            <select class="form-control" id="tt-year" style="width:120px;margin-top:4px">
+              <option>2025-26</option><option>2024-25</option>
+            </select>
+          </div>
+          <div style="margin-top:20px;display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="clearTimetable()">Clear All</button>
+            <button class="btn btn-gold" onclick="saveTimetable()">💾 Save Timetable</button>
+            <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 220px;gap:16px;align-items:start">
+          <!-- Grid -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center" id="tt-header">
+              <div style="font-size:14px;font-weight:600;color:var(--maroon)" id="tt-title">Select a class to build timetable</div>
+              <div style="font-size:11px;color:var(--text-muted)">Click any cell to assign subject</div>
+            </div>
+            <div style="overflow-x:auto;padding:12px">
+              <div id="timetable-grid">
+                <div class="empty-state"><div class="icon">🗓</div><p>Select a class to start</p></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subject palette -->
+          <div class="card no-print">
+            <div class="card-title" style="margin-bottom:10px">Subject Palette</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Click subject then click a cell</div>
+            <div id="subject-palette"></div>
+            <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px">SELECTED</div>
+              <div id="selected-subject-display" style="font-size:13px;font-weight:600;color:var(--maroon);padding:8px 10px;background:var(--sandal-light);border-radius:6px;min-height:32px">None</div>
+            </div>
+            <div style="margin-top:10px">
+              <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px">CLEAR CELL</div>
+              <button class="btn btn-danger btn-sm w-full" onclick="selectSubject(null,null)">✕ Select to clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: TIMETABLE SETTINGS ══ -->
+      <div id="tab-tt-settings" class="hidden">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+          <!-- Periods -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Period Configuration</div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-secondary btn-sm" onclick="addPeriodRow()">+ Period</button>
+                <button class="btn btn-gold btn-sm" onclick="savePeriods()">Save</button>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:40px 1fr 100px 100px 80px;gap:6px;margin-bottom:6px;font-size:11px;font-weight:600;color:var(--text-muted)">
+              <div>#</div><div>Label</div><div>Start</div><div>End</div><div>Break?</div>
+            </div>
+            <div id="period-rows"></div>
+          </div>
+
+          <!-- Subjects -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Subjects</div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-secondary btn-sm" onclick="addSubjectSetting()">+ Subject</button>
+                <button class="btn btn-gold btn-sm" onclick="saveSubjects()">Save</button>
+              </div>
+            </div>
+            <div id="subjects-settings-list"></div>
+          </div>
+
+          <!-- Working Days -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Working Days</div>
+              <button class="btn btn-gold btn-sm" onclick="saveWorkingDays()">Save</button>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px" id="working-days">
+              ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>`
+                <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
+                  <input type="checkbox" value="${d}" class="day-cb" ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].includes(d)?'checked':''}>
+                  ${d.slice(0,3)}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Teachers -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Teacher–Subject Mapping</div>
+              <button class="btn btn-gold btn-sm" onclick="saveTeacherMap()">Save</button>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Assign which teacher handles which subject (shown on timetable)</div>
+            <div id="teacher-map-list"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ CELL EDITOR MODAL ══ -->
+<div class="modal-overlay" id="cell-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header">
+      <div class="modal-title" id="cell-modal-title">Edit Period</div>
+      <button class="modal-close" onclick="closeCellModal()">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px" id="cell-modal-info"></div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Subject</label>
+      <select id="cell-subject" class="form-control" style="margin-top:4px"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Teacher (optional)</label>
+      <select id="cell-teacher" class="form-control" style="margin-top:4px">
+        <option value="">No teacher assigned</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCellModal()">Cancel</button>
+      <button class="btn btn-danger btn-sm" onclick="clearCell()">Clear</button>
+      <button class="btn btn-gold" onclick="saveCell()">Set Subject</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+// ── STATE ──
+let cardSettings = {
+  name1: 'DigiSmart School',
+  name2: 'Mayiladuthurai',
+  address: 'Tamil Nadu',
+  phone: '',
+  email: '',
+  website: '',
+  acyear: '2025-26',
+  studentColor: '#6B1A1A',
+  staffColor: '#1a3a6b',
+  showBlood: true,
+};
+
+let periods = [
+  {label:'Period 1', start:'08:30', end:'09:15', isBreak:false},
+  {label:'Period 2', start:'09:15', end:'10:00', isBreak:false},
+  {label:'Period 3', start:'10:00', end:'10:45', isBreak:false},
+  {label:'Break',    start:'10:45', end:'11:00', isBreak:true},
+  {label:'Period 4', start:'11:00', end:'11:45', isBreak:false},
+  {label:'Period 5', start:'11:45', end:'12:30', isBreak:false},
+  {label:'Lunch',    start:'12:30', end:'13:15', isBreak:true},
+  {label:'Period 6', start:'13:15', end:'14:00', isBreak:false},
+  {label:'Period 7', start:'14:00', end:'14:45', isBreak:false},
+];
+
+let subjects = ['Tamil','English','Mathematics','Science','Social Science','Computer','Physical Education','Art','Library'];
+let workingDays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+let teacherMap = {};
+let timetableData = {};
+let selectedSubject = null, selectedTeacher = null;
+let currentCell = null;
+let allStaff = [];
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('icard');
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  await loadCardSettings();
+  await loadTTSettings();
+  await loadStaff();
+  renderPeriodRows();
+  renderSubjectSettings();
+  renderTeacherMap();
+  updateSettingsPreview();
+});
+
+async function loadStaff() {
+  const { data } = await supabase.from('staff').select('id,name,role').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
+  allStaff = data || [];
+}
+
+// ═══════════════════════════════
+// I-CARD SECTION
+// ═══════════════════════════════
+async function loadCardSettings() {
+  const { data } = await supabase.from('icard_settings').select('*').eq('school_id',SCHOOL_ID).single();
+  if (data) {
+    cardSettings = { ...cardSettings, ...data };
+    document.getElementById('cs-name1').value = data.name1 || '';
+    document.getElementById('cs-name2').value = data.name2 || '';
+    document.getElementById('cs-address').value = data.address || '';
+    document.getElementById('cs-phone').value = data.phone || '';
+    document.getElementById('cs-email').value = data.email || '';
+    document.getElementById('cs-website').value = data.website || '';
+    document.getElementById('cs-acyear').value = data.acyear || '2025-26';
+    document.getElementById('cs-bloodgroup').value = data.showBlood ? 'yes' : 'no';
+  }
+}
+
+async function saveCardSettings() {
+  cardSettings.name1 = document.getElementById('cs-name1').value.trim();
+  cardSettings.name2 = document.getElementById('cs-name2').value.trim();
+  cardSettings.address = document.getElementById('cs-address').value.trim();
+  cardSettings.phone = document.getElementById('cs-phone').value.trim();
+  cardSettings.email = document.getElementById('cs-email').value.trim();
+  cardSettings.website = document.getElementById('cs-website').value.trim();
+  cardSettings.acyear = document.getElementById('cs-acyear').value;
+  cardSettings.showBlood = document.getElementById('cs-bloodgroup').value === 'yes';
+
+  const { data: existing } = await supabase.from('icard_settings').select('id').eq('school_id',SCHOOL_ID).single();
+  const payload = { school_id: SCHOOL_ID, ...cardSettings };
+  if (existing) { await supabase.from('icard_settings').update(payload).eq('school_id',SCHOOL_ID); }
+  else { await supabase.from('icard_settings').insert([payload]); }
+  showToast('I-Card settings saved!','success');
+  updateSettingsPreview();
+}
+
+function selectCardColor(el, type) {
+  const color = el.dataset.color;
+  if (type === 'student') {
+    cardSettings.studentColor = color;
+    document.querySelectorAll('.color-opt').forEach(e => e.style.border = '2px solid transparent');
+  } else {
+    cardSettings.staffColor = color;
+    document.querySelectorAll('.color-opt-staff').forEach(e => e.style.border = '2px solid transparent');
+  }
+  el.style.border = '2px solid var(--gold)';
+  updateSettingsPreview();
+}
+
+function updateSettingsPreview() {
+  const s = { full_name:'Sample Student', admission_no:'2025-0001', class:'Class 6', section:'A', father_name:'Parent Name', mobile:'9876543210', blood_group:'O+', dob:'2012-04-15' };
+  document.getElementById('preview-student-card').innerHTML = buildStudentCard(s);
+  const staff = { name:'Sample Teacher', employee_id:'EMP-001', role:'Mathematics Teacher', department:'Teaching', mobile:'9876543210' };
+  document.getElementById('preview-staff-card').innerHTML = buildStaffCard(staff);
+}
+
+function buildStudentCard(s) {
+  const color = cardSettings.studentColor || '#6B1A1A';
+  const year = cardSettings.acyear || '2025-26';
+  const showBlood = cardSettings.showBlood !== false;
+  const bars = Array.from({length:18},(_,i)=>`<div class="bar" style="width:${1+Math.random()*2}px;height:${10+Math.random()*8}px"></div>`).join('');
+  return `
+    <div class="icard">
+      <div class="icard-top" style="background:${color}">
+        <div class="icard-school-name" style="color:#F5E6C8">${cardSettings.name1||'School Name'}</div>
+        ${cardSettings.name2?`<div class="icard-tagline" style="color:rgba(245,230,200,.75)">${cardSettings.name2}</div>`:''}
+        <div class="icard-photo-wrap" style="border-color:rgba(255,255,255,.4)">${getInitials(s.full_name||s.name||'?')}</div>
+        <div class="icard-name" style="color:#fff">${s.full_name||s.name||'Student Name'}</div>
+        <div class="icard-class" style="color:rgba(255,255,255,.85)">${s.class||''}${s.section?' – '+s.section:''}</div>
+      </div>
+      <div class="icard-body">
+        <div class="icard-row"><span class="icard-label">Adm No</span><span class="icard-value" style="color:${color};font-weight:700">${s.admission_no||'—'}</span></div>
+        <div class="icard-row"><span class="icard-label">Father</span><span class="icard-value">${s.father_name||'—'}</span></div>
+        <div class="icard-row"><span class="icard-label">Mobile</span><span class="icard-value">${s.mobile||'—'}</span></div>
+        ${showBlood && s.blood_group ? `<div class="icard-row"><span class="icard-label">Blood Grp</span><span class="icard-value" style="color:#A32D2D;font-weight:700">${s.blood_group}</span></div>` : ''}
+        ${cardSettings.address ? `<div class="icard-row"><span class="icard-label">Address</span><span class="icard-value" style="font-size:9px">${cardSettings.address}</span></div>` : ''}
+        ${cardSettings.phone ? `<div class="icard-row"><span class="icard-label">Phone</span><span class="icard-value" style="font-size:9px">${cardSettings.phone}</span></div>` : ''}
+      </div>
+      <div class="icard-footer">
+        <div class="icard-admno" style="color:${color}">${s.admission_no||'ADM-0000'}</div>
+        <div class="icard-year">Academic Year: ${year}</div>
+        <div class="icard-barcode">${bars}</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildStaffCard(s) {
+  const color = cardSettings.staffColor || '#1a3a6b';
+  const bars = Array.from({length:18},(_,i)=>`<div class="bar" style="width:${1+Math.random()*2}px;height:${10+Math.random()*8}px"></div>`).join('');
+  return `
+    <div class="icard icard-staff">
+      <div class="icard-top" style="background:${color}">
+        <div class="icard-school-name" style="color:#E8D8FF">${cardSettings.name1||'School Name'}</div>
+        ${cardSettings.name2?`<div class="icard-tagline" style="color:rgba(232,216,255,.7)">${cardSettings.name2}</div>`:''}
+        <div class="icard-photo-wrap" style="border-color:rgba(255,255,255,.4)">${getInitials(s.name||'?')}</div>
+        <div class="icard-name" style="color:#fff">${s.name||'Staff Name'}</div>
+        <div class="icard-class" style="color:rgba(255,255,255,.85)">${s.role||s.designation||'Teacher'}</div>
+      </div>
+      <div class="icard-body">
+        <div class="icard-row"><span class="icard-label">Emp ID</span><span class="icard-value" style="color:${color};font-weight:700">${s.employee_id||'—'}</span></div>
+        <div class="icard-row"><span class="icard-label">Dept</span><span class="icard-value">${s.department||'—'}</span></div>
+        <div class="icard-row"><span class="icard-label">Mobile</span><span class="icard-value">${s.mobile||'—'}</span></div>
+        ${cardSettings.address ? `<div class="icard-row"><span class="icard-label">Address</span><span class="icard-value" style="font-size:9px">${cardSettings.address}</span></div>` : ''}
+        ${cardSettings.phone ? `<div class="icard-row"><span class="icard-label">Phone</span><span class="icard-value" style="font-size:9px">${cardSettings.phone}</span></div>` : ''}
+      </div>
+      <div class="icard-footer">
+        <div class="icard-admno" style="color:${color}">${s.employee_id||'EMP-0000'}</div>
+        <div class="icard-year">Staff Identity Card · ${cardSettings.acyear||'2025-26'}</div>
+        <div class="icard-barcode">${bars}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadStudentCards() {
+  const cls = document.getElementById('si-class').value;
+  const sec = document.getElementById('si-section').value;
+  const q = document.getElementById('si-search').value.trim();
+
+  let query = supabase.from('students').select('id,full_name,admission_no,class,section,father_name,mobile,blood_group,dob').eq('school_id',SCHOOL_ID).eq('status','active').order('class').order('full_name');
+  if (cls) query = query.eq('class',cls);
+  if (sec) query = query.eq('section',sec);
+  if (q) query = query.or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`);
+
+  const { data } = await query.limit(200);
+  if (!data || data.length===0) {
+    document.getElementById('student-cards-area').innerHTML = '<div class="empty-state" style="width:100%"><div class="icon">🪪</div><p>No students found.</p></div>';
+    document.getElementById('si-count').textContent = '0';
+    return;
+  }
+
+  document.getElementById('si-count').textContent = data.length;
+  document.getElementById('student-cards-area').innerHTML = data.map(s => buildStudentCard(s)).join('');
+}
+
+async function loadStaffCards() {
+  const dept = document.getElementById('stf-dept').value;
+  const q = document.getElementById('stf-search').value.trim();
+
+  let query = supabase.from('staff').select('id,name,employee_id,role,department,mobile').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
+  if (dept) query = query.eq('department',dept);
+  if (q) query = query.or(`name.ilike.%${q}%,employee_id.ilike.%${q}%`);
+
+  const { data } = await query.limit(100);
+  if (!data || data.length===0) {
+    document.getElementById('staff-cards-area').innerHTML = '<div class="empty-state" style="width:100%"><div class="icon">👤</div><p>No staff found.</p></div>';
+    document.getElementById('stf-count').textContent = '0';
+    return;
+  }
+
+  document.getElementById('stf-count').textContent = data.length;
+  document.getElementById('staff-cards-area').innerHTML = data.map(s => buildStaffCard(s)).join('');
+}
+
+// ═══════════════════════════════
+// TIMETABLE SECTION
+// ═══════════════════════════════
+async function loadTTSettings() {
+  const { data } = await supabase.from('tt_settings').select('*').eq('school_id',SCHOOL_ID).single();
+  if (data) {
+    if (data.periods && data.periods.length > 0) periods = data.periods;
+    if (data.subjects && data.subjects.length > 0) subjects = data.subjects;
+    if (data.working_days && data.working_days.length > 0) workingDays = data.working_days;
+    if (data.teacher_map) teacherMap = data.teacher_map;
+    // Restore working day checkboxes
+    document.querySelectorAll('.day-cb').forEach(cb => { cb.checked = workingDays.includes(cb.value); });
+  }
+  renderSubjectPalette();
+}
+
+async function saveTTSettings(showMsg=true) {
+  const payload = { school_id: SCHOOL_ID, periods, subjects, working_days: workingDays, teacher_map: teacherMap };
+  const { data: existing } = await supabase.from('tt_settings').select('id').eq('school_id',SCHOOL_ID).single();
+  if (existing) { await supabase.from('tt_settings').update(payload).eq('school_id',SCHOOL_ID); }
+  else { await supabase.from('tt_settings').insert([payload]); }
+  if (showMsg) showToast('Settings saved!','success');
+}
+
+// ── PERIOD ROWS ──
+function renderPeriodRows() {
+  document.getElementById('period-rows').innerHTML = periods.map((p,i) => `
+    <div style="display:grid;grid-template-columns:40px 1fr 100px 100px 80px;gap:6px;margin-bottom:6px;align-items:center" id="prow-${i}">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-align:center">${i+1}</div>
+      <input type="text" class="form-control" id="p-label-${i}" value="${p.label}" style="padding:6px 8px;font-size:12px">
+      <input type="time" class="form-control" id="p-start-${i}" value="${p.start}" style="padding:6px 8px;font-size:12px">
+      <input type="time" class="form-control" id="p-end-${i}" value="${p.end}" style="padding:6px 8px;font-size:12px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="p-break-${i}" ${p.isBreak?'checked':''} style="width:16px;height:16px">
+        <label style="font-size:11px;color:var(--text-muted)">Break</label>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="removePeriodRow(${i})" style="padding:3px 6px">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function addPeriodRow() {
+  periods.push({label:`Period ${periods.length+1}`, start:'', end:'', isBreak:false});
+  renderPeriodRows();
+}
+
+function removePeriodRow(i) {
+  periods.splice(i,1);
+  renderPeriodRows();
+}
+
+async function savePeriods() {
+  periods = periods.map((_,i) => ({
+    label: document.getElementById(`p-label-${i}`)?.value || '',
+    start: document.getElementById(`p-start-${i}`)?.value || '',
+    end: document.getElementById(`p-end-${i}`)?.value || '',
+    isBreak: document.getElementById(`p-break-${i}`)?.checked || false,
+  }));
+  await saveTTSettings();
+  renderSubjectPalette();
+}
+
+// ── SUBJECT SETTINGS ──
+function renderSubjectSettings() {
+  document.getElementById('subjects-settings-list').innerHTML = subjects.map((s,i) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <input type="text" class="form-control" id="subj-${i}" value="${s}" style="padding:6px 8px;font-size:12px;flex:1">
+      <button class="btn btn-danger btn-sm btn-icon" onclick="removeSubject(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function addSubjectSetting() {
+  subjects.push('New Subject');
+  renderSubjectSettings();
+}
+
+function removeSubject(i) {
+  subjects.splice(i,1);
+  renderSubjectSettings();
+}
+
+async function saveSubjects() {
+  subjects = subjects.map((_,i) => document.getElementById(`subj-${i}`)?.value.trim()).filter(Boolean);
+  renderSubjectSettings();
+  await saveTTSettings();
+  renderSubjectPalette();
+  renderTeacherMap();
+}
+
+// ── WORKING DAYS ──
+async function saveWorkingDays() {
+  workingDays = [...document.querySelectorAll('.day-cb:checked')].map(cb=>cb.value);
+  await saveTTSettings();
+}
+
+// ── TEACHER MAP ──
+function renderTeacherMap() {
+  document.getElementById('teacher-map-list').innerHTML = subjects.map(s => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px">
+      <div style="min-width:120px;font-weight:500">${s}</div>
+      <select class="form-control" id="tm-${s.replace(/\s/g,'_')}" style="padding:5px 8px;font-size:12px">
+        <option value="">No teacher assigned</option>
+        ${allStaff.map(st=>`<option value="${st.name}" ${teacherMap[s]===st.name?'selected':''}>${st.name}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+}
+
+async function saveTeacherMap() {
+  const map = {};
+  subjects.forEach(s => {
+    const val = document.getElementById('tm-'+s.replace(/\s/g,'_'))?.value;
+    if (val) map[s] = val;
+  });
+  teacherMap = map;
+  await saveTTSettings();
+}
+
+// ── TIMETABLE GRID ──
+async function loadTimetable() {
+  const cls = document.getElementById('tt-class').value;
+  const sec = document.getElementById('tt-section').value;
+  if (!cls) return;
+
+  const key = `${cls}${sec?'-'+sec:''}`;
+  document.getElementById('tt-title').textContent = `Timetable: ${cls}${sec?' – '+sec:''}`;
+
+  // Load saved timetable
+  const { data } = await supabase.from('timetables').select('*').eq('school_id',SCHOOL_ID).eq('class',cls).eq('section',sec||'').eq('academic_year',document.getElementById('tt-year').value).single();
+  timetableData = data?.grid || {};
+  renderTimetableGrid(key);
+}
+
+function renderSubjectPalette() {
+  const colors = ['#6B1A1A','#185FA5','#0F6E56','#854F0B','#4A1070','#8B2A2A','#0C447C','#085041','#633806','#3C3489'];
+  document.getElementById('subject-palette').innerHTML = subjects.map((s,i) => `
+    <span class="subject-chip" onclick="selectSubject('${s}','${colors[i%colors.length]}')"
+      style="background:${colors[i%colors.length]}18;color:${colors[i%colors.length]};border-color:transparent"
+      data-subj="${s}" data-color="${colors[i%colors.length]}">${s}</span>
+  `).join('') + `<span class="subject-chip" onclick="selectSubject(null,null)" style="background:#FCEBEB;color:#A32D2D;border-color:transparent;margin-top:6px">✕ Clear</span>`;
+}
+
+function selectSubject(subj, color) {
+  selectedSubject = subj;
+  selectedTeacher = subj ? (teacherMap[subj] || null) : null;
+  document.getElementById('selected-subject-display').textContent = subj || 'None (Click cell to clear)';
+  document.getElementById('selected-subject-display').style.color = subj ? color : '#A32D2D';
+  document.querySelectorAll('.subject-chip').forEach(el => {
+    el.classList.toggle('selected', el.dataset.subj === subj);
+  });
+}
+
+function renderTimetableGrid(key) {
+  const days = workingDays;
+  let html = `<table class="tt-grid"><thead><tr>
+    <th class="tt-period-label" style="background:var(--maroon);color:var(--sandal)">Period / Time</th>
+    ${days.map(d=>`<th class="day-col-header">${d}</th>`).join('')}
+  </tr></thead><tbody>`;
+
+  periods.forEach((p, pi) => {
+    if (p.isBreak) {
+      html += `<tr>
+        <td class="tt-period-label">
+          ${p.label}
+          <span class="period-time">${p.start}${p.end?' – '+p.end:''}</span>
+        </td>
+        ${days.map(()=>`<td><div class="tt-cell break-cell" style="justify-content:center;align-items:center">
+          <span style="font-size:11px;color:var(--text-muted);font-style:italic">${p.label}</span>
+        </div></td>`).join('')}
+      </tr>`;
+    } else {
+      html += `<tr>
+        <td class="tt-period-label">
+          ${p.label}
+          <span class="period-time">${p.start}${p.end?' – '+p.end:''}</span>
+        </td>
+        ${days.map(d => {
+          const cellKey = `${d}_${pi}`;
+          const cell = timetableData[cellKey];
+          return `<td onclick="handleCellClick('${d}',${pi},'${key}')">
+            <div class="tt-cell ${cell?'filled':''}" id="cell-${d.replace(/\s/g,'_')}-${pi}">
+              ${cell ? `
+                <div class="tt-subject" style="color:${cell.color||'var(--maroon)'}">${cell.subject}</div>
+                ${cell.teacher ? `<div class="tt-teacher">${cell.teacher}</div>` : ''}
+              ` : ''}
+            </div>
+          </td>`;
+        }).join('')}
+      </tr>`;
+    }
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('timetable-grid').innerHTML = html;
+}
+
+function handleCellClick(day, periodIdx, key) {
+  const period = periods[periodIdx];
+  if (period?.isBreak) return;
+
+  if (selectedSubject !== undefined && selectedSubject !== null) {
+    // Direct place
+    const cellKey = `${day}_${periodIdx}`;
+    const colors = ['#6B1A1A','#185FA5','#0F6E56','#854F0B','#4A1070'];
+    const subjIndex = subjects.indexOf(selectedSubject);
+    const color = colors[subjIndex % colors.length];
+
+    timetableData[cellKey] = {
+      subject: selectedSubject,
+      teacher: teacherMap[selectedSubject] || null,
+      color,
+    };
+
+    const cellEl = document.getElementById(`cell-${day.replace(/\s/g,'_')}-${periodIdx}`);
+    if (cellEl) {
+      cellEl.className = 'tt-cell filled';
+      cellEl.innerHTML = `
+        <div class="tt-subject" style="color:${color}">${selectedSubject}</div>
+        ${teacherMap[selectedSubject] ? `<div class="tt-teacher">${teacherMap[selectedSubject]}</div>` : ''}
+      `;
+    }
+  } else if (selectedSubject === null) {
+    // Clear mode
+    const cellKey = `${day}_${periodIdx}`;
+    delete timetableData[cellKey];
+    const cellEl = document.getElementById(`cell-${day.replace(/\s/g,'_')}-${periodIdx}`);
+    if (cellEl) { cellEl.className = 'tt-cell'; cellEl.innerHTML = ''; }
+  } else {
+    // Open modal
+    openCellModal(day, periodIdx, key);
+  }
+}
+
+function openCellModal(day, periodIdx, key) {
+  const period = periods[periodIdx];
+  currentCell = { day, periodIdx, key };
+  document.getElementById('cell-modal-title').textContent = `${period?.label} — ${day}`;
+  document.getElementById('cell-modal-info').textContent = `${period?.start||''} – ${period?.end||''}`;
+
+  const cellKey = `${day}_${periodIdx}`;
+  const existing = timetableData[cellKey];
+
+  const subjSel = document.getElementById('cell-subject');
+  subjSel.innerHTML = '<option value="">-- Select Subject --</option>' + subjects.map(s=>`<option value="${s}" ${existing?.subject===s?'selected':''}>${s}</option>`).join('');
+
+  const teacherSel = document.getElementById('cell-teacher');
+  teacherSel.innerHTML = '<option value="">No teacher</option>' + allStaff.map(s=>`<option value="${s.name}" ${existing?.teacher===s.name?'selected':''}>${s.name}</option>`).join('');
+
+  document.getElementById('cell-modal').classList.add('open');
+}
+
+function saveCell() {
+  const subj = document.getElementById('cell-subject').value;
+  const teacher = document.getElementById('cell-teacher').value;
+  if (!subj || !currentCell) { closeCellModal(); return; }
+
+  const { day, periodIdx } = currentCell;
+  const cellKey = `${day}_${periodIdx}`;
+  const colors = ['#6B1A1A','#185FA5','#0F6E56','#854F0B','#4A1070'];
+  const color = colors[subjects.indexOf(subj) % colors.length];
+
+  timetableData[cellKey] = { subject: subj, teacher: teacher||null, color };
+
+  const cellEl = document.getElementById(`cell-${day.replace(/\s/g,'_')}-${periodIdx}`);
+  if (cellEl) {
+    cellEl.className = 'tt-cell filled';
+    cellEl.innerHTML = `<div class="tt-subject" style="color:${color}">${subj}</div>${teacher?`<div class="tt-teacher">${teacher}</div>`:''}`;
+  }
+  closeCellModal();
+}
+
+function clearCell() {
+  if (!currentCell) { closeCellModal(); return; }
+  const { day, periodIdx } = currentCell;
+  const cellKey = `${day}_${periodIdx}`;
+  delete timetableData[cellKey];
+  const cellEl = document.getElementById(`cell-${day.replace(/\s/g,'_')}-${periodIdx}`);
+  if (cellEl) { cellEl.className = 'tt-cell'; cellEl.innerHTML = ''; }
+  closeCellModal();
+}
+
+function closeCellModal() { document.getElementById('cell-modal').classList.remove('open'); currentCell = null; }
+
+function clearTimetable() {
+  if (!confirm('Clear entire timetable for this class?')) return;
+  timetableData = {};
+  const cls = document.getElementById('tt-class').value;
+  const sec = document.getElementById('tt-section').value;
+  renderTimetableGrid(`${cls}${sec?'-'+sec:''}`);
+}
+
+async function saveTimetable() {
+  const cls = document.getElementById('tt-class').value;
+  const sec = document.getElementById('tt-section').value;
+  const year = document.getElementById('tt-year').value;
+  if (!cls) { showToast('Please select a class first.','error'); return; }
+
+  const { data: existing } = await supabase.from('timetables').select('id').eq('school_id',SCHOOL_ID).eq('class',cls).eq('section',sec||'').eq('academic_year',year).single();
+  const payload = { school_id: SCHOOL_ID, class: cls, section: sec||'', academic_year: year, grid: timetableData };
+
+  let error;
+  if (existing) { ({ error } = await supabase.from('timetables').update({grid:timetableData}).eq('id',existing.id)); }
+  else { ({ error } = await supabase.from('timetables').insert([payload])); }
+
+  if (error) { showToast('Error saving: '+error.message,'error'); return; }
+  showToast(`Timetable saved for ${cls}${sec?' '+sec:''}!`,'success');
+}
+
+// ── TAB SWITCH ──
+function switchTab(tab, el) {
+  ['student-icard','staff-icard','icard-settings','timetable','tt-settings'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='icard-settings') updateSettingsPreview();
+  if (tab==='tt-settings') { renderPeriodRows(); renderSubjectSettings(); renderTeacherMap(); }
+  if (tab==='timetable') renderSubjectPalette();
+}
+
+document.getElementById('cell-modal').addEventListener('click', function(e){ if(e.target===this) closeCellModal(); });
+</script>
+</body>
+</html>

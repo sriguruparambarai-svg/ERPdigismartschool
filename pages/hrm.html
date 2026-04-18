@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HRM & Salary — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.salary-row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);font-size:13px}
+.salary-row:last-child{border-bottom:none}
+.comp-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.comp-row:last-child{border-bottom:none}
+.salary-input{width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:right;background:var(--white);color:var(--text)}
+.salary-input:focus{outline:none;border-color:var(--gold)}
+.slip-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px;max-width:520px;margin:0 auto}
+.slip-header{border-bottom:2px solid var(--maroon);padding-bottom:14px;margin-bottom:16px}
+.slip-section{margin-bottom:14px}
+.slip-section-title{font-size:11px;font-weight:700;color:var(--maroon);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--sandal)}
+.slip-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}
+.slip-total{display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;border-top:2px solid var(--maroon);margin-top:6px}
+.leave-badge{display:inline-block;width:28px;height:28px;border-radius:6px;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.toggle-switch{position:relative;display:inline-block;width:42px;height:22px}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:22px;transition:.3s}
+.toggle-slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s}
+input:checked + .toggle-slider{background:var(--maroon)}
+input:checked + .toggle-slider:before{transform:translateX(20px)}
+.dept-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;background:var(--sandal);color:var(--maroon)}
+.summary-band{display:flex;gap:12px;background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap}
+.sband-item{display:flex;flex-direction:column;gap:2px}
+.sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
+.sband-value{font-size:18px;font-weight:700;color:var(--maroon)}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">HRM & Salary Management</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Staff & HR → HRM</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Total Staff</div>
+          <div class="stat-value" id="st-total">—</div>
+          <div class="stat-sub">Active employees</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">This Month Salary</div>
+          <div class="stat-value" id="st-salary">—</div>
+          <div class="stat-sub" id="st-salary-sub">Total payable</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Salary Paid</div>
+          <div class="stat-value" id="st-paid" style="color:#2D7A3A">—</div>
+          <div class="stat-sub">This month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">On Leave Today</div>
+          <div class="stat-value" id="st-leave" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Staff on leave</div>
+        </div>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('staff',this)">👥 Staff List</div>
+        <div class="tab" onclick="switchTab('salary',this)">💵 Salary Processing</div>
+        <div class="tab" onclick="switchTab('leave',this)">🗓 Leave Management</div>
+        <div class="tab" onclick="switchTab('reports',this)">📊 Reports</div>
+        <div class="tab" onclick="switchTab('settings',this)">⚙️ Salary Settings</div>
+      </div>
+
+      <!-- ══ TAB: STAFF LIST ══ -->
+      <div id="tab-staff">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Staff Records</div>
+              <div class="card-subtitle" id="staff-count">Loading...</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div class="search-bar">
+                <span style="color:#9B928A;font-size:14px">🔍</span>
+                <input type="text" id="staff-search" placeholder="Search by name, ID, role..." oninput="filterStaff()">
+              </div>
+              <select class="form-control" id="filter-dept" onchange="filterStaff()" style="width:140px;padding:7px 10px">
+                <option value="">All Departments</option>
+                <option>Teaching</option><option>Administrative</option><option>Support</option><option>Management</option>
+              </select>
+              <select class="form-control" id="filter-status" onchange="filterStaff()" style="width:120px;padding:7px 10px">
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="on_leave">On Leave</option>
+              </select>
+              <button class="btn btn-primary" onclick="openStaffModal()">+ Add Staff</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <div class="empty-state" id="staff-loading"><div class="icon">⏳</div><p>Loading staff...</p></div>
+            <table id="staff-table" class="hidden">
+              <thead>
+                <tr>
+                  <th style="width:40px"></th>
+                  <th>Employee ID</th>
+                  <th>Name</th>
+                  <th>Role / Designation</th>
+                  <th>Department</th>
+                  <th>Mobile</th>
+                  <th>Date of Joining</th>
+                  <th>Status</th>
+                  <th style="width:110px">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="staff-tbody"></tbody>
+            </table>
+            <div class="empty-state hidden" id="staff-empty"><div class="icon">👥</div><p>No staff found. Click <b>+ Add Staff</b> to begin.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: SALARY PROCESSING ══ -->
+      <div id="tab-salary" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label">Select Month</label>
+            <input type="month" id="sal-month" class="form-control" style="width:170px;margin-top:4px">
+          </div>
+          <div>
+            <label class="form-label">Department</label>
+            <select class="form-control" id="sal-dept" style="width:160px;margin-top:4px">
+              <option value="">All Departments</option>
+              <option>Teaching</option><option>Administrative</option><option>Support</option><option>Management</option>
+            </select>
+          </div>
+          <div style="margin-top:20px;display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="loadSalarySheet()">Load Salary Sheet</button>
+            <button class="btn btn-gold" onclick="processAllSalary()" id="process-all-btn">⚡ Process All</button>
+          </div>
+        </div>
+
+        <div id="salary-summary" class="hidden">
+          <div class="summary-band" id="salary-band"></div>
+        </div>
+
+        <div class="card">
+          <div id="salary-sheet-content">
+            <div class="empty-state"><div class="icon">💵</div><p>Select month and click Load Salary Sheet</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: LEAVE MANAGEMENT ══ -->
+      <div id="tab-leave" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <!-- Apply Leave -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Apply / Record Leave</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Staff Member <span class="req">*</span></label>
+              <select class="form-control" id="leave-staff" style="margin-top:4px"></select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Leave Type <span class="req">*</span></label>
+              <select class="form-control" id="leave-type" style="margin-top:4px">
+                <option value="casual">Casual Leave (CL)</option>
+                <option value="sick">Sick Leave (SL)</option>
+                <option value="earned">Earned Leave (EL)</option>
+                <option value="unpaid">Unpaid Leave (LOP)</option>
+                <option value="maternity">Maternity Leave</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-grid-2" style="margin-bottom:10px">
+              <div class="form-group">
+                <label class="form-label">From Date <span class="req">*</span></label>
+                <input type="date" class="form-control" id="leave-from" style="margin-top:4px" onchange="calcLeaveDays()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">To Date <span class="req">*</span></label>
+                <input type="date" class="form-control" id="leave-to" style="margin-top:4px" onchange="calcLeaveDays()">
+              </div>
+            </div>
+            <div style="background:var(--sandal-light);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:10px;display:flex;justify-content:space-between">
+              <span>Number of days:</span>
+              <span id="leave-days" style="font-weight:700;color:var(--maroon)">0 days</span>
+            </div>
+            <div class="form-group" style="margin-bottom:12px">
+              <label class="form-label">Reason</label>
+              <textarea class="form-control" id="leave-reason" rows="2" style="margin-top:4px" placeholder="Reason for leave..."></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Status</label>
+              <select class="form-control" id="leave-status" style="margin-top:4px">
+                <option value="approved">Approved</option>
+                <option value="pending">Pending Approval</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+            <button class="btn btn-gold w-full" onclick="saveLeave()">Save Leave Record</button>
+          </div>
+
+          <!-- Leave Records -->
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div class="card-header">
+                <div class="card-title">Leave Records</div>
+                <div style="display:flex;gap:8px">
+                  <select class="form-control" id="leave-filter-staff" onchange="loadLeaveRecords()" style="width:180px;padding:6px 10px">
+                    <option value="">All Staff</option>
+                  </select>
+                  <input type="month" id="leave-filter-month" class="form-control" style="width:150px;padding:6px 10px" onchange="loadLeaveRecords()">
+                </div>
+              </div>
+              <div id="leave-records-list">
+                <div class="empty-state"><div class="icon">🗓</div><p>Loading leave records...</p></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Leave Balance Summary</div>
+                <select class="form-control" id="balance-year" onchange="loadLeaveBalance()" style="width:120px;padding:6px 10px">
+                  <option>2025-26</option><option>2024-25</option>
+                </select>
+              </div>
+              <div id="leave-balance-list">
+                <div class="empty-state"><div class="icon">📊</div><p>Loading...</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: REPORTS ══ -->
+      <div id="tab-reports" class="hidden">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Monthly Salary Summary</div>
+              <div style="display:flex;gap:6px">
+                <input type="month" id="rep-month" class="form-control" style="width:150px;padding:6px 10px">
+                <button class="btn btn-primary btn-sm" onclick="loadMonthlySalaryReport()">Generate</button>
+              </div>
+            </div>
+            <div id="monthly-sal-report"><div class="empty-state"><div class="icon">📊</div><p>Select month and generate</p></div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Department-wise Cost</div>
+              <button class="btn btn-primary btn-sm" onclick="loadDeptReport()">Generate</button>
+            </div>
+            <div id="dept-report"><div class="empty-state"><div class="icon">🏢</div><p>Click generate</p></div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Staff Salary History</div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <input type="text" class="form-control" id="hist-staff-search" placeholder="Search staff..." oninput="searchHistStaff()">
+            </div>
+            <div id="hist-staff-results"></div>
+            <div id="staff-sal-history"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Year-wise Salary Expense</div>
+              <button class="btn btn-primary btn-sm" onclick="loadYearReport()">Generate</button>
+            </div>
+            <div id="year-report"><div class="empty-state"><div class="icon">📅</div><p>Click generate</p></div></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══ TAB: SALARY SETTINGS ══ -->
+      <div id="tab-settings" class="hidden">
+
+        <!-- PF / ESI Toggle -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Statutory Deductions</div>
+              <div class="card-subtitle">Enable only what applies to your school</div>
+            </div>
+            <button class="btn btn-gold btn-sm" onclick="saveStatutorySettings()">Save Settings</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;border:1px solid var(--border);border-radius:10px">
+              <div>
+                <div style="font-weight:600;font-size:13px">Provident Fund (PF)</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">12% of Basic Pay (mandatory for schools with 20+ staff)</div>
+                <div style="font-size:11px;color:var(--text-muted)">Employee: 12% · Employer: 12% of Basic</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:11px;color:var(--text-muted)">Employee %</label>
+                  <input type="number" id="pf-emp-pct" class="form-control" value="12" style="width:70px;padding:5px 8px;margin-top:2px">
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:11px;color:var(--text-muted)">Employer %</label>
+                  <input type="number" id="pf-er-pct" class="form-control" value="12" style="width:70px;padding:5px 8px;margin-top:2px">
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="pf-enabled" onchange="updateStatutoryUI()">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;border:1px solid var(--border);border-radius:10px">
+              <div>
+                <div style="font-weight:600;font-size:13px">ESI (Employee State Insurance)</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">For employees with gross salary ≤ ₹21,000/month</div>
+                <div style="font-size:11px;color:var(--text-muted)">Employee: 0.75% · Employer: 3.25% of Gross</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:11px;color:var(--text-muted)">Employee %</label>
+                  <input type="number" id="esi-emp-pct" class="form-control" value="0.75" step="0.01" style="width:70px;padding:5px 8px;margin-top:2px">
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:11px;color:var(--text-muted)">Employer %</label>
+                  <input type="number" id="esi-er-pct" class="form-control" value="3.25" step="0.01" style="width:70px;padding:5px 8px;margin-top:2px">
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="esi-enabled" onchange="updateStatutoryUI()">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px;border:1px solid var(--border);border-radius:10px">
+              <div>
+                <div style="font-weight:600;font-size:13px">TDS (Tax Deducted at Source)</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">Income tax deduction — enter manually per employee</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="tds-enabled">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Salary Components -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Salary Components</div>
+              <div class="card-subtitle">Define earnings and deduction types for your school</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openCompModal()">+ Add Component</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#2D7A3A;margin-bottom:8px">Earnings</div>
+              <div id="earnings-list"><div class="empty-state" style="padding:20px"><p>Loading...</p></div></div>
+            </div>
+            <div>
+              <div style="font-size:12px;font-weight:600;color:#A32D2D;margin-bottom:8px">Deductions</div>
+              <div id="deductions-list"><div class="empty-state" style="padding:20px"><p>Loading...</p></div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STAFF MODAL ══ -->
+<div class="modal-overlay" id="staff-modal">
+  <div class="modal" style="max-width:740px">
+    <div class="modal-header">
+      <div class="modal-title" id="staff-modal-title">Add New Staff</div>
+      <button class="modal-close" onclick="closeStaffModal()">✕</button>
+    </div>
+    <div id="staff-modal-alert" class="hidden"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="grid-column:1/-1;font-size:12px;font-weight:600;color:var(--maroon);border-bottom:2px solid var(--sandal);padding-bottom:6px">👤 Personal Details</div>
+      <div class="form-group"><label class="form-label">Full Name <span class="req">*</span></label><input type="text" id="sf-name" class="form-control" placeholder="Full name"></div>
+      <div class="form-group"><label class="form-label">Employee ID <span class="req">*</span></label><input type="text" id="sf-empid" class="form-control" placeholder="e.g. EMP-001"></div>
+      <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" id="sf-dob" class="form-control"></div>
+      <div class="form-group"><label class="form-label">Gender</label><select id="sf-gender" class="form-control"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+      <div class="form-group"><label class="form-label">Mobile <span class="req">*</span></label><input type="tel" id="sf-mobile" class="form-control" placeholder="10-digit mobile" maxlength="10"></div>
+      <div class="form-group"><label class="form-label">Email</label><input type="email" id="sf-email" class="form-control" placeholder="email@example.com"></div>
+      <div class="form-group"><label class="form-label">Aadhar Number</label><input type="text" id="sf-aadhar" class="form-control" placeholder="12 digits" maxlength="12"></div>
+      <div class="form-group"><label class="form-label">Qualification</label><input type="text" id="sf-qual" class="form-control" placeholder="e.g. B.Ed, M.A."></div>
+      <div class="form-group"><label class="form-label">Address</label><input type="text" id="sf-address" class="form-control" placeholder="Address"></div>
+
+      <div style="grid-column:1/-1;font-size:12px;font-weight:600;color:var(--maroon);border-bottom:2px solid var(--sandal);padding-bottom:6px;margin-top:6px">🏫 Job Details</div>
+      <div class="form-group"><label class="form-label">Designation / Role <span class="req">*</span></label><input type="text" id="sf-role" class="form-control" placeholder="e.g. Maths Teacher"></div>
+      <div class="form-group"><label class="form-label">Department <span class="req">*</span></label><select id="sf-dept" class="form-control"><option value="">Select</option><option>Teaching</option><option>Administrative</option><option>Support</option><option>Management</option></select></div>
+      <div class="form-group"><label class="form-label">Date of Joining</label><input type="date" id="sf-doj" class="form-control"></div>
+      <div class="form-group"><label class="form-label">Employment Type</label><select id="sf-emptype" class="form-control"><option value="permanent">Permanent</option><option value="contract">Contract</option><option value="part_time">Part-time</option></select></div>
+      <div class="form-group"><label class="form-label">Status</label><select id="sf-status" class="form-control"><option value="active">Active</option><option value="inactive">Inactive</option><option value="on_leave">On Leave</option></select></div>
+
+      <div style="grid-column:1/-1;font-size:12px;font-weight:600;color:var(--maroon);border-bottom:2px solid var(--sandal);padding-bottom:6px;margin-top:6px">🏦 Bank Details</div>
+      <div class="form-group"><label class="form-label">Bank Name</label><input type="text" id="sf-bank" class="form-control" placeholder="e.g. SBI, Indian Bank"></div>
+      <div class="form-group"><label class="form-label">Account Number</label><input type="text" id="sf-accno" class="form-control" placeholder="Account number"></div>
+      <div class="form-group"><label class="form-label">IFSC Code</label><input type="text" id="sf-ifsc" class="form-control" placeholder="e.g. SBIN0001234"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button>
+      <button class="btn btn-gold" id="staff-save-btn" onclick="saveStaff()">Save Staff</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SALARY STRUCTURE MODAL ══ -->
+<div class="modal-overlay" id="sal-struct-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title">Set Salary Structure</div>
+      <button class="modal-close" onclick="document.getElementById('sal-struct-modal').classList.remove('open')">✕</button>
+    </div>
+    <div id="sal-struct-staff-info" style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px"></div>
+    <div id="sal-struct-content"></div>
+    <div style="background:var(--sandal-light);border-radius:8px;padding:10px 14px;margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:12px;color:var(--text-muted)">Gross Salary</div>
+      <div style="font-size:18px;font-weight:700;color:var(--maroon)" id="gross-preview">₹0</div>
+    </div>
+    <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:12px;color:var(--text-muted)">Net Salary (approx)</div>
+      <div style="font-size:16px;font-weight:700;color:#2D7A3A" id="net-preview">₹0</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('sal-struct-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveSalaryStructure()">Save Structure</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PAYSLIP MODAL ══ -->
+<div class="modal-overlay" id="payslip-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header no-print">
+      <div class="modal-title">Salary Slip</div>
+      <button class="modal-close" onclick="document.getElementById('payslip-modal').classList.remove('open')">✕</button>
+    </div>
+    <div id="payslip-content"></div>
+    <div class="modal-footer no-print">
+      <button class="btn btn-secondary" onclick="document.getElementById('payslip-modal').classList.remove('open')">Close</button>
+      <button class="btn btn-gold" onclick="window.print()">🖨 Print Payslip</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SALARY COMPONENT MODAL ══ -->
+<div class="modal-overlay" id="comp-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">Add Salary Component</div>
+      <button class="modal-close" onclick="document.getElementById('comp-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Component Name <span class="req">*</span></label>
+      <input type="text" id="comp-name" class="form-control" placeholder="e.g. House Rent Allowance">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Type <span class="req">*</span></label>
+      <select id="comp-type" class="form-control">
+        <option value="earning">Earning</option>
+        <option value="deduction">Deduction</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Calculation</label>
+      <select id="comp-calc" class="form-control">
+        <option value="fixed">Fixed Amount</option>
+        <option value="pct_basic">% of Basic Pay</option>
+        <option value="pct_gross">% of Gross Salary</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('comp-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveComponent()">Add Component</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ VIEW STAFF MODAL ══ -->
+<div class="modal-overlay" id="view-staff-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">Staff Profile</div>
+      <button class="modal-close" onclick="document.getElementById('view-staff-modal').classList.remove('open')">✕</button>
+    </div>
+    <div id="view-staff-content"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('view-staff-modal').classList.remove('open')">Close</button>
+      <button class="btn btn-primary" id="edit-staff-btn">✏️ Edit</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let allStaff = [];
+let salaryComponents = [];
+let statutorySettings = { pf: false, esi: false, tds: false, pfEmpPct: 12, pfErPct: 12, esiEmpPct: 0.75, esiErPct: 3.25 };
+let editingStaffId = null;
+let currentSalStaffId = null;
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('hrm');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('sal-month').value = today.slice(0,7);
+  document.getElementById('rep-month').value = today.slice(0,7);
+  document.getElementById('leave-from').value = today;
+  document.getElementById('leave-to').value = today;
+  document.getElementById('leave-filter-month').value = today.slice(0,7);
+  await loadStatutorySettings();
+  await loadComponents();
+  await loadStaff();
+  await loadStats();
+});
+
+// ── STATUTORY SETTINGS ──
+async function loadStatutorySettings() {
+  const { data } = await supabase.from('hrm_settings').select('*').eq('school_id', SCHOOL_ID).single();
+  if (data) {
+    statutorySettings = { ...statutorySettings, ...data };
+    document.getElementById('pf-enabled').checked = data.pf_enabled || false;
+    document.getElementById('esi-enabled').checked = data.esi_enabled || false;
+    document.getElementById('tds-enabled').checked = data.tds_enabled || false;
+    if (data.pf_emp_pct) document.getElementById('pf-emp-pct').value = data.pf_emp_pct;
+    if (data.pf_er_pct) document.getElementById('pf-er-pct').value = data.pf_er_pct;
+    if (data.esi_emp_pct) document.getElementById('esi-emp-pct').value = data.esi_emp_pct;
+    if (data.esi_er_pct) document.getElementById('esi-er-pct').value = data.esi_er_pct;
+  }
+  updateStatutoryUI();
+}
+
+function updateStatutoryUI() {
+  const pfOn = document.getElementById('pf-enabled').checked;
+  const esiOn = document.getElementById('esi-enabled').checked;
+  ['pf-emp-pct','pf-er-pct'].forEach(id => document.getElementById(id).disabled = !pfOn);
+  ['esi-emp-pct','esi-er-pct'].forEach(id => document.getElementById(id).disabled = !esiOn);
+}
+
+async function saveStatutorySettings() {
+  const payload = {
+    school_id: SCHOOL_ID,
+    pf_enabled: document.getElementById('pf-enabled').checked,
+    esi_enabled: document.getElementById('esi-enabled').checked,
+    tds_enabled: document.getElementById('tds-enabled').checked,
+    pf_emp_pct: parseFloat(document.getElementById('pf-emp-pct').value) || 12,
+    pf_er_pct: parseFloat(document.getElementById('pf-er-pct').value) || 12,
+    esi_emp_pct: parseFloat(document.getElementById('esi-emp-pct').value) || 0.75,
+    esi_er_pct: parseFloat(document.getElementById('esi-er-pct').value) || 3.25,
+  };
+  const { data: existing } = await supabase.from('hrm_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  if (existing) { await supabase.from('hrm_settings').update(payload).eq('school_id', SCHOOL_ID); }
+  else { await supabase.from('hrm_settings').insert([payload]); }
+  statutorySettings = { pf: payload.pf_enabled, esi: payload.esi_enabled, tds: payload.tds_enabled, pfEmpPct: payload.pf_emp_pct, pfErPct: payload.pf_er_pct, esiEmpPct: payload.esi_emp_pct, esiErPct: payload.esi_er_pct };
+  showToast('Statutory settings saved!', 'success');
+}
+
+// ── SALARY COMPONENTS ──
+async function loadComponents() {
+  const { data } = await supabase.from('salary_components').select('*').eq('school_id', SCHOOL_ID).order('type').order('created_at');
+  salaryComponents = data || [];
+  renderComponents();
+}
+
+function renderComponents() {
+  const earnings = salaryComponents.filter(c => c.type === 'earning');
+  const deductions = salaryComponents.filter(c => c.type === 'deduction');
+
+  const renderList = (list, type) => list.length === 0
+    ? `<div style="font-size:12px;color:var(--text-muted);padding:12px">No ${type}s added yet.</div>`
+    : list.map(c => `
+        <div class="comp-row">
+          <div style="flex:1">
+            <div style="font-weight:500">${c.name}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${c.calc_type === 'fixed' ? 'Fixed amount' : c.calc_type === 'pct_basic' ? '% of Basic' : '% of Gross'}</div>
+          </div>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteComponent('${c.id}')">🗑</button>
+        </div>
+      `).join('');
+
+  document.getElementById('earnings-list').innerHTML = renderList(earnings, 'earning');
+  document.getElementById('deductions-list').innerHTML = renderList(deductions, 'deduction');
+}
+
+function openCompModal() { document.getElementById('comp-modal').classList.add('open'); }
+
+async function saveComponent() {
+  const name = document.getElementById('comp-name').value.trim();
+  const type = document.getElementById('comp-type').value;
+  const calc = document.getElementById('comp-calc').value;
+  if (!name) { showToast('Please enter component name.','error'); return; }
+
+  await supabase.from('salary_components').insert([{ school_id: SCHOOL_ID, name, type, calc_type: calc }]);
+  document.getElementById('comp-modal').classList.remove('open');
+  document.getElementById('comp-name').value = '';
+  showToast(name + ' added!', 'success');
+  await loadComponents();
+}
+
+async function deleteComponent(id) {
+  if (!confirm('Delete this component?')) return;
+  await supabase.from('salary_components').delete().eq('id', id);
+  await loadComponents();
+}
+
+// ── STAFF CRUD ──
+async function loadStaff() {
+  document.getElementById('staff-loading').classList.remove('hidden');
+  document.getElementById('staff-table').classList.add('hidden');
+  document.getElementById('staff-empty').classList.add('hidden');
+
+  const { data } = await supabase.from('staff').select('*').eq('school_id', SCHOOL_ID).order('name');
+  allStaff = data || [];
+  renderStaff(allStaff);
+  populateLeaveStaffSelects();
+}
+
+function populateLeaveStaffSelects() {
+  const opts = allStaff.filter(s=>s.status==='active').map(s=>`<option value="${s.id}">${s.name} — ${s.role||''}</option>`).join('');
+  ['leave-staff','leave-filter-staff'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = (id==='leave-filter-staff'?'<option value="">All Staff</option>':'') + opts;
+  });
+}
+
+function renderStaff(list) {
+  document.getElementById('staff-loading').classList.add('hidden');
+  document.getElementById('staff-count').textContent = `${list.length} staff member${list.length!==1?'s':''} found`;
+
+  if (list.length === 0) {
+    document.getElementById('staff-table').classList.add('hidden');
+    document.getElementById('staff-empty').classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('staff-empty').classList.add('hidden');
+  document.getElementById('staff-table').classList.remove('hidden');
+
+  document.getElementById('staff-tbody').innerHTML = list.map(s => {
+    const statusBadge = { active:'badge-green', inactive:'badge-red', on_leave:'badge-amber' }[s.status] || 'badge-blue';
+    return `
+      <tr>
+        <td><div class="avatar">${getInitials(s.name)}</div></td>
+        <td style="font-weight:600;color:var(--maroon)">${s.employee_id||'—'}</td>
+        <td>
+          <div style="font-weight:500">${s.name}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${s.mobile||''}</div>
+        </td>
+        <td>${s.role||'—'}</td>
+        <td><span class="dept-tag">${s.department||'—'}</span></td>
+        <td>${s.mobile||'—'}</td>
+        <td>${formatDate(s.date_of_joining)}</td>
+        <td><span class="badge ${statusBadge}">${(s.status||'active').replace('_',' ')}</span></td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-secondary btn-sm btn-icon" title="View" onclick="viewStaff('${s.id}')">👁</button>
+            <button class="btn btn-secondary btn-sm btn-icon" title="Salary" onclick="openSalStructModal('${s.id}')">💵</button>
+            <button class="btn btn-secondary btn-sm btn-icon" title="Edit" onclick="editStaff('${s.id}')">✏️</button>
+            <button class="btn btn-danger btn-sm btn-icon" title="Delete" onclick="deleteStaff('${s.id}','${(s.name||'').replace(/'/g,"\\'")  }')">🗑</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function filterStaff() {
+  const q = document.getElementById('staff-search').value.toLowerCase();
+  const dept = document.getElementById('filter-dept').value;
+  const status = document.getElementById('filter-status').value;
+  renderStaff(allStaff.filter(s =>
+    (!q || (s.name||'').toLowerCase().includes(q) || (s.employee_id||'').toLowerCase().includes(q) || (s.role||'').toLowerCase().includes(q)) &&
+    (!dept || s.department === dept) &&
+    (!status || s.status === status)
+  ));
+}
+
+// ── STAFF MODAL ──
+function openStaffModal() {
+  editingStaffId = null;
+  document.getElementById('staff-modal-title').textContent = 'Add New Staff';
+  document.getElementById('staff-save-btn').textContent = 'Save Staff';
+  clearStaffForm();
+  document.getElementById('sf-doj').value = new Date().toISOString().split('T')[0];
+  document.getElementById('staff-modal').classList.add('open');
+}
+
+function editStaff(id) {
+  const s = allStaff.find(x=>x.id===id);
+  if (!s) return;
+  editingStaffId = id;
+  document.getElementById('staff-modal-title').textContent = 'Edit Staff Record';
+  document.getElementById('staff-save-btn').textContent = 'Update Staff';
+  const fields = { 'sf-name':'name','sf-empid':'employee_id','sf-dob':'dob','sf-gender':'gender','sf-mobile':'mobile','sf-email':'email','sf-aadhar':'aadhar','sf-qual':'qualification','sf-address':'address','sf-role':'role','sf-dept':'department','sf-doj':'date_of_joining','sf-emptype':'employment_type','sf-status':'status','sf-bank':'bank_name','sf-accno':'account_number','sf-ifsc':'ifsc_code' };
+  Object.entries(fields).forEach(([fieldId, key]) => {
+    const el = document.getElementById(fieldId);
+    if (el) el.value = s[key] || '';
+  });
+  document.getElementById('staff-modal').classList.add('open');
+}
+
+async function saveStaff() {
+  const name = document.getElementById('sf-name').value.trim();
+  const empid = document.getElementById('sf-empid').value.trim();
+  const role = document.getElementById('sf-role').value.trim();
+  const dept = document.getElementById('sf-dept').value;
+  const mobile = document.getElementById('sf-mobile').value.trim();
+  if (!name || !empid || !role || !dept || !mobile) {
+    document.getElementById('staff-modal-alert').className = 'alert alert-danger';
+    document.getElementById('staff-modal-alert').textContent = '⚠️ Please fill all required fields.';
+    return;
+  }
+  document.getElementById('staff-modal-alert').className = 'hidden';
+
+  const btn = document.getElementById('staff-save-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+
+  const record = {
+    school_id: SCHOOL_ID, name, employee_id: empid, role, department: dept, mobile,
+    dob: document.getElementById('sf-dob').value || null,
+    gender: document.getElementById('sf-gender').value,
+    email: document.getElementById('sf-email').value.trim(),
+    aadhar: document.getElementById('sf-aadhar').value.trim(),
+    qualification: document.getElementById('sf-qual').value.trim(),
+    address: document.getElementById('sf-address').value.trim(),
+    date_of_joining: document.getElementById('sf-doj').value || null,
+    employment_type: document.getElementById('sf-emptype').value,
+    status: document.getElementById('sf-status').value,
+    bank_name: document.getElementById('sf-bank').value.trim(),
+    account_number: document.getElementById('sf-accno').value.trim(),
+    ifsc_code: document.getElementById('sf-ifsc').value.trim(),
+  };
+
+  let error;
+  if (editingStaffId) { ({ error } = await supabase.from('staff').update(record).eq('id', editingStaffId)); }
+  else { ({ error } = await supabase.from('staff').insert([record])); }
+
+  btn.textContent = editingStaffId ? 'Update Staff' : 'Save Staff'; btn.disabled = false;
+  if (error) { document.getElementById('staff-modal-alert').className='alert alert-danger'; document.getElementById('staff-modal-alert').textContent='⚠️ Error: '+error.message; return; }
+
+  closeStaffModal();
+  showToast(editingStaffId ? 'Staff record updated!' : name + ' added!', 'success');
+  await loadStaff(); await loadStats();
+}
+
+async function deleteStaff(id, name) {
+  if (!confirm(`Delete staff record for ${name}?`)) return;
+  await supabase.from('staff').delete().eq('id', id);
+  showToast('Staff record deleted.', 'success');
+  await loadStaff(); await loadStats();
+}
+
+function viewStaff(id) {
+  const s = allStaff.find(x=>x.id===id);
+  if (!s) return;
+  document.getElementById('view-staff-content').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      <div class="avatar" style="width:52px;height:52px;font-size:18px">${getInitials(s.name)}</div>
+      <div>
+        <div style="font-size:17px;font-weight:700">${s.name}</div>
+        <div style="font-size:13px;color:var(--text-muted)">${s.role} · ${s.department}</div>
+        <div style="margin-top:4px;display:flex;gap:6px">
+          <span class="badge badge-maroon">${s.employee_id}</span>
+          <span class="badge ${{active:'badge-green',inactive:'badge-red',on_leave:'badge-amber'}[s.status]||'badge-blue'}">${(s.status||'').replace('_',' ')}</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px">
+      ${[['Mobile',s.mobile],['Email',s.email],['Aadhar',s.aadhar],['Date of Joining',formatDate(s.date_of_joining)],['Qualification',s.qualification],['Employment Type',(s.employment_type||'').replace('_',' ')],['Bank',s.bank_name],['Account No',s.account_number],['IFSC',s.ifsc_code],['Address',s.address]].map(([l,v])=>`
+        <div style="padding:6px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-muted)">${l}</div>
+          <div style="font-weight:500">${v||'—'}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.getElementById('edit-staff-btn').onclick = () => { document.getElementById('view-staff-modal').classList.remove('open'); editStaff(id); };
+  document.getElementById('view-staff-modal').classList.add('open');
+}
+
+function closeStaffModal() { document.getElementById('staff-modal').classList.remove('open'); clearStaffForm(); }
+function clearStaffForm() {
+  ['sf-name','sf-empid','sf-dob','sf-gender','sf-mobile','sf-email','sf-aadhar','sf-qual','sf-address','sf-role','sf-dept','sf-doj','sf-emptype','sf-status','sf-bank','sf-accno','sf-ifsc'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value = el.tagName==='SELECT'?el.options[0]?.value||'':'';
+  });
+  document.getElementById('sf-status').value='active';
+  document.getElementById('sf-emptype').value='permanent';
+  document.getElementById('staff-modal-alert').className='hidden';
+  editingStaffId=null;
+}
+
+// ── SALARY STRUCTURE ──
+async function openSalStructModal(staffId) {
+  currentSalStaffId = staffId;
+  const staff = allStaff.find(s=>s.id===staffId);
+  if (!staff) return;
+
+  document.getElementById('sal-struct-staff-info').innerHTML = `<b>${staff.name}</b> · ${staff.role} · ${staff.employee_id}`;
+
+  const { data: existing } = await supabase.from('staff_salary_structure').select('*').eq('staff_id', staffId).single();
+  const amounts = existing?.components || {};
+
+  const earnings = salaryComponents.filter(c=>c.type==='earning');
+  const deductions = salaryComponents.filter(c=>c.type==='deduction');
+
+  let html = '';
+  if (earnings.length > 0) {
+    html += `<div style="font-size:12px;font-weight:600;color:#2D7A3A;margin-bottom:8px">Earnings</div>`;
+    html += earnings.map(c=>`
+      <div class="comp-row">
+        <div style="flex:1;font-weight:500">${c.name} <span style="font-size:10px;color:var(--text-muted)">(${c.calc_type==='fixed'?'Fixed':c.calc_type==='pct_basic'?'% of Basic':'% of Gross'})</span></div>
+        <input type="number" class="salary-input" id="sc-${c.id}" value="${amounts[c.id]||''}" placeholder="0" onchange="calcSalaryPreview()">
+      </div>
+    `).join('');
+  }
+
+  if (deductions.length > 0) {
+    html += `<div style="font-size:12px;font-weight:600;color:#A32D2D;margin:12px 0 8px">Deductions</div>`;
+    html += deductions.map(c=>`
+      <div class="comp-row">
+        <div style="flex:1;font-weight:500">${c.name}</div>
+        <input type="number" class="salary-input" id="sc-${c.id}" value="${amounts[c.id]||''}" placeholder="0" onchange="calcSalaryPreview()">
+      </div>
+    `).join('');
+  }
+
+  if (statutorySettings.pf) {
+    html += `<div class="comp-row" style="background:var(--sandal-light)"><div style="flex:1;font-weight:500;color:#A32D2D">PF Deduction (${statutorySettings.pfEmpPct}% of Basic) <span class="badge badge-blue" style="font-size:9px">Auto</span></div><div id="pf-auto-val" style="font-weight:600;color:#A32D2D">₹0</div></div>`;
+  }
+  if (statutorySettings.esi) {
+    html += `<div class="comp-row" style="background:var(--sandal-light)"><div style="flex:1;font-weight:500;color:#A32D2D">ESI Deduction (${statutorySettings.esiEmpPct}% of Gross) <span class="badge badge-blue" style="font-size:9px">Auto</span></div><div id="esi-auto-val" style="font-weight:600;color:#A32D2D">₹0</div></div>`;
+  }
+
+  if (!html) html = '<div style="font-size:13px;color:var(--text-muted);padding:12px">No salary components defined. Go to Salary Settings tab to add components first.</div>';
+
+  document.getElementById('sal-struct-content').innerHTML = html;
+  calcSalaryPreview();
+  document.getElementById('sal-struct-modal').classList.add('open');
+}
+
+function calcSalaryPreview() {
+  const earnings = salaryComponents.filter(c=>c.type==='earning');
+  const deductions = salaryComponents.filter(c=>c.type==='deduction');
+  let gross = 0, totalDed = 0, basicPay = 0;
+
+  earnings.forEach(c => {
+    const val = parseFloat(document.getElementById('sc-'+c.id)?.value) || 0;
+    gross += val;
+    if (c.name.toLowerCase().includes('basic')) basicPay = val;
+  });
+
+  deductions.forEach(c => {
+    const val = parseFloat(document.getElementById('sc-'+c.id)?.value) || 0;
+    totalDed += val;
+  });
+
+  let pfAmt = 0, esiAmt = 0;
+  if (statutorySettings.pf) { pfAmt = Math.round((basicPay * statutorySettings.pfEmpPct) / 100); const el=document.getElementById('pf-auto-val'); if(el) el.textContent='₹'+pfAmt.toLocaleString('en-IN'); }
+  if (statutorySettings.esi && gross <= 21000) { esiAmt = Math.round((gross * statutorySettings.esiEmpPct) / 100); const el=document.getElementById('esi-auto-val'); if(el) el.textContent='₹'+esiAmt.toLocaleString('en-IN'); }
+
+  const net = gross - totalDed - pfAmt - esiAmt;
+  document.getElementById('gross-preview').textContent = '₹' + gross.toLocaleString('en-IN');
+  document.getElementById('net-preview').textContent = '₹' + Math.max(0,net).toLocaleString('en-IN');
+}
+
+async function saveSalaryStructure() {
+  const amounts = {};
+  salaryComponents.forEach(c => {
+    const val = parseFloat(document.getElementById('sc-'+c.id)?.value) || 0;
+    if (val > 0) amounts[c.id] = val;
+  });
+
+  const earnings = salaryComponents.filter(c=>c.type==='earning');
+  let gross = 0, basicPay = 0;
+  earnings.forEach(c => {
+    const v = amounts[c.id] || 0; gross += v;
+    if (c.name.toLowerCase().includes('basic')) basicPay = v;
+  });
+
+  const { data: existing } = await supabase.from('staff_salary_structure').select('id').eq('staff_id', currentSalStaffId).single();
+  const record = { school_id: SCHOOL_ID, staff_id: currentSalStaffId, components: amounts, gross_salary: gross, basic_pay: basicPay };
+
+  if (existing) { await supabase.from('staff_salary_structure').update(record).eq('staff_id', currentSalStaffId); }
+  else { await supabase.from('staff_salary_structure').insert([record]); }
+
+  document.getElementById('sal-struct-modal').classList.remove('open');
+  showToast('Salary structure saved!', 'success');
+  await loadStats();
+}
+
+// ── SALARY PROCESSING ──
+async function loadSalarySheet() {
+  const month = document.getElementById('sal-month').value;
+  const dept = document.getElementById('sal-dept').value;
+  if (!month) { showToast('Please select a month.','error'); return; }
+
+  let staffList = allStaff.filter(s=>s.status==='active');
+  if (dept) staffList = staffList.filter(s=>s.department===dept);
+
+  const ids = staffList.map(s=>s.id);
+  if (ids.length===0) { document.getElementById('salary-sheet-content').innerHTML='<div class="empty-state"><div class="icon">👥</div><p>No active staff found.</p></div>'; return; }
+
+  const { data: structures } = await supabase.from('staff_salary_structure').select('*').in('staff_id', ids);
+  const structMap = {};
+  if (structures) structures.forEach(s=>{ structMap[s.staff_id]=s; });
+
+  const { data: processed } = await supabase.from('salary_processed').select('*').eq('school_id',SCHOOL_ID).eq('month',month).in('staff_id',ids);
+  const procMap = {};
+  if (processed) processed.forEach(p=>{ procMap[p.staff_id]=p; });
+
+  let totalGross=0, totalNet=0, totalPaid=0;
+  staffList.forEach(s=>{
+    const st=structMap[s.id];
+    if(st){ totalGross+=st.gross_salary||0; const net=calcNet(st); totalNet+=net; }
+    if(procMap[s.id]?.status==='paid') totalPaid+=procMap[s.id].net_salary||0;
+  });
+
+  document.getElementById('salary-summary').classList.remove('hidden');
+  document.getElementById('salary-band').innerHTML = `
+    <div class="sband-item"><div class="sband-label">Total Staff</div><div class="sband-value">${staffList.length}</div></div>
+    <div class="sband-item"><div class="sband-label">Gross Payable</div><div class="sband-value">₹${totalGross.toLocaleString('en-IN')}</div></div>
+    <div class="sband-item"><div class="sband-label">Net Payable</div><div class="sband-value">₹${totalNet.toLocaleString('en-IN')}</div></div>
+    <div class="sband-item"><div class="sband-label">Paid So Far</div><div class="sband-value" style="color:#2D7A3A">₹${totalPaid.toLocaleString('en-IN')}</div></div>
+  `;
+
+  document.getElementById('salary-sheet-content').innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Role</th>
+          <th>Gross</th>
+          <th>PF Ded.</th>
+          <th>ESI Ded.</th>
+          <th>Other Ded.</th>
+          <th style="color:var(--maroon)">Net Salary</th>
+          <th>Status</th>
+          <th style="width:130px">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${staffList.map(s => {
+          const st = structMap[s.id];
+          const proc = procMap[s.id];
+          if (!st) return `
+            <tr>
+              <td><div style="font-weight:500">${s.name}</div><div style="font-size:11px;color:var(--text-muted)">${s.employee_id}</div></td>
+              <td>${s.role||'—'}</td>
+              <td colspan="5" style="color:var(--text-muted);font-size:12px">No salary structure set. <a href="#" onclick="openSalStructModal('${s.id}')" style="color:var(--maroon)">Set now →</a></td>
+              <td>—</td><td>—</td>
+            </tr>
+          `;
+          const gross = st.gross_salary || 0;
+          const basicPay = st.basic_pay || 0;
+          const pfAmt = statutorySettings.pf ? Math.round(basicPay * statutorySettings.pfEmpPct / 100) : 0;
+          const esiAmt = statutorySettings.esi && gross<=21000 ? Math.round(gross * statutorySettings.esiEmpPct / 100) : 0;
+          const otherDed = salaryComponents.filter(c=>c.type==='deduction').reduce((sum,c)=>(st.components?.[c.id]||0)+sum,0);
+          const net = Math.max(0, gross - pfAmt - esiAmt - otherDed);
+          const status = proc?.status || 'unpaid';
+          return `
+            <tr>
+              <td><div style="font-weight:600">${s.name}</div><div style="font-size:11px;color:var(--text-muted)">${s.employee_id}</div></td>
+              <td><span class="dept-tag">${s.role||'—'}</span></td>
+              <td style="font-weight:500">₹${gross.toLocaleString('en-IN')}</td>
+              <td style="color:#A32D2D">${pfAmt>0?'₹'+pfAmt.toLocaleString('en-IN'):'—'}</td>
+              <td style="color:#A32D2D">${esiAmt>0?'₹'+esiAmt.toLocaleString('en-IN'):'—'}</td>
+              <td style="color:#A32D2D">${otherDed>0?'₹'+otherDed.toLocaleString('en-IN'):'—'}</td>
+              <td style="font-weight:700;color:var(--maroon);font-size:14px">₹${net.toLocaleString('en-IN')}</td>
+              <td><span class="badge ${status==='paid'?'badge-green':status==='hold'?'badge-amber':'badge-red'}">${status}</span></td>
+              <td>
+                <div style="display:flex;gap:4px">
+                  ${status!=='paid'
+                    ? `<button class="btn btn-gold btn-sm" onclick="markSalaryPaid('${s.id}','${month}',${net})">Pay</button>`
+                    : '<span style="font-size:11px;color:#2D7A3A">✓ Paid</span>'
+                  }
+                  <button class="btn btn-secondary btn-sm btn-icon" onclick="showPayslip('${s.id}','${month}')" title="Payslip">📄</button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+function calcNet(st) {
+  const gross = st.gross_salary || 0;
+  const basicPay = st.basic_pay || 0;
+  const pfAmt = statutorySettings.pf ? Math.round(basicPay * statutorySettings.pfEmpPct / 100) : 0;
+  const esiAmt = statutorySettings.esi && gross<=21000 ? Math.round(gross * statutorySettings.esiEmpPct / 100) : 0;
+  const otherDed = salaryComponents.filter(c=>c.type==='deduction').reduce((sum,c)=>(st.components?.[c.id]||0)+sum,0);
+  return Math.max(0, gross - pfAmt - esiAmt - otherDed);
+}
+
+async function markSalaryPaid(staffId, month, netSalary) {
+  const mode = prompt('Payment mode? (cash / bank_transfer / upi)', 'bank_transfer');
+  if (!mode) return;
+  const staff = allStaff.find(s=>s.id===staffId);
+  const { data: existing } = await supabase.from('salary_processed').select('id').eq('staff_id',staffId).eq('month',month).single();
+  const record = { school_id:SCHOOL_ID, staff_id:staffId, staff_name:staff?.name, month, net_salary:netSalary, payment_mode:mode, paid_on:new Date().toISOString().split('T')[0], status:'paid' };
+  if (existing) { await supabase.from('salary_processed').update(record).eq('id',existing.id); }
+  else { await supabase.from('salary_processed').insert([record]); }
+  showToast(`Salary paid to ${staff?.name}!`, 'success');
+  await loadSalarySheet();
+  await loadStats();
+}
+
+async function processAllSalary() {
+  const month = document.getElementById('sal-month').value;
+  if (!month) { showToast('Please select a month first.','error'); return; }
+  if (!confirm(`Process and mark salary as PAID for ALL active staff for ${month}?`)) return;
+
+  const btn = document.getElementById('process-all-btn');
+  btn.textContent = 'Processing...'; btn.disabled = true;
+
+  const { data: structures } = await supabase.from('staff_salary_structure').select('*').eq('school_id',SCHOOL_ID);
+  const structMap = {};
+  if (structures) structures.forEach(s=>{ structMap[s.staff_id]=s; });
+
+  const activeStaff = allStaff.filter(s=>s.status==='active');
+  const records = activeStaff.filter(s=>structMap[s.id]).map(s=>{
+    const st = structMap[s.id];
+    return { school_id:SCHOOL_ID, staff_id:s.id, staff_name:s.name, month, net_salary:calcNet(st), payment_mode:'bank_transfer', paid_on:new Date().toISOString().split('T')[0], status:'paid' };
+  });
+
+  if (records.length > 0) {
+    // Upsert: delete existing then insert
+    await supabase.from('salary_processed').delete().eq('school_id',SCHOOL_ID).eq('month',month).in('staff_id', activeStaff.map(s=>s.id));
+    await supabase.from('salary_processed').insert(records);
+  }
+
+  btn.textContent = '⚡ Process All'; btn.disabled = false;
+  showToast(`Salary processed for ${records.length} staff!`, 'success');
+  await loadSalarySheet();
+  await loadStats();
+}
+
+async function showPayslip(staffId, month) {
+  const staff = allStaff.find(s=>s.id===staffId);
+  if (!staff) return;
+  const { data: st } = await supabase.from('staff_salary_structure').select('*').eq('staff_id',staffId).single();
+  const { data: proc } = await supabase.from('salary_processed').select('*').eq('staff_id',staffId).eq('month',month).single();
+
+  if (!st) { showToast('No salary structure found for this staff.','error'); return; }
+
+  const gross = st.gross_salary || 0;
+  const basicPay = st.basic_pay || 0;
+  const pfAmt = statutorySettings.pf ? Math.round(basicPay * statutorySettings.pfEmpPct / 100) : 0;
+  const esiAmt = statutorySettings.esi && gross<=21000 ? Math.round(gross * statutorySettings.esiEmpPct / 100) : 0;
+  const earnings = salaryComponents.filter(c=>c.type==='earning');
+  const deductions = salaryComponents.filter(c=>c.type==='deduction');
+  let totalDed = pfAmt + esiAmt;
+  deductions.forEach(c=>{ totalDed += st.components?.[c.id]||0; });
+  const net = Math.max(0, gross - totalDed);
+  const [yr, mo] = month.split('-');
+  const monthName = new Date(parseInt(yr), parseInt(mo)-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'});
+
+  document.getElementById('payslip-content').innerHTML = `
+    <div class="slip-box" id="printable-payslip">
+      <div class="slip-header">
+        <div style="font-size:16px;font-weight:700;color:var(--maroon);text-align:center">DigiSmart ERP School</div>
+        <div style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:2px">Salary Slip — ${monthName}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px;font-size:12px">
+          <div><b>Name:</b> ${staff.name}</div>
+          <div><b>Employee ID:</b> ${staff.employee_id}</div>
+          <div><b>Designation:</b> ${staff.role}</div>
+          <div><b>Department:</b> ${staff.department}</div>
+          <div><b>Date of Joining:</b> ${formatDate(staff.date_of_joining)}</div>
+          <div><b>Bank:</b> ${staff.bank_name||'—'}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div class="slip-section">
+          <div class="slip-section-title">Earnings</div>
+          ${earnings.map(c=>`<div class="slip-row"><span>${c.name}</span><span style="color:#2D7A3A">₹${(st.components?.[c.id]||0).toLocaleString('en-IN')}</span></div>`).join('')}
+          <div class="slip-total"><span>Gross Salary</span><span>₹${gross.toLocaleString('en-IN')}</span></div>
+        </div>
+        <div class="slip-section">
+          <div class="slip-section-title">Deductions</div>
+          ${deductions.map(c=>`<div class="slip-row"><span>${c.name}</span><span style="color:#A32D2D">₹${(st.components?.[c.id]||0).toLocaleString('en-IN')}</span></div>`).join('')}
+          ${pfAmt>0?`<div class="slip-row"><span>PF (${statutorySettings.pfEmpPct}%)</span><span style="color:#A32D2D">₹${pfAmt.toLocaleString('en-IN')}</span></div>`:''}
+          ${esiAmt>0?`<div class="slip-row"><span>ESI (${statutorySettings.esiEmpPct}%)</span><span style="color:#A32D2D">₹${esiAmt.toLocaleString('en-IN')}</span></div>`:''}
+          <div class="slip-total"><span>Total Deductions</span><span>₹${totalDed.toLocaleString('en-IN')}</span></div>
+        </div>
+      </div>
+      <div style="background:var(--sandal-light);border-radius:8px;padding:12px 16px;margin-top:14px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:15px;font-weight:700">Net Salary Payable</span>
+        <span style="font-size:22px;font-weight:700;color:var(--maroon)">₹${net.toLocaleString('en-IN')}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;color:var(--text-muted)">
+        <span>Payment Mode: ${proc?.payment_mode?.replace('_',' ')||'—'}</span>
+        <span>Paid on: ${proc?.paid_on ? formatDate(proc.paid_on) : 'Pending'}</span>
+        <span>Status: <b style="color:${proc?.status==='paid'?'#2D7A3A':'#A32D2D'}">${proc?.status||'Unpaid'}</b></span>
+      </div>
+      <div style="margin-top:20px;padding-top:12px;border-top:1px dashed var(--border);text-align:center;font-size:11px;color:var(--text-muted)">This is a computer-generated salary slip.</div>
+    </div>
+  `;
+  document.getElementById('payslip-modal').classList.add('open');
+}
+
+// ── LEAVE MANAGEMENT ──
+function calcLeaveDays() {
+  const from = document.getElementById('leave-from').value;
+  const to = document.getElementById('leave-to').value;
+  if (!from || !to) return;
+  const days = Math.max(0, Math.round((new Date(to)-new Date(from))/(1000*60*60*24))+1);
+  document.getElementById('leave-days').textContent = days + ' day' + (days!==1?'s':'');
+}
+
+async function saveLeave() {
+  const staffId = document.getElementById('leave-staff').value;
+  const type = document.getElementById('leave-type').value;
+  const from = document.getElementById('leave-from').value;
+  const to = document.getElementById('leave-to').value;
+  const status = document.getElementById('leave-status').value;
+  if (!staffId || !type || !from || !to) { showToast('Please fill all required fields.','error'); return; }
+
+  const days = Math.max(0, Math.round((new Date(to)-new Date(from))/(1000*60*60*24))+1);
+  const staff = allStaff.find(s=>s.id===staffId);
+
+  const { error } = await supabase.from('staff_leaves').insert([{
+    school_id: SCHOOL_ID, staff_id: staffId, staff_name: staff?.name,
+    leave_type: type, from_date: from, to_date: to, days,
+    reason: document.getElementById('leave-reason').value.trim(),
+    status,
+  }]);
+
+  if (error) { showToast('Error saving leave: '+error.message,'error'); return; }
+  showToast(`Leave recorded for ${staff?.name} — ${days} day(s)`, 'success');
+  document.getElementById('leave-reason').value = '';
+  await loadLeaveRecords();
+  await loadStats();
+}
+
+async function loadLeaveRecords() {
+  const staffId = document.getElementById('leave-filter-staff').value;
+  const month = document.getElementById('leave-filter-month').value;
+
+  let query = supabase.from('staff_leaves').select('*').eq('school_id',SCHOOL_ID).order('from_date',{ascending:false});
+  if (staffId) query = query.eq('staff_id',staffId);
+  if (month) query = query.gte('from_date',month+'-01').lte('from_date',month+'-31');
+
+  const { data } = await query.limit(50);
+  if (!data || data.length===0) { document.getElementById('leave-records-list').innerHTML='<div class="empty-state" style="padding:20px"><div class="icon">🗓</div><p>No leave records found.</p></div>'; return; }
+
+  document.getElementById('leave-records-list').innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Staff</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>
+        ${data.map(r=>`
+          <tr>
+            <td style="font-weight:500">${r.staff_name}</td>
+            <td><span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${r.leave_type}</span></td>
+            <td>${formatDate(r.from_date)}</td>
+            <td>${formatDate(r.to_date)}</td>
+            <td style="font-weight:600">${r.days}</td>
+            <td><span class="badge ${{approved:'badge-green',pending:'badge-amber',rejected:'badge-red'}[r.status]||'badge-blue'}">${r.status}</span></td>
+            <td>
+              ${r.status==='pending'?`
+                <div style="display:flex;gap:4px">
+                  <button class="btn btn-gold btn-sm" onclick="updateLeaveStatus('${r.id}','approved')">✓</button>
+                  <button class="btn btn-danger btn-sm" onclick="updateLeaveStatus('${r.id}','rejected')">✗</button>
+                </div>
+              `:r.status==='approved'?`<button class="btn btn-danger btn-sm btn-icon" onclick="deleteLeave('${r.id}')">🗑</button>`:'—'}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+async function updateLeaveStatus(id, status) {
+  await supabase.from('staff_leaves').update({ status }).eq('id', id);
+  showToast('Leave ' + status + '!', 'success');
+  await loadLeaveRecords();
+}
+
+async function deleteLeave(id) {
+  if (!confirm('Delete this leave record?')) return;
+  await supabase.from('staff_leaves').delete().eq('id', id);
+  await loadLeaveRecords();
+}
+
+async function loadLeaveBalance() {
+  const year = document.getElementById('balance-year').value;
+  const { data } = await supabase.from('staff_leaves').select('staff_id,staff_name,leave_type,days,status').eq('school_id',SCHOOL_ID).eq('status','approved');
+  if (!data || data.length===0) { document.getElementById('leave-balance-list').innerHTML='<div class="empty-state" style="padding:20px"><p>No approved leaves found.</p></div>'; return; }
+
+  const ALLOTMENT = { casual:12, sick:10, earned:15 };
+  const byStaff = {};
+  data.forEach(r=>{
+    if(!byStaff[r.staff_id]) byStaff[r.staff_id]={name:r.staff_name,casual:0,sick:0,earned:0,unpaid:0};
+    byStaff[r.staff_id][r.leave_type]=(byStaff[r.staff_id][r.leave_type]||0)+r.days;
+  });
+
+  document.getElementById('leave-balance-list').innerHTML=`
+    <table style="font-size:12px">
+      <thead><tr><th>Staff</th><th>CL Used</th><th>SL Used</th><th>EL Used</th><th>LOP</th><th>CL Bal.</th></tr></thead>
+      <tbody>
+        ${Object.values(byStaff).map(s=>`
+          <tr>
+            <td style="font-weight:500">${s.name}</td>
+            <td>${s.casual||0}/${ALLOTMENT.casual}</td>
+            <td>${s.sick||0}/${ALLOTMENT.sick}</td>
+            <td>${s.earned||0}/${ALLOTMENT.earned}</td>
+            <td style="color:#A32D2D">${s.unpaid||0}</td>
+            <td style="font-weight:600;color:#2D7A3A">${Math.max(0,ALLOTMENT.casual-(s.casual||0))}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ── REPORTS ──
+async function loadMonthlySalaryReport() {
+  const month = document.getElementById('rep-month').value;
+  if (!month) return;
+  const { data } = await supabase.from('salary_processed').select('*').eq('school_id',SCHOOL_ID).eq('month',month);
+  if (!data || data.length===0) { document.getElementById('monthly-sal-report').innerHTML='<div class="empty-state"><div class="icon">📊</div><p>No salary processed for this month.</p></div>'; return; }
+
+  const total = data.reduce((s,r)=>s+r.net_salary,0);
+  const paid = data.filter(r=>r.status==='paid').length;
+  document.getElementById('monthly-sal-report').innerHTML=`
+    <div style="font-size:18px;font-weight:700;color:var(--maroon);margin-bottom:10px">₹${total.toLocaleString('en-IN')} <span style="font-size:12px;font-weight:500;color:var(--text-muted)">${paid}/${data.length} paid</span></div>
+    <table style="font-size:12px">
+      <thead><tr><th>Staff</th><th style="text-align:right">Net Salary</th><th>Mode</th><th>Status</th></tr></thead>
+      <tbody>
+        ${data.map(r=>`<tr><td style="font-weight:500">${r.staff_name}</td><td style="text-align:right;font-weight:600">₹${r.net_salary.toLocaleString('en-IN')}</td><td style="font-size:11px;text-transform:capitalize">${(r.payment_mode||'').replace('_',' ')}</td><td><span class="badge ${r.status==='paid'?'badge-green':'badge-amber'}">${r.status}</span></td></tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadDeptReport() {
+  const { data: structures } = await supabase.from('staff_salary_structure').select('staff_id,gross_salary').eq('school_id',SCHOOL_ID);
+  if (!structures) return;
+  const deptCost = {};
+  structures.forEach(st => {
+    const staff = allStaff.find(s=>s.id===st.staff_id);
+    if (!staff) return;
+    const dept = staff.department||'Unknown';
+    deptCost[dept] = (deptCost[dept]||0) + (st.gross_salary||0);
+  });
+  const total = Object.values(deptCost).reduce((a,b)=>a+b,0);
+  document.getElementById('dept-report').innerHTML=`
+    <table style="font-size:13px">
+      <thead><tr><th>Department</th><th style="text-align:right">Monthly Cost</th><th style="text-align:right">%</th></tr></thead>
+      <tbody>
+        ${Object.entries(deptCost).map(([d,a])=>`<tr><td><span class="dept-tag">${d}</span></td><td style="text-align:right;font-weight:600">₹${a.toLocaleString('en-IN')}</td><td style="text-align:right;color:var(--text-muted)">${total>0?Math.round(a/total*100):0}%</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td><td style="text-align:right;color:var(--maroon)">₹${total.toLocaleString('en-IN')}</td><td></td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function searchHistStaff() {
+  const q = document.getElementById('hist-staff-search').value.trim();
+  if (q.length < 2) { document.getElementById('hist-staff-results').innerHTML=''; return; }
+  const filtered = allStaff.filter(s=>(s.name||'').toLowerCase().includes(q.toLowerCase())||(s.employee_id||'').toLowerCase().includes(q.toLowerCase()));
+  document.getElementById('hist-staff-results').innerHTML=filtered.slice(0,5).map(s=>`
+    <div onclick="loadStaffHistory('${s.id}')" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;margin-bottom:4px;font-size:13px" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <b>${s.name}</b> — ${s.employee_id} · ${s.role}
+    </div>
+  `).join('');
+}
+
+async function loadStaffHistory(staffId) {
+  document.getElementById('hist-staff-results').innerHTML='';
+  const { data } = await supabase.from('salary_processed').select('*').eq('staff_id',staffId).order('month',{ascending:false});
+  const staff = allStaff.find(s=>s.id===staffId);
+  if (!data || data.length===0) { document.getElementById('staff-sal-history').innerHTML=`<div style="font-size:13px;color:var(--text-muted);padding:10px">No salary records for ${staff?.name}.</div>`; return; }
+  const total = data.reduce((s,r)=>s+r.net_salary,0);
+  document.getElementById('staff-sal-history').innerHTML=`
+    <div style="font-weight:700;font-size:14px;color:var(--maroon);margin:10px 0 8px">${staff?.name}</div>
+    <table style="font-size:12px">
+      <thead><tr><th>Month</th><th style="text-align:right">Net Salary</th><th>Mode</th><th>Status</th></tr></thead>
+      <tbody>
+        ${data.map(r=>`<tr><td>${r.month}</td><td style="text-align:right;font-weight:600">₹${r.net_salary.toLocaleString('en-IN')}</td><td style="text-transform:capitalize">${(r.payment_mode||'').replace('_',' ')}</td><td><span class="badge ${r.status==='paid'?'badge-green':'badge-amber'}">${r.status}</span></td></tr>`).join('')}
+        <tr style="border-top:2px solid;font-weight:700"><td>Total</td><td style="text-align:right;color:var(--maroon)">₹${total.toLocaleString('en-IN')}</td><td colspan="2"></td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadYearReport() {
+  const { data } = await supabase.from('salary_processed').select('month,net_salary').eq('school_id',SCHOOL_ID).eq('status','paid').order('month');
+  if (!data || data.length===0) { document.getElementById('year-report').innerHTML='<div class="empty-state"><div class="icon">📅</div><p>No salary data.</p></div>'; return; }
+  const byMonth={};
+  data.forEach(r=>{ byMonth[r.month]=(byMonth[r.month]||0)+r.net_salary; });
+  const total=Object.values(byMonth).reduce((a,b)=>a+b,0);
+  document.getElementById('year-report').innerHTML=`
+    <div style="font-size:16px;font-weight:700;color:var(--maroon);margin-bottom:10px">Total: ₹${total.toLocaleString('en-IN')}</div>
+    <table style="font-size:12px">
+      <thead><tr><th>Month</th><th style="text-align:right">Total Paid</th></tr></thead>
+      <tbody>${Object.entries(byMonth).map(([m,a])=>`<tr><td>${m}</td><td style="text-align:right;font-weight:600;color:#2D7A3A">₹${a.toLocaleString('en-IN')}</td></tr>`).join('')}</tbody>
+    </table>
+  `;
+}
+
+// ── STATS ──
+async function loadStats() {
+  const active = allStaff.filter(s=>s.status==='active').length;
+  document.getElementById('st-total').textContent = active;
+
+  const { data: structures } = await supabase.from('staff_salary_structure').select('gross_salary').eq('school_id',SCHOOL_ID);
+  if (structures) {
+    const total = structures.reduce((s,r)=>s+(r.gross_salary||0),0);
+    document.getElementById('st-salary').textContent = '₹'+total.toLocaleString('en-IN');
+  }
+
+  const month = new Date().toISOString().slice(0,7);
+  const { data: processed } = await supabase.from('salary_processed').select('net_salary').eq('school_id',SCHOOL_ID).eq('month',month).eq('status','paid');
+  if (processed) {
+    const paid = processed.reduce((s,r)=>s+(r.net_salary||0),0);
+    document.getElementById('st-paid').textContent = '₹'+paid.toLocaleString('en-IN');
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const { data: leaves } = await supabase.from('staff_leaves').select('id').eq('school_id',SCHOOL_ID).eq('status','approved').lte('from_date',today).gte('to_date',today);
+  document.getElementById('st-leave').textContent = leaves?.length || 0;
+}
+
+// ── TAB SWITCH ──
+function switchTab(tab, el) {
+  ['staff','salary','leave','reports','settings'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='leave') { loadLeaveRecords(); loadLeaveBalance(); }
+}
+
+// Close modals on overlay click
+['staff-modal','sal-struct-modal','payslip-modal','comp-modal','view-staff-modal'].forEach(id=>{
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', function(e){ if(e.target===this) this.classList.remove('open'); });
+});
+</script>
+</body>
+</html>

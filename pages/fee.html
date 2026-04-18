@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fee Management — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tab{padding:9px 18px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.fee-head-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.fee-head-row:last-child{border-bottom:none}
+.amount-input{width:110px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:right}
+.amount-input:focus{outline:none;border-color:var(--gold)}
+.receipt-box{background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px;max-width:480px;margin:0 auto}
+.receipt-header{text-align:center;border-bottom:2px solid var(--maroon);padding-bottom:14px;margin-bottom:14px}
+.receipt-row{display:flex;justify-content:space-between;padding:5px 0;font-size:13px;border-bottom:1px dashed #eee}
+.receipt-row:last-child{border-bottom:none;font-weight:700;font-size:14px;padding-top:8px}
+.student-fee-card{background:var(--white);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px}
+.progress-bar{height:8px;border-radius:4px;background:#F0EBE3;overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;border-radius:4px;background:var(--maroon)}
+.collection-mode-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:var(--sandal);color:var(--maroon)}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.summary-band{display:flex;gap:12px;background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap}
+.sband-item{display:flex;flex-direction:column;gap:2px}
+.sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
+.sband-value{font-size:18px;font-weight:700;color:var(--maroon)}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Fee Management</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Finance → Fee</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Total Collected</div>
+          <div class="stat-value" id="st-collected">—</div>
+          <div class="stat-sub" id="st-collected-sub">This academic year</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Pending</div>
+          <div class="stat-value" id="st-pending" style="color:#A32D2D">—</div>
+          <div class="stat-sub">Outstanding balance</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Today's Collection</div>
+          <div class="stat-value" id="st-today">—</div>
+          <div class="stat-sub">Receipts issued today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Defaulters</div>
+          <div class="stat-value" id="st-defaulters" style="color:#A32D2D">—</div>
+          <div class="stat-sub">Overdue payments</div>
+        </div>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('collect',this)">💰 Collect Fee</div>
+        <div class="tab" onclick="switchTab('structure',this)">⚙️ Fee Structure</div>
+        <div class="tab" onclick="switchTab('receipts',this)">🧾 Receipts</div>
+        <div class="tab" onclick="switchTab('reports',this)">📊 Reports</div>
+        <div class="tab" onclick="switchTab('defaulters',this)">⚠️ Defaulters</div>
+      </div>
+
+      <!-- ══ TAB: COLLECT FEE ══ -->
+      <div id="tab-collect">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start">
+
+          <!-- Search student -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Search Student</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Admission No or Name</label>
+              <input type="text" id="search-student" class="form-control" placeholder="Type to search..." oninput="searchStudents()" style="margin-top:4px">
+            </div>
+            <div id="search-results" style="max-height:320px;overflow-y:auto"></div>
+          </div>
+
+          <!-- Student fee details -->
+          <div id="fee-detail-panel">
+            <div class="empty-state card" style="padding:48px 20px">
+              <div class="icon">🔍</div>
+              <p>Search and select a student on the left to collect fee</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══ TAB: FEE STRUCTURE ══ -->
+      <div id="tab-structure" class="hidden">
+
+        <!-- Collection Mode Setup -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Fee Collection Mode</div>
+              <div class="card-subtitle">Choose how your school collects fees</div>
+            </div>
+            <button class="btn btn-gold btn-sm" onclick="saveCollectionMode()">Save Mode</button>
+          </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:8px;padding:12px 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;flex:1;min-width:160px" id="mode-card-term">
+              <input type="radio" name="fee-mode" value="term" id="mode-term" onchange="updateModeUI()">
+              <div>
+                <div style="font-weight:600;font-size:13px">Term-wise</div>
+                <div style="font-size:11px;color:var(--text-muted)">Term 1, 2, 3 per year</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:12px 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;flex:1;min-width:160px" id="mode-card-month">
+              <input type="radio" name="fee-mode" value="month" id="mode-month" onchange="updateModeUI()">
+              <div>
+                <div style="font-weight:600;font-size:13px">Month-wise</div>
+                <div style="font-size:11px;color:var(--text-muted)">April to March, monthly</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:12px 16px;border:1px solid var(--border);border-radius:8px;cursor:pointer;flex:1;min-width:160px" id="mode-card-custom">
+              <input type="radio" name="fee-mode" value="custom" id="mode-custom" onchange="updateModeUI()">
+              <div>
+                <div style="font-weight:600;font-size:13px">Custom</div>
+                <div style="font-size:11px;color:var(--text-muted)">Define your own schedule</div>
+              </div>
+            </label>
+          </div>
+          <!-- Term names config -->
+          <div id="term-config" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Term Names & Due Dates</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" id="term1-name" class="form-control" value="Term 1" style="width:100px">
+                <span style="font-size:12px;color:var(--text-muted)">Due:</span>
+                <input type="date" id="term1-due" class="form-control" style="width:150px">
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" id="term2-name" class="form-control" value="Term 2" style="width:100px">
+                <span style="font-size:12px;color:var(--text-muted)">Due:</span>
+                <input type="date" id="term2-due" class="form-control" style="width:150px">
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="text" id="term3-name" class="form-control" value="Term 3" style="width:100px">
+                <span style="font-size:12px;color:var(--text-muted)">Due:</span>
+                <input type="date" id="term3-due" class="form-control" style="width:150px">
+              </div>
+            </div>
+          </div>
+          <div id="custom-config" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Custom Schedule Names (comma separated)</div>
+            <input type="text" id="custom-periods" class="form-control" placeholder="e.g. Quarterly 1, Quarterly 2, Quarterly 3, Quarterly 4" style="max-width:500px">
+          </div>
+        </div>
+
+        <!-- Fee Heads -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Fee Heads</div>
+              <div class="card-subtitle">Define what types of fees your school charges</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="openFeeHeadModal()">+ Add Fee Head</button>
+          </div>
+          <div id="fee-heads-list">
+            <div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>
+          </div>
+        </div>
+
+        <!-- Fee Structure per Class -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Fee Amount per Class</div>
+              <div class="card-subtitle">Set how much each class pays for each fee head</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <select class="form-control" id="struct-class" onchange="loadFeeStructure()" style="width:140px;padding:6px 10px">
+                <option value="">Select Class</option>
+                <option>LKG</option><option>UKG</option>
+                <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+              </select>
+              <button class="btn btn-gold btn-sm" onclick="saveFeeStructure()">Save Structure</button>
+            </div>
+          </div>
+          <div id="structure-table">
+            <div class="empty-state"><div class="icon">🏫</div><p>Select a class to set fee amounts</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: RECEIPTS ══ -->
+      <div id="tab-receipts" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label">Search by Student / Receipt No</label>
+            <input type="text" id="rec-search" class="form-control" placeholder="Name or receipt number..." oninput="loadReceipts()" style="width:240px;margin-top:4px">
+          </div>
+          <div>
+            <label class="form-label">From Date</label>
+            <input type="date" id="rec-from" class="form-control" style="width:150px;margin-top:4px" onchange="loadReceipts()">
+          </div>
+          <div>
+            <label class="form-label">To Date</label>
+            <input type="date" id="rec-to" class="form-control" style="width:150px;margin-top:4px" onchange="loadReceipts()">
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-secondary" onclick="loadReceipts()">Refresh</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="receipts-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading receipts...</p></div></div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: REPORTS ══ -->
+      <div id="tab-reports" class="hidden">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+
+          <!-- Day-wise collection -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Day-wise Collection</div>
+              <input type="date" id="day-report-date" class="form-control" style="width:150px;padding:6px 10px" onchange="loadDayReport()">
+            </div>
+            <div id="day-report"><div class="empty-state"><div class="icon">📅</div><p>Select a date</p></div></div>
+          </div>
+
+          <!-- Class-wise summary -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Class-wise Fee Summary</div>
+              <button class="btn btn-primary btn-sm" onclick="loadClassReport()">Generate</button>
+            </div>
+            <div id="class-report"><div class="empty-state"><div class="icon">🏫</div><p>Click Generate to load</p></div></div>
+          </div>
+
+          <!-- Payment mode breakdown -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Payment Mode Breakdown</div>
+              <div style="display:flex;gap:6px">
+                <input type="month" id="mode-month-filter" class="form-control" style="width:150px;padding:6px 10px">
+                <button class="btn btn-primary btn-sm" onclick="loadModeReport()">Go</button>
+              </div>
+            </div>
+            <div id="mode-report"><div class="empty-state"><div class="icon">💳</div><p>Select month and click Go</p></div></div>
+          </div>
+
+          <!-- Student ledger -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Student Fee Ledger</div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <input type="text" id="ledger-search" class="form-control" placeholder="Search student by name or admission no..." oninput="searchLedgerStudent()">
+            </div>
+            <div id="ledger-results"></div>
+            <div id="ledger-content"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ══ TAB: DEFAULTERS ══ -->
+      <div id="tab-defaulters" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label">Class</label>
+            <select class="form-control" id="def-class" style="width:150px;margin-top:4px">
+              <option value="">All Classes</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Fee Period</label>
+            <select class="form-control" id="def-period" style="width:180px;margin-top:4px">
+              <option value="">All Periods</option>
+            </select>
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-primary" onclick="loadDefaulters()">Load Defaulters</button>
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-secondary" onclick="printDefaulters()">🖨 Print List</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="defaulters-list"><div class="empty-state"><div class="icon">⚠️</div><p>Click Load Defaulters to view pending fee list</p></div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ FEE HEAD MODAL ══ -->
+<div class="modal-overlay" id="feehead-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div class="modal-title">Add Fee Head</div>
+      <button class="modal-close" onclick="closeFeeHeadModal()">✕</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Fee Head Name <span class="req">*</span></label>
+      <input type="text" id="fh-name" class="form-control" placeholder="e.g. Tuition Fee, Transport Fee, Exam Fee">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Fee Head Type</label>
+      <select id="fh-type" class="form-control">
+        <option value="per_period">Per Period (charged each term/month)</option>
+        <option value="annual">Annual (charged once per year)</option>
+        <option value="one_time">One-time (charged once on admission)</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Description (optional)</label>
+      <input type="text" id="fh-desc" class="form-control" placeholder="Short description">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeFeeHeadModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveFeeHead()">Add Fee Head</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ COLLECT FEE MODAL ══ -->
+<div class="modal-overlay" id="collect-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title">Collect Fee</div>
+      <button class="modal-close" onclick="closeCollectModal()">✕</button>
+    </div>
+    <div id="collect-student-info" style="background:var(--sandal-light);border-radius:8px;padding:12px;margin-bottom:14px;display:flex;align-items:center;gap:10px"></div>
+    <div id="collect-fee-items" style="margin-bottom:14px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="form-group">
+        <label class="form-label">Payment Mode <span class="req">*</span></label>
+        <select id="pay-mode" class="form-control">
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cheque">Cheque</option>
+          <option value="dd">Demand Draft</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Date</label>
+        <input type="date" id="pay-date" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reference No (UPI/Cheque)</label>
+        <input type="text" id="pay-ref" class="form-control" placeholder="Optional">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Remarks</label>
+        <input type="text" id="pay-remark" class="form-control" placeholder="Optional note">
+      </div>
+    </div>
+    <div style="background:var(--sandal-light);border-radius:8px;padding:12px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span>Selected Amount:</span>
+        <span id="collect-selected-amt" style="font-weight:700;color:var(--maroon);font-size:16px">₹0</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted)">
+        <span>Previous Balance:</span>
+        <span id="collect-prev-bal">₹0</span>
+      </div>
+    </div>
+    <div id="collect-alert" class="hidden"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCollectModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="processPayment()" id="process-btn">✓ Collect & Print Receipt</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RECEIPT MODAL ══ -->
+<div class="modal-overlay" id="receipt-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header no-print">
+      <div class="modal-title">Payment Receipt</div>
+      <button class="modal-close" onclick="closeReceiptModal()">✕</button>
+    </div>
+    <div id="receipt-content"></div>
+    <div class="modal-footer no-print">
+      <button class="btn btn-secondary" onclick="closeReceiptModal()">Close</button>
+      <button class="btn btn-gold" onclick="window.print()">🖨 Print Receipt</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let feeHeads = [];
+let feeStructure = {};
+let collectionMode = 'term';
+let termConfig = [];
+let currentCollectStudent = null;
+let currentCollectItems = [];
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('fee');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('rec-from').value = today.slice(0,7) + '-01';
+  document.getElementById('rec-to').value = today;
+  document.getElementById('day-report-date').value = today;
+  document.getElementById('mode-month-filter').value = today.slice(0,7);
+  document.getElementById('pay-date').value = today;
+  await loadSettings();
+  await loadFeeHeads();
+  await loadStats();
+  await loadReceipts();
+});
+
+// ── LOAD SETTINGS ──
+async function loadSettings() {
+  const { data } = await supabase.from('fee_settings').select('*').eq('school_id', SCHOOL_ID).single();
+  if (data) {
+    collectionMode = data.collection_mode || 'term';
+    termConfig = data.term_config || getDefaultTermConfig();
+    document.getElementById('mode-' + collectionMode).checked = true;
+    if (data.term_config) {
+      const tc = data.term_config;
+      if (tc[0]) { document.getElementById('term1-name').value = tc[0].name; document.getElementById('term1-due').value = tc[0].due || ''; }
+      if (tc[1]) { document.getElementById('term2-name').value = tc[1].name; document.getElementById('term2-due').value = tc[1].due || ''; }
+      if (tc[2]) { document.getElementById('term3-name').value = tc[2].name; document.getElementById('term3-due').value = tc[2].due || ''; }
+    }
+    if (data.custom_periods) document.getElementById('custom-periods').value = data.custom_periods;
+  } else {
+    document.getElementById('mode-term').checked = true;
+  }
+  updateModeUI();
+  populateDefPeriod();
+}
+
+function getDefaultTermConfig() {
+  return [
+    { name: 'Term 1', due: '' },
+    { name: 'Term 2', due: '' },
+    { name: 'Term 3', due: '' },
+  ];
+}
+
+function updateModeUI() {
+  const mode = document.querySelector('input[name="fee-mode"]:checked')?.value || 'term';
+  ['term','month','custom'].forEach(m => {
+    document.getElementById('mode-card-' + m).style.borderColor = mode === m ? 'var(--gold)' : 'var(--border)';
+  });
+  document.getElementById('term-config').classList.toggle('hidden', mode !== 'term');
+  document.getElementById('custom-config').classList.toggle('hidden', mode !== 'custom');
+}
+
+async function saveCollectionMode() {
+  const mode = document.querySelector('input[name="fee-mode"]:checked')?.value;
+  if (!mode) return;
+  const tc = [
+    { name: document.getElementById('term1-name').value, due: document.getElementById('term1-due').value },
+    { name: document.getElementById('term2-name').value, due: document.getElementById('term2-due').value },
+    { name: document.getElementById('term3-name').value, due: document.getElementById('term3-due').value },
+  ];
+  const customPeriods = document.getElementById('custom-periods').value;
+
+  const { data: existing } = await supabase.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  const payload = { school_id: SCHOOL_ID, collection_mode: mode, term_config: tc, custom_periods: customPeriods };
+
+  if (existing) {
+    await supabase.from('fee_settings').update(payload).eq('school_id', SCHOOL_ID);
+  } else {
+    await supabase.from('fee_settings').insert([payload]);
+  }
+  collectionMode = mode;
+  termConfig = tc;
+  showToast('Fee collection mode saved!', 'success');
+  populateDefPeriod();
+}
+
+function populateDefPeriod() {
+  const sel = document.getElementById('def-period');
+  sel.innerHTML = '<option value="">All Periods</option>';
+  getPeriods().forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    sel.appendChild(opt);
+  });
+}
+
+function getPeriods() {
+  if (collectionMode === 'term') {
+    return termConfig.map(t => t.name).filter(Boolean);
+  } else if (collectionMode === 'month') {
+    return ['April','May','June','July','August','September','October','November','December','January','February','March'];
+  } else {
+    const custom = document.getElementById('custom-periods').value;
+    return custom ? custom.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  }
+}
+
+// ── FEE HEADS ──
+async function loadFeeHeads() {
+  const { data } = await supabase.from('fee_heads').select('*').eq('school_id', SCHOOL_ID).order('created_at');
+  feeHeads = data || [];
+  renderFeeHeads();
+}
+
+function renderFeeHeads() {
+  const el = document.getElementById('fee-heads-list');
+  if (feeHeads.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No fee heads yet. Add your first fee head above.</p></div>';
+    return;
+  }
+  el.innerHTML = feeHeads.map(h => `
+    <div class="fee-head-row">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${h.name}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${h.type === 'per_period' ? 'Charged per period' : h.type === 'annual' ? 'Annual (once per year)' : 'One-time'} ${h.description ? '· ' + h.description : ''}</div>
+      </div>
+      <span class="badge badge-maroon" style="font-size:10px">${h.type}</span>
+      <button class="btn btn-danger btn-sm btn-icon" onclick="deleteFeeHead('${h.id}')">🗑</button>
+    </div>
+  `).join('');
+}
+
+function openFeeHeadModal() { document.getElementById('feehead-modal').classList.add('open'); }
+function closeFeeHeadModal() { document.getElementById('feehead-modal').classList.remove('open'); }
+
+async function saveFeeHead() {
+  const name = document.getElementById('fh-name').value.trim();
+  const type = document.getElementById('fh-type').value;
+  const desc = document.getElementById('fh-desc').value.trim();
+  if (!name) { showToast('Please enter fee head name.','error'); return; }
+
+  const { error } = await supabase.from('fee_heads').insert([{ school_id: SCHOOL_ID, name, type, description: desc }]);
+  if (error) { showToast('Error: ' + error.message,'error'); return; }
+  closeFeeHeadModal();
+  document.getElementById('fh-name').value = '';
+  document.getElementById('fh-desc').value = '';
+  showToast(name + ' added!','success');
+  await loadFeeHeads();
+}
+
+async function deleteFeeHead(id) {
+  if (!confirm('Delete this fee head? This will also remove it from all fee structures.')) return;
+  await supabase.from('fee_heads').delete().eq('id', id);
+  showToast('Fee head deleted.','success');
+  await loadFeeHeads();
+}
+
+// ── FEE STRUCTURE ──
+async function loadFeeStructure() {
+  const cls = document.getElementById('struct-class').value;
+  if (!cls) return;
+
+  const { data } = await supabase.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', cls);
+  feeStructure = {};
+  if (data) data.forEach(r => { feeStructure[r.fee_head_id] = r; });
+
+  if (feeHeads.length === 0) {
+    document.getElementById('structure-table').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Please add fee heads first in the Fee Heads section above.</p></div>';
+    return;
+  }
+
+  const periods = getPeriods();
+  document.getElementById('structure-table').innerHTML = `
+    <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th style="min-width:160px">Fee Head</th>
+          <th style="width:80px">Type</th>
+          ${periods.map(p=>`<th style="text-align:right;min-width:110px">${p} (₹)</th>`).join('')}
+          <th style="text-align:right;min-width:110px">Total (₹)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${feeHeads.map(h => {
+          const existing = feeStructure[h.id];
+          const amounts = existing ? (existing.period_amounts || {}) : {};
+          const periodsToShow = h.type === 'per_period' ? periods : ['Amount'];
+          return `
+            <tr>
+              <td style="font-weight:500">${h.name}</td>
+              <td><span class="badge badge-blue" style="font-size:10px">${h.type === 'per_period' ? 'Per period' : h.type === 'annual' ? 'Annual' : 'One-time'}</span></td>
+              ${h.type === 'per_period'
+                ? periods.map(p=>`<td style="text-align:right"><input type="number" class="amount-input" id="amt-${h.id}-${p.replace(/\s/g,'_')}" value="${amounts[p]||''}" placeholder="0" onchange="calcRowTotal('${h.id}')"></td>`).join('')
+                : `<td colspan="${periods.length}" style="text-align:right"><input type="number" class="amount-input" id="amt-${h.id}-annual" value="${existing?.annual_amount||''}" placeholder="0"></td>`
+              }
+              <td style="text-align:right;font-weight:600;color:var(--maroon)" id="total-${h.id}">
+                ${existing ? '₹' + (existing.total_amount||0).toLocaleString('en-IN') : '—'}
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="background:var(--sandal-light)">
+          <td colspan="2" style="font-weight:700;padding:10px 12px">Grand Total</td>
+          ${periods.map(()=>'<td></td>').join('')}
+          <td style="text-align:right;font-weight:700;font-size:15px;padding:10px 12px;color:var(--maroon)" id="grand-total">
+            ₹${Object.values(feeStructure).reduce((s,r)=>s+(r.total_amount||0),0).toLocaleString('en-IN')}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+  `;
+}
+
+function calcRowTotal(headId) {
+  const head = feeHeads.find(h=>h.id===headId);
+  if (!head || head.type !== 'per_period') return;
+  const periods = getPeriods();
+  let total = 0;
+  periods.forEach(p => {
+    const val = parseFloat(document.getElementById(`amt-${headId}-${p.replace(/\s/g,'_')}`)?.value) || 0;
+    total += val;
+  });
+  const el = document.getElementById('total-' + headId);
+  if (el) el.textContent = '₹' + total.toLocaleString('en-IN');
+
+  // Update grand total
+  let grand = 0;
+  feeHeads.forEach(h => {
+    const tel = document.getElementById('total-' + h.id);
+    if (tel) grand += parseInt(tel.textContent.replace(/[₹,]/g,'')) || 0;
+  });
+  const ge = document.getElementById('grand-total');
+  if (ge) ge.textContent = '₹' + grand.toLocaleString('en-IN');
+}
+
+async function saveFeeStructure() {
+  const cls = document.getElementById('struct-class').value;
+  if (!cls) { showToast('Please select a class.','error'); return; }
+
+  const periods = getPeriods();
+  const records = [];
+
+  for (const h of feeHeads) {
+    let periodAmounts = {};
+    let totalAmount = 0;
+    let annualAmount = 0;
+
+    if (h.type === 'per_period') {
+      periods.forEach(p => {
+        const val = parseFloat(document.getElementById(`amt-${h.id}-${p.replace(/\s/g,'_')}`)?.value) || 0;
+        periodAmounts[p] = val;
+        totalAmount += val;
+      });
+    } else {
+      annualAmount = parseFloat(document.getElementById(`amt-${h.id}-annual`)?.value) || 0;
+      totalAmount = annualAmount;
+    }
+
+    // Upsert
+    const existing = feeStructure[h.id];
+    if (existing) {
+      await supabase.from('fee_structure').update({ period_amounts: periodAmounts, annual_amount: annualAmount, total_amount: totalAmount }).eq('id', existing.id);
+    } else {
+      records.push({ school_id: SCHOOL_ID, class: cls, fee_head_id: h.id, fee_head_name: h.name, period_amounts: periodAmounts, annual_amount: annualAmount, total_amount: totalAmount });
+    }
+  }
+
+  if (records.length > 0) await supabase.from('fee_structure').insert(records);
+  showToast('Fee structure saved for ' + cls + '!','success');
+  await loadFeeStructure();
+}
+
+// ── SEARCH STUDENT FOR COLLECTION ──
+async function searchStudents() {
+  const q = document.getElementById('search-student').value.trim();
+  if (q.length < 2) { document.getElementById('search-results').innerHTML = ''; return; }
+
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,class,section,father_name,mobile').eq('school_id',SCHOOL_ID).eq('status','active')
+    .or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(8);
+
+  if (!data || data.length === 0) {
+    document.getElementById('search-results').innerHTML = '<div style="padding:12px;font-size:13px;color:var(--text-muted)">No students found</div>';
+    return;
+  }
+
+  document.getElementById('search-results').innerHTML = data.map(s => `
+    <div onclick="selectStudentForFee('${s.id}')" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <div style="font-weight:600;font-size:13px">${s.full_name}</div>
+      <div style="font-size:11px;color:var(--text-muted)">${s.admission_no} · ${s.class}${s.section?' '+s.section:''} · ${s.father_name||''}</div>
+    </div>
+  `).join('');
+}
+
+async function selectStudentForFee(studentId) {
+  const { data: student } = await supabase.from('students').select('*').eq('id', studentId).single();
+  if (!student) return;
+
+  // Load fee structure for this class
+  const { data: structure } = await supabase.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
+
+  // Load all payments for this student
+  const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id', studentId);
+
+  const periods = getPeriods();
+
+  // Calculate paid amounts per fee head per period
+  const paidMap = {};
+  if (payments) payments.forEach(p => {
+    const key = p.fee_head_id + '_' + p.period;
+    paidMap[key] = (paidMap[key] || 0) + p.amount_paid;
+  });
+
+  if (!structure || structure.length === 0) {
+    document.getElementById('fee-detail-panel').innerHTML = `
+      <div class="card"><div class="alert alert-info">No fee structure set up for ${student.class}. Please go to the <b>Fee Structure</b> tab and set amounts first.</div></div>
+    `;
+    return;
+  }
+
+  let totalFee = 0, totalPaid = 0;
+  structure.forEach(s => { totalFee += s.total_amount || 0; });
+  if (payments) payments.forEach(p => { totalPaid += p.amount_paid || 0; });
+  const balance = totalFee - totalPaid;
+  const pct = totalFee > 0 ? Math.round((totalPaid/totalFee)*100) : 0;
+
+  let html = `
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div class="avatar" style="width:44px;height:44px;font-size:16px">${getInitials(student.full_name)}</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:15px">${student.full_name}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${student.admission_no} · ${student.class}${student.section?' '+student.section:''} · ${student.father_name||''} · ${student.mobile||''}</div>
+        </div>
+        <button class="btn btn-gold" onclick="openCollectModal('${student.id}')">+ Collect Fee</button>
+      </div>
+      <div class="summary-band">
+        <div class="sband-item"><div class="sband-label">Total Fee</div><div class="sband-value">₹${totalFee.toLocaleString('en-IN')}</div></div>
+        <div class="sband-item"><div class="sband-label">Total Paid</div><div class="sband-value" style="color:#2D7A3A">₹${totalPaid.toLocaleString('en-IN')}</div></div>
+        <div class="sband-item"><div class="sband-label">Balance Due</div><div class="sband-value" style="color:${balance>0?'#A32D2D':'#2D7A3A'}">₹${balance.toLocaleString('en-IN')}</div></div>
+        <div class="sband-item" style="flex:1">
+          <div class="sband-label">Collection</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${pct}%"></div></div>
+            <span style="font-size:13px;font-weight:700;color:var(--maroon)">${pct}%</span>
+          </div>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Fee Head</th>
+            ${periods.map(p=>`<th style="text-align:right">${p}</th>`).join('')}
+            <th style="text-align:right">Total</th>
+            <th style="text-align:right">Paid</th>
+            <th style="text-align:right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${structure.map(s => {
+            let rowPaid = 0;
+            const periodCells = s.fee_head_name === s.fee_head_name && periods.map(p => {
+              const amt = s.period_amounts?.[p] || (s.annual_amount ? s.annual_amount : 0);
+              const paid = paidMap[s.fee_head_id + '_' + p] || 0;
+              rowPaid += paid;
+              const isPaid = paid >= amt && amt > 0;
+              return `<td style="text-align:right;font-size:12px">
+                ${amt > 0 ? `<div>₹${amt.toLocaleString('en-IN')}</div><div style="font-size:10px;color:${isPaid?'#2D7A3A':'#A32D2D'}">${isPaid?'✓ Paid':'Unpaid'}</div>` : '<span style="color:var(--text-muted)">—</span>'}
+              </td>`;
+            });
+            const balance = (s.total_amount||0) - rowPaid;
+            return `
+              <tr>
+                <td style="font-weight:500">${s.fee_head_name}</td>
+                ${periodCells.join('')}
+                <td style="text-align:right;font-weight:600">₹${(s.total_amount||0).toLocaleString('en-IN')}</td>
+                <td style="text-align:right;color:#2D7A3A;font-weight:600">₹${rowPaid.toLocaleString('en-IN')}</td>
+                <td style="text-align:right;color:${balance>0?'#A32D2D':'#2D7A3A'};font-weight:600">₹${balance.toLocaleString('en-IN')}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+      </div>
+      ${payments && payments.length > 0 ? `
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Payment History</div>
+          <table style="font-size:12px">
+            <thead><tr><th>Receipt No</th><th>Date</th><th>Fee Head</th><th>Period</th><th>Mode</th><th style="text-align:right">Amount</th></tr></thead>
+            <tbody>
+              ${payments.map(p=>`
+                <tr>
+                  <td style="color:var(--maroon);font-weight:600">${p.receipt_no}</td>
+                  <td>${formatDate(p.payment_date)}</td>
+                  <td>${p.fee_head_name}</td>
+                  <td>${p.period}</td>
+                  <td><span class="badge badge-blue" style="font-size:10px">${p.payment_mode}</span></td>
+                  <td style="text-align:right;font-weight:600;color:#2D7A3A">₹${(p.amount_paid||0).toLocaleString('en-IN')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    </div>
+  `;
+
+  document.getElementById('fee-detail-panel').innerHTML = html;
+  currentCollectStudent = student;
+}
+
+// ── COLLECT FEE MODAL ──
+async function openCollectModal(studentId) {
+  const student = currentCollectStudent;
+  if (!student) return;
+
+  const { data: structure } = await supabase.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
+  const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id', studentId);
+
+  const paidMap = {};
+  if (payments) payments.forEach(p => {
+    const key = p.fee_head_id + '_' + p.period;
+    paidMap[key] = (paidMap[key] || 0) + p.amount_paid;
+  });
+
+  const periods = getPeriods();
+  currentCollectItems = [];
+
+  // Build checkboxes for each unpaid item
+  let itemsHtml = '<div style="max-height:280px;overflow-y:auto">';
+  itemsHtml += '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Select fee items to collect:</div>';
+
+  structure?.forEach(s => {
+    const periodsToShow = s.period_amounts ? periods : ['Amount'];
+    periodsToShow.forEach(p => {
+      const amt = s.period_amounts?.[p] || s.annual_amount || 0;
+      if (amt <= 0) return;
+      const paid = paidMap[s.fee_head_id + '_' + p] || 0;
+      const balance = amt - paid;
+      if (balance <= 0) return; // Already paid
+
+      const itemId = `item-${s.fee_head_id}-${p.replace(/\s/g,'_')}`;
+      currentCollectItems.push({ id: itemId, fee_head_id: s.fee_head_id, fee_head_name: s.fee_head_name, period: p, amount: balance, original: amt, paid });
+
+      itemsHtml += `
+        <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">
+          <input type="checkbox" id="${itemId}" value="${balance}" onchange="updateCollectTotal()" style="width:16px;height:16px;cursor:pointer">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px">${s.fee_head_name}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${p} · Fee: ₹${amt.toLocaleString('en-IN')} · Paid: ₹${paid.toLocaleString('en-IN')}</div>
+          </div>
+          <div style="font-weight:700;color:var(--maroon)">₹${balance.toLocaleString('en-IN')}</div>
+        </label>
+      `;
+    });
+  });
+
+  itemsHtml += '</div>';
+
+  document.getElementById('collect-student-info').innerHTML = `
+    <div class="avatar">${getInitials(student.full_name)}</div>
+    <div>
+      <div style="font-weight:700">${student.full_name}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${student.admission_no} · ${student.class}</div>
+    </div>
+  `;
+  document.getElementById('collect-fee-items').innerHTML = itemsHtml;
+  updateCollectTotal();
+  document.getElementById('collect-modal').classList.add('open');
+}
+
+function updateCollectTotal() {
+  let total = 0;
+  currentCollectItems.forEach(item => {
+    const cb = document.getElementById(item.id);
+    if (cb && cb.checked) total += item.amount;
+  });
+  document.getElementById('collect-selected-amt').textContent = '₹' + total.toLocaleString('en-IN');
+}
+
+function closeCollectModal() { document.getElementById('collect-modal').classList.remove('open'); }
+function closeReceiptModal() { document.getElementById('receipt-modal').classList.remove('open'); }
+
+async function processPayment() {
+  const selectedItems = currentCollectItems.filter(item => {
+    const cb = document.getElementById(item.id);
+    return cb && cb.checked;
+  });
+
+  if (selectedItems.length === 0) {
+    document.getElementById('collect-alert').className = 'alert alert-danger';
+    document.getElementById('collect-alert').textContent = '⚠️ Please select at least one fee item to collect.';
+    return;
+  }
+
+  document.getElementById('collect-alert').className = 'hidden';
+  const btn = document.getElementById('process-btn');
+  btn.textContent = 'Processing...'; btn.disabled = true;
+
+  const payMode = document.getElementById('pay-mode').value;
+  const payDate = document.getElementById('pay-date').value;
+  const payRef = document.getElementById('pay-ref').value.trim();
+  const payRemark = document.getElementById('pay-remark').value.trim();
+  const totalAmt = selectedItems.reduce((s,i)=>s+i.amount, 0);
+
+  // Generate receipt number
+  const { data: lastRec } = await supabase.from('fee_payments').select('receipt_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
+  let recNum = 1;
+  if (lastRec && lastRec.length > 0) {
+    const last = lastRec[0].receipt_no?.split('-').pop();
+    if (last) recNum = parseInt(last) + 1;
+  }
+  const receiptNo = `RCP-${new Date().getFullYear()}-${String(recNum).padStart(4,'0')}`;
+
+  // Insert all payment records
+  const records = selectedItems.map(item => ({
+    school_id: SCHOOL_ID,
+    student_id: currentCollectStudent.id,
+    student_name: currentCollectStudent.full_name,
+    student_class: currentCollectStudent.class,
+    admission_no: currentCollectStudent.admission_no,
+    fee_head_id: item.fee_head_id,
+    fee_head_name: item.fee_head_name,
+    period: item.period,
+    amount_paid: item.amount,
+    payment_mode: payMode,
+    payment_date: payDate,
+    reference_no: payRef,
+    remarks: payRemark,
+    receipt_no: receiptNo,
+  }));
+
+  const { error } = await supabase.from('fee_payments').insert(records);
+  btn.textContent = '✓ Collect & Print Receipt'; btn.disabled = false;
+
+  if (error) {
+    document.getElementById('collect-alert').className = 'alert alert-danger';
+    document.getElementById('collect-alert').textContent = '⚠️ Error: ' + error.message;
+    return;
+  }
+
+  closeCollectModal();
+  showToast(`Payment of ₹${totalAmt.toLocaleString('en-IN')} recorded! Receipt: ${receiptNo}`, 'success');
+  showReceipt(receiptNo, currentCollectStudent, selectedItems, totalAmt, payMode, payDate, payRef);
+  await selectStudentForFee(currentCollectStudent.id);
+  await loadStats();
+  await loadReceipts();
+}
+
+function showReceipt(receiptNo, student, items, total, mode, date, ref) {
+  const school = 'DigiSmart ERP School';
+  document.getElementById('receipt-content').innerHTML = `
+    <div class="receipt-box" id="printable-receipt">
+      <div class="receipt-header">
+        <div style="font-size:16px;font-weight:700;color:var(--maroon)">${school}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Fee Receipt</div>
+        <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px">
+          <span><b>Receipt No:</b> <span style="color:var(--maroon);font-weight:700">${receiptNo}</span></span>
+          <span><b>Date:</b> ${formatDate(date)}</span>
+        </div>
+      </div>
+      <div style="margin-bottom:12px;font-size:13px">
+        <div class="receipt-row"><span>Student Name</span><span style="font-weight:600">${student.full_name}</span></div>
+        <div class="receipt-row"><span>Admission No</span><span>${student.admission_no}</span></div>
+        <div class="receipt-row"><span>Class</span><span>${student.class}${student.section?' '+student.section:''}</span></div>
+        <div class="receipt-row"><span>Father's Name</span><span>${student.father_name||'—'}</span></div>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:6px">FEE DETAILS</div>
+        ${items.map(item=>`
+          <div class="receipt-row">
+            <span>${item.fee_head_name} (${item.period})</span>
+            <span style="font-weight:600">₹${item.amount.toLocaleString('en-IN')}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div style="border-top:2px solid var(--maroon);padding-top:10px">
+        <div class="receipt-row"><span>Payment Mode</span><span style="text-transform:capitalize">${mode.replace('_',' ')}</span></div>
+        ${ref ? `<div class="receipt-row"><span>Reference No</span><span>${ref}</span></div>` : ''}
+        <div class="receipt-row" style="font-size:16px;font-weight:700;color:var(--maroon);border-bottom:none">
+          <span>Total Amount Paid</span>
+          <span>₹${total.toLocaleString('en-IN')}</span>
+        </div>
+      </div>
+      <div style="margin-top:14px;text-align:center;font-size:11px;color:var(--text-muted);border-top:1px dashed var(--border);padding-top:10px">
+        This is a computer-generated receipt. Thank you for your payment.
+      </div>
+    </div>
+  `;
+  document.getElementById('receipt-modal').classList.add('open');
+}
+
+// ── RECEIPTS TAB ──
+async function loadReceipts() {
+  const search = document.getElementById('rec-search')?.value.trim() || '';
+  const from = document.getElementById('rec-from')?.value || '';
+  const to = document.getElementById('rec-to')?.value || '';
+
+  let query = supabase.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(100);
+  if (from) query = query.gte('payment_date', from);
+  if (to) query = query.lte('payment_date', to);
+  if (search) query = query.or(`student_name.ilike.%${search}%,receipt_no.ilike.%${search}%,admission_no.ilike.%${search}%`);
+
+  const { data } = await query;
+  if (!data || data.length === 0) {
+    document.getElementById('receipts-list').innerHTML = '<div class="empty-state"><div class="icon">🧾</div><p>No receipts found.</p></div>';
+    return;
+  }
+
+  // Group by receipt number
+  const byReceipt = {};
+  data.forEach(r => {
+    if (!byReceipt[r.receipt_no]) byReceipt[r.receipt_no] = { ...r, items: [], total: 0 };
+    byReceipt[r.receipt_no].items.push(r);
+    byReceipt[r.receipt_no].total += r.amount_paid;
+  });
+
+  document.getElementById('receipts-list').innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Receipt No</th><th>Student</th><th>Class</th><th>Items</th><th>Mode</th><th>Date</th><th style="text-align:right">Amount</th><th>Action</th></tr></thead>
+      <tbody>
+        ${Object.values(byReceipt).map(r=>`
+          <tr>
+            <td style="font-weight:700;color:var(--maroon)">${r.receipt_no}</td>
+            <td style="font-weight:500">${r.student_name}</td>
+            <td>${r.student_class}</td>
+            <td style="font-size:11px;color:var(--text-muted)">${r.items.map(i=>i.fee_head_name+' ('+i.period+')').join(', ')}</td>
+            <td><span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${r.payment_mode.replace('_',' ')}</span></td>
+            <td>${formatDate(r.payment_date)}</td>
+            <td style="text-align:right;font-weight:700;color:#2D7A3A">₹${r.total.toLocaleString('en-IN')}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="reprintReceipt('${r.receipt_no}')">🖨</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+async function reprintReceipt(receiptNo) {
+  const { data } = await supabase.from('fee_payments').select('*').eq('receipt_no', receiptNo).eq('school_id',SCHOOL_ID);
+  if (!data || data.length===0) return;
+  const total = data.reduce((s,r)=>s+r.amount_paid,0);
+  const student = { full_name: data[0].student_name, admission_no: data[0].admission_no, class: data[0].student_class, section: '', father_name: '' };
+  const items = data.map(r=>({ fee_head_name: r.fee_head_name, period: r.period, amount: r.amount_paid }));
+  showReceipt(receiptNo, student, items, total, data[0].payment_mode, data[0].payment_date, data[0].reference_no);
+}
+
+// ── REPORTS ──
+async function loadDayReport() {
+  const date = document.getElementById('day-report-date').value;
+  if (!date) return;
+  const { data } = await supabase.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
+  if (!data || data.length===0) {
+    document.getElementById('day-report').innerHTML = '<div class="empty-state"><div class="icon">📅</div><p>No collections on this date.</p></div>';
+    return;
+  }
+  const total = data.reduce((s,r)=>s+r.amount_paid,0);
+  const byMode = {};
+  data.forEach(r => { byMode[r.payment_mode] = (byMode[r.payment_mode]||0) + r.amount_paid; });
+
+  document.getElementById('day-report').innerHTML = `
+    <div style="font-size:20px;font-weight:700;color:var(--maroon);margin-bottom:12px">₹${total.toLocaleString('en-IN')} <span style="font-size:13px;font-weight:500;color:var(--text-muted)">total collected</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      ${Object.entries(byMode).map(([m,a])=>`<span class="badge badge-maroon">${m.replace('_',' ')}: ₹${a.toLocaleString('en-IN')}</span>`).join('')}
+    </div>
+    <table style="font-size:12px">
+      <thead><tr><th>Receipt</th><th>Student</th><th>Class</th><th>Amount</th></tr></thead>
+      <tbody>
+        ${data.map(r=>`<tr><td style="color:var(--maroon);font-weight:600">${r.receipt_no}</td><td>${r.student_name}</td><td>${r.student_class}</td><td style="font-weight:600;color:#2D7A3A">₹${r.amount_paid.toLocaleString('en-IN')}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadClassReport() {
+  const { data } = await supabase.from('fee_payments').select('student_class,amount_paid').eq('school_id',SCHOOL_ID);
+  if (!data || data.length===0) { document.getElementById('class-report').innerHTML = '<div class="empty-state"><div class="icon">🏫</div><p>No data.</p></div>'; return; }
+
+  const byClass = {};
+  data.forEach(r => { byClass[r.student_class] = (byClass[r.student_class]||0) + r.amount_paid; });
+
+  document.getElementById('class-report').innerHTML = `
+    <table style="font-size:13px">
+      <thead><tr><th>Class</th><th style="text-align:right">Collected</th></tr></thead>
+      <tbody>
+        ${Object.entries(byClass).sort().map(([c,a])=>`<tr><td style="font-weight:500">${c}</td><td style="text-align:right;font-weight:700;color:#2D7A3A">₹${a.toLocaleString('en-IN')}</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td><td style="text-align:right;color:var(--maroon)">₹${Object.values(byClass).reduce((a,b)=>a+b,0).toLocaleString('en-IN')}</td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadModeReport() {
+  const month = document.getElementById('mode-month-filter').value;
+  if (!month) return;
+  const { data } = await supabase.from('fee_payments').select('payment_mode,amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-31');
+  if (!data || data.length===0) { document.getElementById('mode-report').innerHTML = '<div class="empty-state"><div class="icon">💳</div><p>No data for this month.</p></div>'; return; }
+
+  const byMode = {};
+  data.forEach(r => { byMode[r.payment_mode] = (byMode[r.payment_mode]||0) + r.amount_paid; });
+  const total = Object.values(byMode).reduce((a,b)=>a+b,0);
+
+  document.getElementById('mode-report').innerHTML = `
+    <table style="font-size:13px">
+      <thead><tr><th>Mode</th><th style="text-align:right">Amount</th><th style="text-align:right">%</th></tr></thead>
+      <tbody>
+        ${Object.entries(byMode).map(([m,a])=>`
+          <tr>
+            <td style="text-transform:capitalize;font-weight:500">${m.replace('_',' ')}</td>
+            <td style="text-align:right;font-weight:600;color:#2D7A3A">₹${a.toLocaleString('en-IN')}</td>
+            <td style="text-align:right;color:var(--text-muted)">${Math.round((a/total)*100)}%</td>
+          </tr>
+        `).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td><td style="text-align:right;color:var(--maroon)">₹${total.toLocaleString('en-IN')}</td><td></td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function searchLedgerStudent() {
+  const q = document.getElementById('ledger-search').value.trim();
+  if (q.length < 2) { document.getElementById('ledger-results').innerHTML = ''; return; }
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,class').eq('school_id',SCHOOL_ID).or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(5);
+  document.getElementById('ledger-results').innerHTML = data?.map(s=>`
+    <div onclick="loadLedger('${s.id}')" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;margin-bottom:4px;font-size:13px" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <b>${s.full_name}</b> — ${s.admission_no} · ${s.class}
+    </div>
+  `).join('') || '';
+}
+
+async function loadLedger(studentId) {
+  document.getElementById('ledger-results').innerHTML = '';
+  const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id',studentId).order('payment_date');
+  const { data: student } = await supabase.from('students').select('full_name,admission_no,class').eq('id',studentId).single();
+  if (!payments || payments.length===0) { document.getElementById('ledger-content').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:12px 0">No payments found for this student.</div>'; return; }
+  const total = payments.reduce((s,r)=>s+r.amount_paid,0);
+  document.getElementById('ledger-content').innerHTML = `
+    <div style="font-weight:700;font-size:14px;margin:10px 0 8px;color:var(--maroon)">${student?.full_name} · ${student?.admission_no}</div>
+    <table style="font-size:12px">
+      <thead><tr><th>Date</th><th>Receipt</th><th>Fee Head</th><th>Period</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+        ${payments.map(p=>`<tr><td>${formatDate(p.payment_date)}</td><td style="color:var(--maroon);font-weight:600">${p.receipt_no}</td><td>${p.fee_head_name}</td><td>${p.period}</td><td style="text-align:right;font-weight:600;color:#2D7A3A">₹${p.amount_paid.toLocaleString('en-IN')}</td></tr>`).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:700"><td colspan="4">Total Paid</td><td style="text-align:right;color:var(--maroon)">₹${total.toLocaleString('en-IN')}</td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+// ── DEFAULTERS ──
+async function loadDefaulters() {
+  const cls = document.getElementById('def-class').value;
+  const period = document.getElementById('def-period').value;
+
+  // Get all active students
+  let studentQuery = supabase.from('students').select('id,full_name,admission_no,class,section,mobile,father_name').eq('school_id',SCHOOL_ID).eq('status','active');
+  if (cls) studentQuery = studentQuery.eq('class',cls);
+  const { data: students } = await studentQuery;
+
+  if (!students || students.length===0) { document.getElementById('defaulters-list').innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No students found.</p></div>'; return; }
+
+  // Get all payments
+  const { data: payments } = await supabase.from('fee_payments').select('student_id,fee_head_id,period,amount_paid').eq('school_id',SCHOOL_ID);
+  const paidMap = {};
+  if (payments) payments.forEach(p => {
+    const key = p.student_id + '_' + p.fee_head_id + '_' + p.period;
+    paidMap[key] = (paidMap[key]||0) + p.amount_paid;
+  });
+
+  // Get fee structures
+  const { data: structures } = await supabase.from('fee_structure').select('*').eq('school_id',SCHOOL_ID);
+  const structMap = {};
+  if (structures) structures.forEach(s => {
+    if (!structMap[s.class]) structMap[s.class] = [];
+    structMap[s.class].push(s);
+  });
+
+  const defaulters = [];
+  students.forEach(student => {
+    const structs = structMap[student.class] || [];
+    const periods = period ? [period] : getPeriods();
+    let totalDue = 0;
+
+    structs.forEach(s => {
+      periods.forEach(p => {
+        const amt = s.period_amounts?.[p] || s.annual_amount || 0;
+        if (amt <= 0) return;
+        const paid = paidMap[student.id + '_' + s.fee_head_id + '_' + p] || 0;
+        const bal = amt - paid;
+        if (bal > 0) totalDue += bal;
+      });
+    });
+
+    if (totalDue > 0) defaulters.push({ ...student, totalDue });
+  });
+
+  defaulters.sort((a,b)=>b.totalDue-a.totalDue);
+
+  if (defaulters.length===0) {
+    document.getElementById('defaulters-list').innerHTML = '<div class="empty-state"><div class="icon">✅</div><p>No defaulters! All fees are paid.</p></div>';
+    return;
+  }
+
+  document.getElementById('defaulters-list').innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--danger);margin-bottom:12px">${defaulters.length} student${defaulters.length!==1?'s':''} with pending dues</div>
+    <div class="table-wrap" id="defaulters-print-area">
+    <table>
+      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th style="text-align:right">Amount Due</th></tr></thead>
+      <tbody>
+        ${defaulters.map((s,i)=>`
+          <tr>
+            <td style="color:var(--text-muted)">${i+1}</td>
+            <td style="font-weight:600">${s.full_name}</td>
+            <td>${s.class}${s.section?' '+s.section:''}</td>
+            <td style="color:var(--maroon)">${s.admission_no}</td>
+            <td>${s.father_name||'—'}</td>
+            <td>${s.mobile||'—'}</td>
+            <td style="text-align:right;font-weight:700;color:#A32D2D">₹${s.totalDue.toLocaleString('en-IN')}</td>
+          </tr>
+        `).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:700">
+          <td colspan="6">Total Pending</td>
+          <td style="text-align:right;color:var(--maroon)">₹${defaulters.reduce((s,d)=>s+d.totalDue,0).toLocaleString('en-IN')}</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  `;
+  document.getElementById('st-defaulters').textContent = defaulters.length;
+}
+
+function printDefaulters() { window.print(); }
+
+// ── STATS ──
+async function loadStats() {
+  const { data: payments } = await supabase.from('fee_payments').select('amount_paid,payment_date').eq('school_id',SCHOOL_ID);
+  if (!payments) return;
+
+  const total = payments.reduce((s,r)=>s+r.amount_paid,0);
+  const today = new Date().toISOString().split('T')[0];
+  const todayTotal = payments.filter(r=>r.payment_date===today).reduce((s,r)=>s+r.amount_paid,0);
+  const todayCount = new Set(payments.filter(r=>r.payment_date===today).map(r=>r.receipt_no||'')).size;
+
+  document.getElementById('st-collected').textContent = '₹' + (total/100000).toFixed(1) + 'L';
+  document.getElementById('st-today').textContent = '₹' + todayTotal.toLocaleString('en-IN');
+  document.getElementById('st-collected-sub').textContent = `${todayCount} receipt${todayCount!==1?'s':''} today`;
+}
+
+// ── TAB SWITCH ──
+function switchTab(tab, el) {
+  ['collect','structure','receipts','reports','defaulters'].forEach(t => {
+    document.getElementById('tab-'+t).classList.add('hidden');
+  });
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='receipts') loadReceipts();
+  if (tab==='defaulters') populateDefPeriod();
+}
+
+// Close modals on overlay click
+['feehead-modal','collect-modal','receipt-modal'].forEach(id => {
+  document.getElementById(id).addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('open');
+  });
+});
+</script>
+</body>
+</html>

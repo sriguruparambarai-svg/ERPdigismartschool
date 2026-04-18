@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Student Attendance — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.att-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; margin-bottom:20px; }
+.att-class-card { background:var(--white); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px; cursor:pointer; transition:border-color .15s; }
+.att-class-card:hover { border-color:var(--gold); }
+.att-class-card.selected { border-color:var(--maroon); border-width:2px; }
+.pct-bar { height:6px; border-radius:3px; background:#F0EBE3; margin-top:6px; overflow:hidden; }
+.pct-fill { height:100%; border-radius:3px; }
+.student-row { display:flex; align-items:center; gap:12px; padding:10px 12px; border-bottom:1px solid var(--border); }
+.student-row:last-child { border-bottom:none; }
+.att-btn { padding:6px 14px; border-radius:6px; border:1px solid var(--border); font-size:12px; font-weight:500; cursor:pointer; transition:all .15s; background:var(--white); }
+.att-btn.present { background:#E8F5EB; color:#2D7A3A; border-color:#b8dfc0; }
+.att-btn.absent { background:#FCEBEB; color:#A32D2D; border-color:#f5c0c0; }
+.att-btn.late { background:#FFF8E6; color:#8B5E00; border-color:#f0d080; }
+.month-cell { width:28px; height:28px; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:500; cursor:default; }
+.mc-p { background:#E8F5EB; color:#2D7A3A; }
+.mc-a { background:#FCEBEB; color:#A32D2D; }
+.mc-l { background:#FFF8E6; color:#8B5E00; }
+.mc-h { background:#F0EBE3; color:#9B928A; }
+.tab-bar { display:flex; gap:2px; border-bottom:1px solid var(--border); margin-bottom:20px; }
+.tab { padding:9px 18px; font-size:13px; cursor:pointer; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; }
+.tab.active { color:var(--maroon); border-bottom-color:var(--maroon); font-weight:600; }
+.filter-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Student Attendance</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Attendance → Students</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Today Present</div>
+          <div class="stat-value" id="s-present">—</div>
+          <div class="stat-sub" id="s-present-sub">Loading...</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Today Absent</div>
+          <div class="stat-value" id="s-absent" style="color:#A32D2D">—</div>
+          <div class="stat-sub">Students</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Late Arrivals</div>
+          <div class="stat-value" id="s-late" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Low Attendance</div>
+          <div class="stat-value" id="s-low" style="color:#A32D2D">—</div>
+          <div class="stat-sub">Below 75%</div>
+        </div>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('mark',this)">Mark Attendance</div>
+        <div class="tab" onclick="switchTab('report',this)">Monthly Report</div>
+        <div class="tab" onclick="switchTab('history',this)">Attendance History</div>
+      </div>
+
+      <!-- TAB: MARK ATTENDANCE -->
+      <div id="tab-mark">
+        <div class="filter-row">
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">Select Class</label>
+            <select class="form-control" id="sel-class" onchange="loadStudentsForAtt()" style="width:160px">
+              <option value="">-- Select Class --</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">Section</label>
+            <select class="form-control" id="sel-section" onchange="loadStudentsForAtt()" style="width:100px">
+              <option value="">All</option>
+              <option>A</option><option>B</option><option>C</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">Date</label>
+            <input type="date" id="att-date" class="form-control" style="width:160px" onchange="loadStudentsForAtt()">
+          </div>
+          <div style="margin-top:20px;display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm" onclick="markAll('present')">✓ All Present</button>
+            <button class="btn btn-secondary btn-sm" onclick="markAll('absent')">✗ All Absent</button>
+          </div>
+          <div style="margin-top:20px;margin-left:auto">
+            <button class="btn btn-primary" onclick="saveAttendance()" id="save-att-btn">💾 Save Attendance</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div id="att-loading" class="empty-state">
+            <div class="icon">📋</div>
+            <p>Select a class and date to mark attendance</p>
+          </div>
+          <div id="att-list" class="hidden"></div>
+        </div>
+      </div>
+
+      <!-- TAB: MONTHLY REPORT -->
+      <div id="tab-report" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">Class</label>
+            <select class="form-control" id="rep-class" style="width:160px">
+              <option value="">Select Class</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">Month</label>
+            <input type="month" id="rep-month" class="form-control" style="width:160px">
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-primary" onclick="loadMonthlyReport()">Generate Report</button>
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-secondary" onclick="exportReport()">⬇ Export Excel</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="report-content">
+            <div class="empty-state"><div class="icon">📊</div><p>Select class and month, then click Generate Report</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: HISTORY -->
+      <div id="tab-history" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">Class</label>
+            <select class="form-control" id="hist-class" style="width:160px">
+              <option value="">Select Class</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">From Date</label>
+            <input type="date" id="hist-from" class="form-control" style="width:150px">
+          </div>
+          <div>
+            <label class="form-label" style="display:block;margin-bottom:4px">To Date</label>
+            <input type="date" id="hist-to" class="form-control" style="width:150px">
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-primary" onclick="loadHistory()">View History</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="history-content">
+            <div class="empty-state"><div class="icon">📅</div><p>Select class and date range to view history</p></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let studentsForAtt = [];
+let attStatus = {};
+let todayStats = { present:0, absent:0, late:0 };
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('student-att');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('att-date').value = today;
+  document.getElementById('rep-month').value = today.slice(0,7);
+  document.getElementById('hist-from').value = today;
+  document.getElementById('hist-to').value = today;
+  await loadTodayStats();
+});
+
+async function loadTodayStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data } = await supabase.from('student_attendance').select('status').eq('school_id', SCHOOL_ID).eq('date', today);
+  if (!data) return;
+  const p = data.filter(r=>r.status==='present').length;
+  const a = data.filter(r=>r.status==='absent').length;
+  const l = data.filter(r=>r.status==='late').length;
+  document.getElementById('s-present').textContent = p;
+  document.getElementById('s-present-sub').textContent = `${p+a+l} total marked`;
+  document.getElementById('s-absent').textContent = a;
+  document.getElementById('s-late').textContent = l;
+
+  // Low attendance — students with < 75% this month
+  const monthStart = today.slice(0,7) + '-01';
+  const { data: monthData } = await supabase.from('student_attendance').select('student_id,status').eq('school_id',SCHOOL_ID).gte('date',monthStart);
+  if (monthData) {
+    const byStudent = {};
+    monthData.forEach(r => {
+      if (!byStudent[r.student_id]) byStudent[r.student_id] = {p:0,total:0};
+      byStudent[r.student_id].total++;
+      if (r.status==='present'||r.status==='late') byStudent[r.student_id].p++;
+    });
+    const low = Object.values(byStudent).filter(s => s.total>0 && (s.p/s.total)<0.75).length;
+    document.getElementById('s-low').textContent = low;
+  }
+}
+
+async function loadStudentsForAtt() {
+  const cls = document.getElementById('sel-class').value;
+  const sec = document.getElementById('sel-section').value;
+  const date = document.getElementById('att-date').value;
+  if (!cls || !date) return;
+
+  document.getElementById('att-loading').innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Loading students...</p></div>';
+  document.getElementById('att-loading').classList.remove('hidden');
+  document.getElementById('att-list').classList.add('hidden');
+
+  let query = supabase.from('students').select('id,full_name,full_name_tamil,admission_no').eq('school_id',SCHOOL_ID).eq('class',cls).eq('status','active');
+  if (sec) query = query.eq('section',sec);
+  const { data: students } = await query.order('full_name');
+
+  studentsForAtt = students || [];
+
+  // Load existing attendance for this date
+  attStatus = {};
+  if (studentsForAtt.length > 0) {
+    const ids = studentsForAtt.map(s=>s.id);
+    const { data: existing } = await supabase.from('student_attendance').select('student_id,status').eq('date',date).in('student_id',ids);
+    if (existing) existing.forEach(r => { attStatus[r.student_id] = r.status; });
+  }
+
+  renderAttList();
+}
+
+function renderAttList() {
+  const cls = document.getElementById('sel-class').value;
+  const date = document.getElementById('att-date').value;
+
+  if (studentsForAtt.length === 0) {
+    document.getElementById('att-loading').innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>No active students found for this class.</p></div>';
+    return;
+  }
+
+  document.getElementById('att-loading').classList.add('hidden');
+  document.getElementById('att-list').classList.remove('hidden');
+
+  const present = Object.values(attStatus).filter(s=>s==='present').length;
+  const absent = Object.values(attStatus).filter(s=>s==='absent').length;
+  const late = Object.values(attStatus).filter(s=>s==='late').length;
+
+  document.getElementById('att-list').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+      <div>
+        <span style="font-size:14px;font-weight:600">${cls} — ${new Date(date+'T00:00:00').toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short'})}</span>
+        <span style="font-size:12px;color:var(--text-muted);margin-left:10px">${studentsForAtt.length} students</span>
+      </div>
+      <div style="display:flex;gap:12px;font-size:12px">
+        <span style="color:#2D7A3A">✓ Present: <b>${present}</b></span>
+        <span style="color:#A32D2D">✗ Absent: <b>${absent}</b></span>
+        <span style="color:#8B5E00">⏰ Late: <b>${late}</b></span>
+      </div>
+    </div>
+    ${studentsForAtt.map((s,i) => {
+      const status = attStatus[s.id] || '';
+      return `
+        <div class="student-row" id="row-${s.id}">
+          <div style="width:28px;text-align:center;color:var(--text-muted);font-size:12px">${i+1}</div>
+          <div class="avatar">${getInitials(s.full_name)}</div>
+          <div style="flex:1">
+            <div style="font-weight:500;font-size:13px">${s.full_name}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${s.admission_no||''} ${s.full_name_tamil ? '· '+s.full_name_tamil : ''}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="att-btn ${status==='present'?'present':''}" onclick="setStatus('${s.id}','present')">✓ Present</button>
+            <button class="att-btn ${status==='absent'?'absent':''}" onclick="setStatus('${s.id}','absent')">✗ Absent</button>
+            <button class="att-btn ${status==='late'?'late':''}" onclick="setStatus('${s.id}','late')">⏰ Late</button>
+          </div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function setStatus(studentId, status) {
+  attStatus[studentId] = status;
+  const row = document.getElementById('row-' + studentId);
+  if (!row) return;
+  row.querySelectorAll('.att-btn').forEach(b => {
+    b.className = 'att-btn';
+    if (b.textContent.includes('Present') && status==='present') b.className = 'att-btn present';
+    if (b.textContent.includes('Absent') && status==='absent') b.className = 'att-btn absent';
+    if (b.textContent.includes('Late') && status==='late') b.className = 'att-btn late';
+  });
+  // Update summary
+  renderSummary();
+}
+
+function renderSummary() {
+  const present = Object.values(attStatus).filter(s=>s==='present').length;
+  const absent = Object.values(attStatus).filter(s=>s==='absent').length;
+  const late = Object.values(attStatus).filter(s=>s==='late').length;
+  const summaryEl = document.querySelector('#att-list .flex');
+  if (summaryEl) {
+    const spans = summaryEl.querySelectorAll('span');
+    if(spans[0]) spans[0].innerHTML = `✓ Present: <b>${present}</b>`;
+    if(spans[1]) spans[1].innerHTML = `✗ Absent: <b>${absent}</b>`;
+    if(spans[2]) spans[2].innerHTML = `⏰ Late: <b>${late}</b>`;
+  }
+}
+
+function markAll(status) {
+  studentsForAtt.forEach(s => setStatus(s.id, status));
+}
+
+async function saveAttendance() {
+  const date = document.getElementById('att-date').value;
+  const cls = document.getElementById('sel-class').value;
+  if (!date || !cls || studentsForAtt.length === 0) { showToast('Please select class and date first.','error'); return; }
+
+  const unmarked = studentsForAtt.filter(s => !attStatus[s.id]);
+  if (unmarked.length > 0) { showToast(`Please mark attendance for all ${unmarked.length} remaining students.`,'error'); return; }
+
+  const btn = document.getElementById('save-att-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+
+  // Delete existing records for this class+date, then insert fresh
+  const ids = studentsForAtt.map(s=>s.id);
+  await supabase.from('student_attendance').delete().eq('date',date).eq('school_id',SCHOOL_ID).in('student_id',ids);
+
+  const records = studentsForAtt.map(s => ({
+    school_id: SCHOOL_ID,
+    student_id: s.id,
+    student_name: s.full_name,
+    class: cls,
+    date,
+    status: attStatus[s.id],
+  }));
+
+  const { error } = await supabase.from('student_attendance').insert(records);
+  btn.textContent = '💾 Save Attendance'; btn.disabled = false;
+
+  if (error) { showToast('Error saving: ' + error.message, 'error'); return; }
+  showToast('Attendance saved successfully!', 'success');
+  await loadTodayStats();
+}
+
+// ── MONTHLY REPORT ──
+async function loadMonthlyReport() {
+  const cls = document.getElementById('rep-class').value;
+  const month = document.getElementById('rep-month').value;
+  if (!cls || !month) { showToast('Please select class and month.','error'); return; }
+
+  document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Generating report...</p></div>';
+
+  const from = month + '-01';
+  const to = month + '-31';
+
+  const { data: attData } = await supabase.from('student_attendance').select('student_id,student_name,date,status').eq('school_id',SCHOOL_ID).eq('class',cls).gte('date',from).lte('date',to).order('date');
+
+  if (!attData || attData.length === 0) {
+    document.getElementById('report-content').innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>No attendance records found for this period.</p></div>';
+    return;
+  }
+
+  // Get unique dates and students
+  const dates = [...new Set(attData.map(r=>r.date))].sort();
+  const students = {};
+  attData.forEach(r => {
+    if (!students[r.student_id]) students[r.student_id] = { name: r.student_name, records: {} };
+    students[r.student_id].records[r.date] = r.status;
+  });
+
+  const monthName = new Date(month+'-01').toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+
+  let html = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:14px;font-weight:600">${cls} — ${monthName}</div>
+      <div style="font-size:12px;color:var(--text-muted)">${Object.keys(students).length} students · ${dates.length} working days</div>
+    </div>
+    <div style="overflow-x:auto">
+    <table style="font-size:11px;border-collapse:collapse;width:100%">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px 10px;background:var(--bg);border:1px solid var(--border);min-width:140px">Student Name</th>
+          ${dates.map(d=>`<th style="padding:6px 4px;background:var(--bg);border:1px solid var(--border);text-align:center;min-width:30px">${new Date(d+'T00:00').getDate()}</th>`).join('')}
+          <th style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);text-align:center">P</th>
+          <th style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);text-align:center">A</th>
+          <th style="padding:6px 8px;background:var(--bg);border:1px solid var(--border);text-align:center">%</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${Object.entries(students).map(([id,s]) => {
+          const p = Object.values(s.records).filter(v=>v==='present'||v==='late').length;
+          const a = Object.values(s.records).filter(v=>v==='absent').length;
+          const pct = dates.length > 0 ? Math.round((p/dates.length)*100) : 0;
+          const low = pct < 75;
+          return `
+            <tr style="${low?'background:#fff8f8':''}">
+              <td style="padding:7px 10px;border:1px solid var(--border);font-weight:500">${s.name}${low?'<span class="badge badge-red" style="margin-left:6px;font-size:9px">Low</span>':''}</td>
+              ${dates.map(d=>{
+                const st = s.records[d];
+                if(!st) return `<td style="padding:4px;border:1px solid var(--border);text-align:center;background:#F9F9F9">—</td>`;
+                const cls2 = st==='present'?'mc-p':st==='absent'?'mc-a':'mc-l';
+                const lbl = st==='present'?'P':st==='absent'?'A':'L';
+                return `<td style="padding:2px;border:1px solid var(--border);text-align:center"><div class="month-cell ${cls2}" style="margin:0 auto">${lbl}</div></td>`;
+              }).join('')}
+              <td style="padding:6px 8px;border:1px solid var(--border);text-align:center;color:#2D7A3A;font-weight:600">${p}</td>
+              <td style="padding:6px 8px;border:1px solid var(--border);text-align:center;color:#A32D2D;font-weight:600">${a}</td>
+              <td style="padding:6px 8px;border:1px solid var(--border);text-align:center;font-weight:600;color:${low?'#A32D2D':'#2D7A3A'}">${pct}%</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:12px;font-size:11px">
+      <span class="month-cell mc-p" style="width:auto;padding:2px 8px">P = Present</span>
+      <span class="month-cell mc-a" style="width:auto;padding:2px 8px">A = Absent</span>
+      <span class="month-cell mc-l" style="width:auto;padding:2px 8px">L = Late</span>
+      <span style="color:#A32D2D;margin-left:8px">Red highlight = below 75% attendance</span>
+    </div>
+  `;
+  document.getElementById('report-content').innerHTML = html;
+}
+
+async function loadHistory() {
+  const cls = document.getElementById('hist-class').value;
+  const from = document.getElementById('hist-from').value;
+  const to = document.getElementById('hist-to').value;
+  if (!cls || !from || !to) { showToast('Please select class and date range.','error'); return; }
+
+  const { data } = await supabase.from('student_attendance').select('student_name,date,status').eq('school_id',SCHOOL_ID).eq('class',cls).gte('date',from).lte('date',to).order('date',{ascending:false});
+
+  if (!data || data.length===0) {
+    document.getElementById('history-content').innerHTML = '<div class="empty-state"><div class="icon">📅</div><p>No records found.</p></div>';
+    return;
+  }
+
+  document.getElementById('history-content').innerHTML = `
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Student Name</th><th>Date</th><th>Status</th></tr></thead>
+      <tbody>
+        ${data.map(r=>`
+          <tr>
+            <td style="font-weight:500">${r.student_name}</td>
+            <td>${new Date(r.date+'T00:00').toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'})}</td>
+            <td><span class="badge ${r.status==='present'?'badge-green':r.status==='absent'?'badge-red':'badge-amber'}">${r.status}</span></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+function exportReport() { showToast('Export feature — coming in next update!','info'); }
+
+function switchTab(tab, el) {
+  ['mark','report','history'].forEach(t => {
+    document.getElementById('tab-'+t).classList.add('hidden');
+  });
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+}
+</script>
+</body>
+</html>

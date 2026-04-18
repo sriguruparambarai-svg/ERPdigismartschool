@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transport & GPS — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.bus-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px;transition:border-color .15s}
+.bus-card:hover{border-color:var(--gold)}
+.bus-number{font-size:16px;font-weight:700;color:var(--maroon);font-family:monospace;letter-spacing:.05em}
+.stop-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:13px}
+.stop-row:last-child{border-bottom:none}
+.stop-dot{width:10px;height:10px;border-radius:50%;background:var(--gold);flex-shrink:0}
+.stop-dot.start{background:var(--maroon)}
+.stop-dot.end{background:#2D7A3A}
+.stop-line{width:2px;height:18px;background:var(--border);margin:0 4px}
+.map-container{background:#E8F0E8;border-radius:var(--radius-lg);border:1px solid var(--border);overflow:hidden;position:relative;min-height:380px}
+.map-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.bus-dot{width:36px;height:36px;border-radius:50%;background:var(--maroon);color:var(--sandal);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid var(--gold);cursor:pointer;transition:transform .2s}
+.bus-dot:hover{transform:scale(1.1)}
+.bus-dot.moving{animation:busMove 2s ease-in-out infinite}
+.bus-dot.stopped{background:#8B5E00}
+.bus-dot.offline{background:#888;border-color:#ccc}
+@keyframes busMove{0%,100%{box-shadow:0 0 0 0 rgba(107,26,26,.4)}50%{box-shadow:0 0 0 8px rgba(107,26,26,0)}}
+.gps-map{width:100%;height:360px;border-radius:var(--radius-lg);border:1px solid var(--border);background:#f0f4f0;position:relative;overflow:hidden}
+.map-road{stroke:#C8C8C8;stroke-width:3;fill:none}
+.map-road-main{stroke:#B8B8B8;stroke-width:5;fill:none}
+.bus-marker{cursor:pointer;transition:transform .2s}
+.bus-marker:hover .bus-circle{r:14}
+.bus-label{font-size:9px;font-weight:700;fill:white;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.route-line{stroke:var(--maroon);stroke-width:2;fill:none;stroke-dasharray:6 3;opacity:.6}
+.stop-marker{fill:var(--gold);stroke:var(--maroon);stroke-width:1.5}
+.pulse-ring{fill:none;stroke:var(--maroon);stroke-width:2;animation:pulseRing 2s ease-out infinite}
+@keyframes pulseRing{0%{r:12;opacity:.8}100%{r:22;opacity:0}}
+.trip-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.trip-row:last-child{border-bottom:none}
+.time-input{width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px}
+.notif-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px}
+.driver-share-box{background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:16px;margin-bottom:14px}
+.summary-band{display:flex;gap:12px;background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap}
+.sband-item{display:flex;flex-direction:column;gap:2px}
+.sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
+.sband-value{font-size:20px;font-weight:700;color:var(--maroon)}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Transport & GPS Tracking</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Transport → Management</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Total Buses</div>
+          <div class="stat-value" id="st-buses">—</div>
+          <div class="stat-sub">Active fleet</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Routes</div>
+          <div class="stat-value" id="st-routes">—</div>
+          <div class="stat-sub">Active routes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Students on Bus</div>
+          <div class="stat-value" id="st-students">—</div>
+          <div class="stat-sub">Assigned to routes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Live Tracking</div>
+          <div class="stat-value" id="st-live" style="color:#2D7A3A">—</div>
+          <div class="stat-sub">Buses online now</div>
+        </div>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('gps',this)">📍 Live GPS</div>
+        <div class="tab" onclick="switchTab('buses',this)">🚌 Buses & Routes</div>
+        <div class="tab" onclick="switchTab('students',this)">👥 Student Assignment</div>
+        <div class="tab" onclick="switchTab('trips',this)">📋 Trip Log</div>
+        <div class="tab" onclick="switchTab('notify',this)">📣 Notifications</div>
+        <div class="tab" onclick="switchTab('reports',this)">📊 Reports</div>
+      </div>
+
+      <!-- ══ TAB: GPS LIVE ══ -->
+      <div id="tab-gps">
+        <div class="driver-share-box">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--maroon);margin-bottom:4px">📱 Driver GPS Sharing</div>
+              <div style="font-size:12px;color:var(--text-muted)">Share this link with drivers. They open it on their phone and click Start Sharing. Location updates every 30 seconds automatically.</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <select class="form-control" id="driver-bus-select" style="width:180px;padding:7px 10px">
+                <option value="">Select Bus for Driver</option>
+              </select>
+              <button class="btn btn-primary" onclick="copyDriverLink()">📋 Copy Driver Link</button>
+              <button class="btn btn-gold" onclick="openDriverPage()">Open Driver Page</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 280px;gap:16px">
+          <!-- MAP -->
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+              <div style="font-size:13px;font-weight:600">Live Bus Map</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <div id="live-indicator" style="display:flex;align-items:center;gap:5px;font-size:11px;color:#2D7A3A">
+                  <div style="width:7px;height:7px;border-radius:50%;background:#2D7A3A;animation:busMove 1.5s infinite"></div>Auto-refresh ON
+                </div>
+                <button class="btn btn-secondary btn-sm" onclick="refreshGPS()">↻ Refresh</button>
+              </div>
+            </div>
+            <div class="gps-map" id="gps-map">
+              <svg id="map-svg" width="100%" height="360" viewBox="0 0 700 360" xmlns="http://www.w3.org/2000/svg">
+                <!-- Background -->
+                <rect width="700" height="360" fill="#EEF2EE"/>
+                <!-- Grid lines (streets) -->
+                <line x1="0" y1="90" x2="700" y2="90" class="map-road"/>
+                <line x1="0" y1="180" x2="700" y2="180" class="map-road"/>
+                <line x1="0" y1="270" x2="700" y2="270" class="map-road"/>
+                <line x1="140" y1="0" x2="140" y2="360" class="map-road"/>
+                <line x1="280" y1="0" x2="280" y2="360" class="map-road"/>
+                <line x1="420" y1="0" x2="420" y2="360" class="map-road"/>
+                <line x1="560" y1="0" x2="560" y2="360" class="map-road"/>
+                <!-- Main roads -->
+                <path d="M0,180 Q175,160 350,180 Q525,200 700,180" class="map-road-main"/>
+                <path d="M350,0 Q330,90 350,180 Q370,270 350,360" class="map-road-main"/>
+                <!-- School marker -->
+                <rect x="320" y="150" width="60" height="40" rx="6" fill="#6B1A1A" opacity=".85"/>
+                <text x="350" y="168" font-size="9" fill="#F5E6C8" text-anchor="middle" font-weight="600">SCHOOL</text>
+                <text x="350" y="181" font-size="8" fill="#C9A84C" text-anchor="middle">📍</text>
+                <!-- Route lines -->
+                <path d="M30,180 Q140,170 280,170 Q315,170 350,170" class="route-line"/>
+                <path d="M350,170 Q420,170 560,100 Q620,70 680,40" class="route-line"/>
+                <path d="M350,170 Q350,250 350,300 Q350,330 350,350" class="route-line"/>
+                <!-- Stop dots -->
+                <circle cx="30" cy="180" r="5" class="stop-marker"/><text x="30" y="196" font-size="8" fill="#6B1A1A" text-anchor="middle">Stop A</text>
+                <circle cx="140" cy="174" r="5" class="stop-marker"/><text x="140" y="190" font-size="8" fill="#6B1A1A" text-anchor="middle">Stop B</text>
+                <circle cx="280" cy="170" r="5" class="stop-marker"/><text x="280" y="186" font-size="8" fill="#6B1A1A" text-anchor="middle">Stop C</text>
+                <circle cx="560" cy="100" r="5" class="stop-marker"/><text x="560" y="116" font-size="8" fill="#6B1A1A" text-anchor="middle">Stop D</text>
+                <circle cx="680" cy="40" r="5" class="stop-marker"/><text x="680" y="56" font-size="8" fill="#6B1A1A" text-anchor="middle">Stop E</text>
+                <circle cx="350" cy="300" r="5" class="stop-marker"/><text x="350" y="316" font-size="8" fill="#6B1A1A" text-anchor="middle">Stop F</text>
+                <!-- Bus markers - will be updated by JS -->
+                <g id="bus-markers"></g>
+              </svg>
+            </div>
+          </div>
+
+          <!-- BUS STATUS PANEL -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="card">
+              <div class="card-title" style="margin-bottom:12px">Bus Status</div>
+              <div id="bus-status-list">
+                <div class="empty-state" style="padding:20px"><div class="icon">⏳</div><p>Loading...</p></div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title" style="margin-bottom:10px">Last Update</div>
+              <div id="last-update-list">
+                <div style="font-size:12px;color:var(--text-muted)">Waiting for GPS data...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: BUSES & ROUTES ══ -->
+      <div id="tab-buses" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <!-- Add Bus Form -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px" id="bus-form-title">Add New Bus</div>
+            <div id="bus-form-alert" class="hidden"></div>
+            <div style="font-size:12px;font-weight:600;color:var(--maroon);margin-bottom:8px;padding-bottom:6px;border-bottom:2px solid var(--sandal)">🚌 Bus Details</div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">Bus Number <span class="req">*</span></label>
+              <input type="text" id="bf-number" class="form-control" placeholder="e.g. TN-68-K-1234" style="font-family:monospace">
+            </div>
+            <div class="form-grid-2" style="margin-bottom:8px">
+              <div class="form-group">
+                <label class="form-label">Capacity</label>
+                <input type="number" id="bf-capacity" class="form-control" placeholder="40">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Status</label>
+                <select id="bf-status" class="form-control">
+                  <option value="active">Active</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--maroon);margin:10px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--sandal)">👤 Driver Details</div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">Driver Name <span class="req">*</span></label>
+              <input type="text" id="bf-driver" class="form-control" placeholder="Driver full name">
+            </div>
+            <div class="form-grid-2" style="margin-bottom:8px">
+              <div class="form-group">
+                <label class="form-label">Driver Mobile</label>
+                <input type="tel" id="bf-driver-mobile" class="form-control" placeholder="Mobile" maxlength="10">
+              </div>
+              <div class="form-group">
+                <label class="form-label">License No</label>
+                <input type="text" id="bf-license" class="form-control" placeholder="DL number">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">Conductor Name</label>
+              <input type="text" id="bf-conductor" class="form-control" placeholder="Conductor name (optional)">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Conductor Mobile</label>
+              <input type="tel" id="bf-conductor-mobile" class="form-control" placeholder="Conductor mobile" maxlength="10">
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-gold w-full" id="bus-save-btn" onclick="saveBus()">Save Bus</button>
+              <button class="btn btn-secondary btn-sm" onclick="clearBusForm()">Clear</button>
+            </div>
+          </div>
+
+          <!-- Bus List + Route Management -->
+          <div>
+            <div class="card" style="margin-bottom:14px">
+              <div class="card-header">
+                <div class="card-title">Bus Fleet</div>
+                <div class="search-bar">
+                  <span style="color:#9B928A;font-size:14px">🔍</span>
+                  <input type="text" id="bus-search" placeholder="Search bus..." oninput="filterBuses()">
+                </div>
+              </div>
+              <div id="bus-list">
+                <div class="empty-state"><div class="icon">⏳</div><p>Loading buses...</p></div>
+              </div>
+            </div>
+
+            <!-- Route Management -->
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Routes</div>
+                <button class="btn btn-primary btn-sm" onclick="openRouteModal()">+ Add Route</button>
+              </div>
+              <div id="route-list">
+                <div class="empty-state"><div class="icon">🗺</div><p>No routes yet.</p></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: STUDENT ASSIGNMENT ══ -->
+      <div id="tab-students" class="hidden">
+        <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start">
+
+          <!-- Assign Form -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Assign Student to Route</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Search Student <span class="req">*</span></label>
+              <input type="text" id="assign-search" class="form-control" placeholder="Name or admission no..." oninput="searchAssignStudent()" style="margin-top:4px">
+              <div id="assign-search-results" style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none"></div>
+            </div>
+            <div id="assign-student-info" style="background:var(--sandal-light);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px;display:none"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Route <span class="req">*</span></label>
+              <select id="assign-route" class="form-control" onchange="loadRouteStops()" style="margin-top:4px">
+                <option value="">Select route</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Boarding Stop <span class="req">*</span></label>
+              <select id="assign-stop" class="form-control" style="margin-top:4px">
+                <option value="">Select stop</option>
+              </select>
+            </div>
+            <div class="form-grid-2" style="margin-bottom:10px">
+              <div class="form-group">
+                <label class="form-label">Morning Time</label>
+                <input type="time" id="assign-morning" class="form-control" style="margin-top:4px">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Evening Time</label>
+                <input type="time" id="assign-evening" class="form-control" style="margin-top:4px">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Monthly Transport Fee (₹)</label>
+              <input type="number" id="assign-fee" class="form-control" placeholder="0" style="margin-top:4px">
+            </div>
+            <button class="btn btn-gold w-full" onclick="saveAssignment()">Assign to Route</button>
+          </div>
+
+          <!-- Student List by Route -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Students by Route</div>
+              <select class="form-control" id="view-route" onchange="loadRouteStudents()" style="width:200px;padding:6px 10px">
+                <option value="">All Routes</option>
+              </select>
+            </div>
+            <div id="route-students-list">
+              <div class="empty-state"><div class="icon">👥</div><p>Select a route to view students</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: TRIP LOG ══ -->
+      <div id="tab-trips" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label">Date</label>
+            <input type="date" id="trip-date" class="form-control" style="width:160px;margin-top:4px" onchange="loadTripLog()">
+          </div>
+          <div>
+            <label class="form-label">Route</label>
+            <select class="form-control" id="trip-route-filter" onchange="loadTripLog()" style="width:180px;margin-top:4px">
+              <option value="">All Routes</option>
+            </select>
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-primary" onclick="generateTripEntries()">Generate Today's Trips</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="trip-log-content">
+            <div class="empty-state"><div class="icon">📋</div><p>Select date and click Generate Today's Trips</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: NOTIFICATIONS ══ -->
+      <div id="tab-notify" class="hidden">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+          <!-- Delay Alert -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Send Delay Alert</div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Select Route</label>
+              <select id="notif-route" class="form-control" onchange="buildDelayMessage()" style="margin-top:4px">
+                <option value="">Select route</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Delay By</label>
+              <select id="notif-delay" class="form-control" onchange="buildDelayMessage()" style="margin-top:4px">
+                <option value="10">10 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="20">20 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">1 hour</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Reason</label>
+              <select id="notif-reason" class="form-control" onchange="buildDelayMessage()" style="margin-top:4px">
+                <option value="traffic">Heavy traffic</option>
+                <option value="breakdown">Bus breakdown</option>
+                <option value="rain">Heavy rain</option>
+                <option value="accident">Road accident nearby</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">WhatsApp Message Preview</label>
+              <textarea id="notif-message" class="form-control" rows="5" style="margin-top:4px;font-size:12px"></textarea>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-gold w-full" onclick="copyNotifMessage()">📋 Copy Message</button>
+              <button class="btn btn-secondary" onclick="openWhatsApp()">WhatsApp ↗</button>
+            </div>
+          </div>
+
+          <!-- Stop-wise ETA -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Stop-wise Arrival Estimate</div>
+              <select class="form-control" id="eta-route" onchange="loadETA()" style="width:180px;padding:6px 10px">
+                <option value="">Select route</option>
+              </select>
+            </div>
+            <div id="eta-list">
+              <div class="empty-state"><div class="icon">⏰</div><p>Select a route to see estimated arrival times</p></div>
+            </div>
+          </div>
+
+          <!-- General Announcement -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">General Announcement</div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Message Type</label>
+              <select id="ann-type" class="form-control" onchange="buildAnnouncement()" style="margin-top:4px">
+                <option value="holiday">Holiday — No bus service</option>
+                <option value="resume">Bus service resumes</option>
+                <option value="route_change">Route change</option>
+                <option value="fee_due">Transport fee due reminder</option>
+                <option value="custom">Custom message</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Message</label>
+              <textarea id="ann-message" class="form-control" rows="5" style="margin-top:4px;font-size:12px"></textarea>
+            </div>
+            <button class="btn btn-gold w-full" onclick="copyAnnMessage()">📋 Copy Message</button>
+          </div>
+
+          <!-- Notification Log -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Notification History</div>
+              <button class="btn btn-primary btn-sm" onclick="loadNotifLog()">Refresh</button>
+            </div>
+            <div id="notif-log">
+              <div class="empty-state"><div class="icon">📣</div><p>No notifications sent yet.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: REPORTS ══ -->
+      <div id="tab-reports" class="hidden">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Route-wise Student Count</div>
+              <button class="btn btn-primary btn-sm" onclick="loadRouteReport()">Generate</button>
+            </div>
+            <div id="route-report"><div class="empty-state"><div class="icon">📊</div><p>Click Generate</p></div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Monthly Trip Log</div>
+              <div style="display:flex;gap:6px">
+                <input type="month" id="trip-month" class="form-control" style="width:150px;padding:6px 10px">
+                <button class="btn btn-primary btn-sm" onclick="loadMonthTripReport()">Go</button>
+              </div>
+            </div>
+            <div id="month-trip-report"><div class="empty-state"><div class="icon">📅</div><p>Select month and click Go</p></div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Transport Fee Summary</div>
+              <button class="btn btn-primary btn-sm" onclick="loadTransportFeeReport()">Generate</button>
+            </div>
+            <div id="transport-fee-report"><div class="empty-state"><div class="icon">💰</div><p>Click Generate</p></div></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Bus Utilization</div>
+              <button class="btn btn-primary btn-sm" onclick="loadBusUtilization()">Generate</button>
+            </div>
+            <div id="bus-util-report"><div class="empty-state"><div class="icon">🚌</div><p>Click Generate</p></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ ROUTE MODAL ══ -->
+<div class="modal-overlay" id="route-modal">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-title" id="route-modal-title">Add New Route</div>
+      <button class="modal-close" onclick="closeRouteModal()">✕</button>
+    </div>
+    <div id="route-modal-alert" class="hidden"></div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Route Name <span class="req">*</span></label>
+      <input type="text" id="rf-name" class="form-control" placeholder="e.g. Sirkazhi – School Route">
+    </div>
+    <div class="form-grid-2" style="margin-bottom:10px">
+      <div class="form-group">
+        <label class="form-label">Assign Bus</label>
+        <select id="rf-bus" class="form-control">
+          <option value="">Select bus</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Distance (km)</label>
+        <input type="number" id="rf-distance" class="form-control" placeholder="e.g. 25">
+      </div>
+    </div>
+    <div class="form-grid-2" style="margin-bottom:10px">
+      <div class="form-group">
+        <label class="form-label">Morning Departure</label>
+        <input type="time" id="rf-morning" class="form-control">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Evening Departure</label>
+        <input type="time" id="rf-evening" class="form-control">
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Stops (one per line, in order from start to school)</label>
+      <textarea id="rf-stops" class="form-control" rows="6" placeholder="Sirkazhi Bus Stand&#10;Kollidam Bridge&#10;Nannilam Junction&#10;Mayiladuthurai Town&#10;School"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeRouteModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveRoute()">Save Route</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DRIVER GPS PAGE (opens separately) ══ -->
+<div class="modal-overlay" id="driver-modal">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header">
+      <div class="modal-title">Driver GPS Page</div>
+      <button class="modal-close" onclick="document.getElementById('driver-modal').classList.remove('open')">✕</button>
+    </div>
+    <div style="text-align:center;padding:10px 0">
+      <div style="font-size:40px;margin-bottom:10px">📱</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Driver opens this on their phone and shares location</div>
+      <div id="driver-bus-display" style="font-size:14px;font-weight:600;color:var(--maroon);margin-bottom:16px"></div>
+      <div id="driver-status" style="font-size:13px;color:var(--text-muted);margin-bottom:14px;min-height:20px"></div>
+      <div style="background:var(--sandal-light);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px" id="driver-coords">Location: Not started</div>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-gold" id="start-share-btn" onclick="startLocationSharing()">▶ Start Sharing</button>
+        <button class="btn btn-danger hidden" id="stop-share-btn" onclick="stopLocationSharing()">■ Stop</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="document.getElementById('driver-modal').classList.remove('open')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let allBuses = [], allRoutes = [], assignedStudent = null;
+let locationInterval = null, gpsRefreshInterval = null;
+let editingBusId = null, editingRouteId = null;
+const BUS_POSITIONS = {
+  1: {x:120, y:174}, 2: {x:500, y:115}, 3: {x:350, y:280}, 4: {x:240, y:170}
+};
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('transport');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('trip-date').value = today;
+  document.getElementById('trip-month').value = today.slice(0,7);
+  await loadBuses();
+  await loadRoutes();
+  await loadStats();
+  startGPSRefresh();
+});
+
+// ── GPS REFRESH ──
+function startGPSRefresh() {
+  refreshGPS();
+  gpsRefreshInterval = setInterval(refreshGPS, 30000);
+}
+
+async function refreshGPS() {
+  const { data } = await supabase.from('bus_gps').select('*').eq('school_id', SCHOOL_ID).order('updated_at', { ascending: false });
+  const liveMap = {};
+  if (data) data.forEach(d => { if (!liveMap[d.bus_id]) liveMap[d.bus_id] = d; });
+
+  const liveCount = Object.values(liveMap).filter(d => {
+    const age = (new Date() - new Date(d.updated_at)) / 1000;
+    return age < 120;
+  }).length;
+  document.getElementById('st-live').textContent = liveCount;
+
+  updateMapMarkers(liveMap);
+  updateBusStatusPanel(liveMap);
+  updateLastUpdatePanel(liveMap);
+}
+
+function updateMapMarkers(liveMap) {
+  const svg = document.getElementById('bus-markers');
+  if (!svg) return;
+  let html = '';
+  allBuses.filter(b=>b.status==='active').forEach((bus, i) => {
+    const gps = Object.values(liveMap).find(d => d.bus_id === bus.id);
+    const age = gps ? (new Date() - new Date(gps.updated_at)) / 1000 : 999;
+    const isLive = age < 120;
+    const isMoving = gps?.speed > 2;
+    const pos = BUS_POSITIONS[(i % 4) + 1] || { x: 60 + i * 80, y: 180 };
+    const cx = pos.x, cy = pos.y;
+    const color = !gps ? '#888' : isMoving ? '#6B1A1A' : '#8B5E00';
+    const short = bus.bus_number.slice(-4);
+    html += `
+      <g class="bus-marker" onclick="showBusInfo('${bus.id}')">
+        ${isLive ? `<circle cx="${cx}" cy="${cy}" r="14" class="pulse-ring"/>` : ''}
+        <circle cx="${cx}" cy="${cy}" r="12" fill="${color}" stroke="${isLive?'#C9A84C':'#ccc'}" stroke-width="2"/>
+        <text x="${cx}" y="${cy+1}" class="bus-label">${short}</text>
+      </g>
+    `;
+  });
+  svg.innerHTML = html;
+}
+
+function updateBusStatusPanel(liveMap) {
+  const el = document.getElementById('bus-status-list');
+  if (allBuses.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">No active buses.</div>'; return; }
+  el.innerHTML = allBuses.filter(b=>b.status==='active').map(bus => {
+    const gps = Object.values(liveMap).find(d => d.bus_id === bus.id);
+    const age = gps ? Math.round((new Date() - new Date(gps.updated_at)) / 1000) : null;
+    const isLive = age !== null && age < 120;
+    const status = !gps ? 'Offline' : age < 30 ? 'Live' : age < 120 ? 'Recent' : 'Offline';
+    const statusColor = status === 'Live' ? '#2D7A3A' : status === 'Recent' ? '#8B5E00' : '#888';
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <div style="width:8px;height:8px;border-radius:50%;background:${statusColor};flex-shrink:0"></div>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600">${bus.bus_number}</div>
+          <div style="font-size:10px;color:var(--text-muted)">${bus.driver_name||'—'}</div>
+        </div>
+        <span class="badge" style="font-size:10px;background:${status==='Live'?'#E8F5EB':status==='Recent'?'#FFF8E6':'#F1EFE8'};color:${statusColor}">${status}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateLastUpdatePanel(liveMap) {
+  const el = document.getElementById('last-update-list');
+  const entries = Object.values(liveMap);
+  if (entries.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">No GPS data yet.</div>'; return; }
+  el.innerHTML = entries.slice(0, 5).map(d => {
+    const bus = allBuses.find(b => b.id === d.bus_id);
+    const age = Math.round((new Date() - new Date(d.updated_at)) / 1000);
+    const ageStr = age < 60 ? age + 's ago' : Math.round(age/60) + 'm ago';
+    return `
+      <div style="font-size:11px;padding:5px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+        <span style="font-weight:500">${bus?.bus_number || d.bus_id.slice(0,8)}</span>
+        <span style="color:var(--text-muted)">${ageStr}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function showBusInfo(busId) {
+  const bus = allBuses.find(b => b.id === busId);
+  if (!bus) return;
+  showToast(`${bus.bus_number} · Driver: ${bus.driver_name||'—'} · ${bus.driver_mobile||''}`, 'info');
+}
+
+// ── DRIVER GPS SHARING ──
+function copyDriverLink() {
+  const busId = document.getElementById('driver-bus-select').value;
+  if (!busId) { showToast('Please select a bus first.', 'error'); return; }
+  const link = `${window.location.origin}/pages/driver-gps.html?bus=${busId}&school=${SCHOOL_ID}`;
+  navigator.clipboard.writeText(link).then(() => showToast('Driver link copied! Share with driver.', 'success'));
+}
+
+function openDriverPage() {
+  const busId = document.getElementById('driver-bus-select').value;
+  if (!busId) { showToast('Please select a bus first.', 'error'); return; }
+  const bus = allBuses.find(b => b.id === busId);
+  document.getElementById('driver-bus-display').textContent = 'Bus: ' + (bus?.bus_number || '');
+  document.getElementById('driver-modal').dataset.busId = busId;
+  document.getElementById('driver-modal').classList.add('open');
+}
+
+let watchId = null;
+function startLocationSharing() {
+  if (!navigator.geolocation) { showToast('GPS not supported on this device.', 'error'); return; }
+  const busId = document.getElementById('driver-modal').dataset.busId;
+  document.getElementById('start-share-btn').classList.add('hidden');
+  document.getElementById('stop-share-btn').classList.remove('hidden');
+  document.getElementById('driver-status').textContent = '● Sharing location...';
+  document.getElementById('driver-status').style.color = '#2D7A3A';
+
+  const sendLocation = (pos) => {
+    const { latitude, longitude, speed, accuracy } = pos.coords;
+    document.getElementById('driver-coords').textContent = `Lat: ${latitude.toFixed(5)}, Lng: ${longitude.toFixed(5)}\nSpeed: ${speed ? Math.round(speed * 3.6) + ' km/h' : '—'}\nAccuracy: ${Math.round(accuracy)}m`;
+    supabase.from('bus_gps').upsert([{
+      school_id: SCHOOL_ID, bus_id: busId,
+      latitude, longitude,
+      speed: speed || 0, accuracy,
+      updated_at: new Date().toISOString()
+    }], { onConflict: 'bus_id,school_id' });
+  };
+
+  watchId = navigator.geolocation.watchPosition(sendLocation, (err) => {
+    document.getElementById('driver-status').textContent = 'GPS error: ' + err.message;
+    document.getElementById('driver-status').style.color = '#A32D2D';
+  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+}
+
+function stopLocationSharing() {
+  if (watchId) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  document.getElementById('start-share-btn').classList.remove('hidden');
+  document.getElementById('stop-share-btn').classList.add('hidden');
+  document.getElementById('driver-status').textContent = 'Location sharing stopped.';
+  document.getElementById('driver-status').style.color = '#8B5E00';
+}
+
+// ── BUS CRUD ──
+async function loadBuses() {
+  const { data } = await supabase.from('buses').select('*').eq('school_id', SCHOOL_ID).order('bus_number');
+  allBuses = data || [];
+  renderBusList(allBuses);
+  populateBusSelects();
+}
+
+function populateBusSelects() {
+  const opts = allBuses.map(b => `<option value="${b.id}">${b.bus_number} — ${b.driver_name||'No driver'}</option>`).join('');
+  ['rf-bus', 'driver-bus-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = (id === 'rf-bus' ? '<option value="">Select bus</option>' : '<option value="">Select Bus for Driver</option>') + opts;
+  });
+}
+
+function renderBusList(list) {
+  const el = document.getElementById('bus-list');
+  if (!list || list.length === 0) { el.innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">🚌</div><p>No buses added yet.</p></div>'; return; }
+  el.innerHTML = list.map(b => {
+    const statusBadge = { active: 'badge-green', maintenance: 'badge-amber', inactive: 'badge-red' }[b.status] || 'badge-blue';
+    return `
+      <div class="bus-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="bus-number">${b.bus_number}</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="badge ${statusBadge}">${b.status}</span>
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="editBus('${b.id}')">✏️</button>
+            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteBus('${b.id}','${(b.bus_number||'').replace(/'/g,"\\'")}')">🗑</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px;color:var(--text-muted)">
+          <div>👤 ${b.driver_name||'—'}</div>
+          <div>📞 ${b.driver_mobile||'—'}</div>
+          <div>🪪 ${b.license_no||'—'}</div>
+          <div>🪑 Capacity: ${b.capacity||'—'}</div>
+          ${b.conductor_name ? `<div>👥 ${b.conductor_name}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function filterBuses() {
+  const q = document.getElementById('bus-search').value.toLowerCase();
+  renderBusList(allBuses.filter(b => (b.bus_number||'').toLowerCase().includes(q) || (b.driver_name||'').toLowerCase().includes(q)));
+}
+
+async function saveBus() {
+  const number = document.getElementById('bf-number').value.trim();
+  const driver = document.getElementById('bf-driver').value.trim();
+  if (!number || !driver) {
+    document.getElementById('bus-form-alert').className = 'alert alert-danger';
+    document.getElementById('bus-form-alert').textContent = '⚠️ Bus number and driver name are required.';
+    return;
+  }
+  document.getElementById('bus-form-alert').className = 'hidden';
+
+  const record = {
+    school_id: SCHOOL_ID,
+    bus_number: number,
+    capacity: parseInt(document.getElementById('bf-capacity').value) || null,
+    status: document.getElementById('bf-status').value,
+    driver_name: driver,
+    driver_mobile: document.getElementById('bf-driver-mobile').value.trim(),
+    license_no: document.getElementById('bf-license').value.trim(),
+    conductor_name: document.getElementById('bf-conductor').value.trim(),
+    conductor_mobile: document.getElementById('bf-conductor-mobile').value.trim(),
+  };
+
+  let error;
+  if (editingBusId) { ({ error } = await supabase.from('buses').update(record).eq('id', editingBusId)); }
+  else { ({ error } = await supabase.from('buses').insert([record])); }
+
+  if (error) { document.getElementById('bus-form-alert').className='alert alert-danger'; document.getElementById('bus-form-alert').textContent='⚠️ '+error.message; return; }
+  showToast(editingBusId ? 'Bus updated!' : number + ' added!', 'success');
+  clearBusForm();
+  await loadBuses();
+  await loadStats();
+}
+
+function editBus(id) {
+  const b = allBuses.find(x => x.id === id);
+  if (!b) return;
+  editingBusId = id;
+  document.getElementById('bf-number').value = b.bus_number || '';
+  document.getElementById('bf-capacity').value = b.capacity || '';
+  document.getElementById('bf-status').value = b.status || 'active';
+  document.getElementById('bf-driver').value = b.driver_name || '';
+  document.getElementById('bf-driver-mobile').value = b.driver_mobile || '';
+  document.getElementById('bf-license').value = b.license_no || '';
+  document.getElementById('bf-conductor').value = b.conductor_name || '';
+  document.getElementById('bf-conductor-mobile').value = b.conductor_mobile || '';
+  document.getElementById('bus-form-title').textContent = 'Edit Bus';
+  document.getElementById('bus-save-btn').textContent = 'Update Bus';
+}
+
+async function deleteBus(id, number) {
+  if (!confirm(`Delete bus ${number}?`)) return;
+  await supabase.from('buses').delete().eq('id', id);
+  showToast('Bus deleted.', 'success');
+  await loadBuses(); await loadStats();
+}
+
+function clearBusForm() {
+  editingBusId = null;
+  ['bf-number','bf-capacity','bf-driver','bf-driver-mobile','bf-license','bf-conductor','bf-conductor-mobile'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('bf-status').value = 'active';
+  document.getElementById('bus-form-title').textContent = 'Add New Bus';
+  document.getElementById('bus-save-btn').textContent = 'Save Bus';
+  document.getElementById('bus-form-alert').className = 'hidden';
+}
+
+// ── ROUTES ──
+async function loadRoutes() {
+  const { data } = await supabase.from('bus_routes').select('*').eq('school_id', SCHOOL_ID).order('name');
+  allRoutes = data || [];
+  renderRouteList();
+  populateRouteSelects();
+}
+
+function populateRouteSelects() {
+  const opts = allRoutes.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  ['assign-route','view-route','notif-route','eta-route','trip-route-filter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = (id==='view-route'?'<option value="">All Routes</option>':'<option value="">Select route</option>') + opts;
+  });
+}
+
+function renderRouteList() {
+  const el = document.getElementById('route-list');
+  if (!allRoutes || allRoutes.length === 0) { el.innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">🗺</div><p>No routes added yet.</p></div>'; return; }
+  el.innerHTML = allRoutes.map(r => {
+    const bus = allBuses.find(b => b.id === r.bus_id);
+    const stops = r.stops || [];
+    return `
+      <div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px;color:var(--maroon)">${r.name}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+            ${bus ? '🚌 ' + bus.bus_number : 'No bus assigned'} · ${stops.length} stops
+            ${r.morning_departure ? ' · 🌅 ' + r.morning_departure : ''}
+            ${r.evening_departure ? ' · 🌆 ' + r.evening_departure : ''}
+          </div>
+          <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px">
+            ${stops.map((s,i) => `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:${i===0?'#fdeaea':i===stops.length-1?'#E8F5EB':'var(--sandal-light)'};color:${i===0?'var(--maroon)':i===stops.length-1?'#2D7A3A':'var(--text)'}">${s}</span>`).join('')}
+          </div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-secondary btn-sm btn-icon" onclick="editRoute('${r.id}')">✏️</button>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteRoute('${r.id}','${(r.name||'').replace(/'/g,"\\'")}')">🗑</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openRouteModal() {
+  editingRouteId = null;
+  document.getElementById('route-modal-title').textContent = 'Add New Route';
+  ['rf-name','rf-distance','rf-morning','rf-evening','rf-stops'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('rf-bus').value = '';
+  document.getElementById('route-modal-alert').className = 'hidden';
+  document.getElementById('route-modal').classList.add('open');
+}
+
+function editRoute(id) {
+  const r = allRoutes.find(x=>x.id===id);
+  if (!r) return;
+  editingRouteId = id;
+  document.getElementById('route-modal-title').textContent = 'Edit Route';
+  document.getElementById('rf-name').value = r.name || '';
+  document.getElementById('rf-bus').value = r.bus_id || '';
+  document.getElementById('rf-distance').value = r.distance || '';
+  document.getElementById('rf-morning').value = r.morning_departure || '';
+  document.getElementById('rf-evening').value = r.evening_departure || '';
+  document.getElementById('rf-stops').value = (r.stops||[]).join('\n');
+  document.getElementById('route-modal').classList.add('open');
+}
+
+async function saveRoute() {
+  const name = document.getElementById('rf-name').value.trim();
+  if (!name) { document.getElementById('route-modal-alert').className='alert alert-danger'; document.getElementById('route-modal-alert').textContent='⚠️ Route name is required.'; return; }
+
+  const stops = document.getElementById('rf-stops').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const record = {
+    school_id: SCHOOL_ID, name,
+    bus_id: document.getElementById('rf-bus').value || null,
+    distance: parseFloat(document.getElementById('rf-distance').value) || null,
+    morning_departure: document.getElementById('rf-morning').value || null,
+    evening_departure: document.getElementById('rf-evening').value || null,
+    stops,
+  };
+
+  let error;
+  if (editingRouteId) { ({ error } = await supabase.from('bus_routes').update(record).eq('id', editingRouteId)); }
+  else { ({ error } = await supabase.from('bus_routes').insert([record])); }
+
+  if (error) { document.getElementById('route-modal-alert').className='alert alert-danger'; document.getElementById('route-modal-alert').textContent='⚠️ '+error.message; return; }
+  closeRouteModal();
+  showToast('Route saved!', 'success');
+  await loadRoutes();
+}
+
+async function deleteRoute(id, name) {
+  if (!confirm(`Delete route "${name}"?`)) return;
+  await supabase.from('bus_routes').delete().eq('id', id);
+  showToast('Route deleted.', 'success');
+  await loadRoutes();
+}
+
+function closeRouteModal() { document.getElementById('route-modal').classList.remove('open'); }
+
+// ── STUDENT ASSIGNMENT ──
+async function searchAssignStudent() {
+  const q = document.getElementById('assign-search').value.trim();
+  const res = document.getElementById('assign-search-results');
+  if (q.length < 2) { res.style.display='none'; return; }
+
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,class').eq('school_id',SCHOOL_ID).or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(6);
+  if (!data || data.length===0) { res.style.display='none'; return; }
+
+  res.style.display = 'block';
+  res.innerHTML = data.map(s => `
+    <div onclick="selectAssignStudent('${s.id}','${s.full_name.replace(/'/g,"\\'")}','${s.admission_no}','${s.class}')"
+      style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px"
+      onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <b>${s.full_name}</b> · ${s.admission_no} · ${s.class}
+    </div>
+  `).join('');
+}
+
+function selectAssignStudent(id, name, admNo, cls) {
+  assignedStudent = { id, name, admNo, cls };
+  document.getElementById('assign-search').value = name;
+  document.getElementById('assign-search-results').style.display = 'none';
+  const info = document.getElementById('assign-student-info');
+  info.style.display = 'block';
+  info.innerHTML = `<b>${name}</b> · ${admNo} · ${cls}`;
+}
+
+function loadRouteStops() {
+  const routeId = document.getElementById('assign-route').value;
+  const route = allRoutes.find(r => r.id === routeId);
+  const sel = document.getElementById('assign-stop');
+  sel.innerHTML = '<option value="">Select stop</option>';
+  if (route) {
+    (route.stops||[]).forEach(s => { const o=document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); });
+    if (route.morning_departure) document.getElementById('assign-morning').value = route.morning_departure;
+    if (route.evening_departure) document.getElementById('assign-evening').value = route.evening_departure;
+  }
+}
+
+async function saveAssignment() {
+  if (!assignedStudent) { showToast('Please search and select a student first.','error'); return; }
+  const routeId = document.getElementById('assign-route').value;
+  const stop = document.getElementById('assign-stop').value;
+  if (!routeId || !stop) { showToast('Please select route and boarding stop.','error'); return; }
+
+  const route = allRoutes.find(r => r.id === routeId);
+  const { data: existing } = await supabase.from('student_transport').select('id').eq('student_id', assignedStudent.id).single();
+  const record = {
+    school_id: SCHOOL_ID, student_id: assignedStudent.id, student_name: assignedStudent.name,
+    student_class: assignedStudent.cls, route_id: routeId, route_name: route?.name,
+    boarding_stop: stop,
+    morning_time: document.getElementById('assign-morning').value || null,
+    evening_time: document.getElementById('assign-evening').value || null,
+    monthly_fee: parseFloat(document.getElementById('assign-fee').value) || 0,
+  };
+
+  let error;
+  if (existing) { ({ error } = await supabase.from('student_transport').update(record).eq('id', existing.id)); }
+  else { ({ error } = await supabase.from('student_transport').insert([record])); }
+
+  if (error) { showToast('Error: '+error.message,'error'); return; }
+  showToast(assignedStudent.name + ' assigned to ' + route?.name + '!', 'success');
+  assignedStudent = null;
+  document.getElementById('assign-search').value = '';
+  document.getElementById('assign-student-info').style.display = 'none';
+  await loadStats();
+  if (document.getElementById('view-route').value) loadRouteStudents();
+}
+
+async function loadRouteStudents() {
+  const routeId = document.getElementById('view-route').value;
+  let query = supabase.from('student_transport').select('*').eq('school_id',SCHOOL_ID).order('boarding_stop').order('student_name');
+  if (routeId) query = query.eq('route_id', routeId);
+  const { data } = await query;
+
+  if (!data || data.length===0) {
+    document.getElementById('route-students-list').innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">👥</div><p>No students assigned to this route.</p></div>';
+    return;
+  }
+
+  document.getElementById('route-students-list').innerHTML = `
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">${data.length} student${data.length!==1?'s':''}</div>
+    <div class="table-wrap">
+    <table style="font-size:12px">
+      <thead><tr><th>Student</th><th>Class</th><th>Route</th><th>Boarding Stop</th><th>Morning</th><th>Evening</th><th>Fee</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(s=>`
+          <tr>
+            <td style="font-weight:500">${s.student_name}</td>
+            <td>${s.student_class}</td>
+            <td style="font-size:11px;color:var(--maroon)">${s.route_name||'—'}</td>
+            <td><span style="font-size:11px;padding:2px 6px;background:var(--sandal-light);border-radius:4px">${s.boarding_stop}</span></td>
+            <td>${s.morning_time||'—'}</td>
+            <td>${s.evening_time||'—'}</td>
+            <td style="font-weight:600">₹${(s.monthly_fee||0).toLocaleString('en-IN')}</td>
+            <td><button class="btn btn-danger btn-sm btn-icon" onclick="removeAssignment('${s.id}')">🗑</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+async function removeAssignment(id) {
+  if (!confirm('Remove this student from transport?')) return;
+  await supabase.from('student_transport').delete().eq('id', id);
+  showToast('Assignment removed.', 'success');
+  await loadRouteStudents(); await loadStats();
+}
+
+// ── TRIP LOG ──
+async function generateTripEntries() {
+  const date = document.getElementById('trip-date').value;
+  if (!date || allRoutes.length===0) { showToast('Please select a date and make sure routes exist.','error'); return; }
+
+  // Check existing
+  const { data: existing } = await supabase.from('trip_log').select('route_id').eq('date',date).eq('school_id',SCHOOL_ID);
+  const existingIds = new Set((existing||[]).map(e=>e.route_id));
+
+  const newEntries = allRoutes.filter(r => !existingIds.has(r.id)).flatMap(r => [
+    { school_id: SCHOOL_ID, route_id: r.id, route_name: r.name, date, trip_type: 'morning', scheduled_time: r.morning_departure, status: 'pending' },
+    { school_id: SCHOOL_ID, route_id: r.id, route_name: r.name, date, trip_type: 'evening', scheduled_time: r.evening_departure, status: 'pending' },
+  ]);
+
+  if (newEntries.length > 0) await supabase.from('trip_log').insert(newEntries);
+  showToast('Trip entries generated!', 'success');
+  await loadTripLog();
+}
+
+async function loadTripLog() {
+  const date = document.getElementById('trip-date').value;
+  const routeId = document.getElementById('trip-route-filter').value;
+
+  let query = supabase.from('trip_log').select('*').eq('school_id',SCHOOL_ID).eq('date',date).order('trip_type').order('route_name');
+  if (routeId) query = query.eq('route_id', routeId);
+  const { data } = await query;
+
+  if (!data || data.length===0) {
+    document.getElementById('trip-log-content').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No trip entries for this date. Click "Generate Today\'s Trips".</p></div>';
+    return;
+  }
+
+  document.getElementById('trip-log-content').innerHTML = `
+    <div class="table-wrap">
+    <table style="font-size:13px">
+      <thead><tr><th>Route</th><th>Trip</th><th>Scheduled</th><th>Actual Departure</th><th>Actual Arrival</th><th>Status</th><th>Notes</th><th style="width:80px">Update</th></tr></thead>
+      <tbody>
+        ${data.map(t=>`
+          <tr>
+            <td style="font-weight:500;color:var(--maroon)">${t.route_name}</td>
+            <td><span class="badge ${t.trip_type==='morning'?'badge-amber':'badge-blue'}">${t.trip_type}</span></td>
+            <td>${t.scheduled_time||'—'}</td>
+            <td><input type="time" class="time-input" id="dep-${t.id}" value="${t.actual_departure||''}"></td>
+            <td><input type="time" class="time-input" id="arr-${t.id}" value="${t.actual_arrival||''}"></td>
+            <td>
+              <select id="status-${t.id}" class="form-control" style="width:120px;padding:5px 8px;font-size:12px">
+                <option value="pending" ${t.status==='pending'?'selected':''}>Pending</option>
+                <option value="completed" ${t.status==='completed'?'selected':''}>Completed</option>
+                <option value="delayed" ${t.status==='delayed'?'selected':''}>Delayed</option>
+                <option value="cancelled" ${t.status==='cancelled'?'selected':''}>Cancelled</option>
+              </select>
+            </td>
+            <td><input type="text" class="form-control" id="note-${t.id}" value="${t.notes||''}" placeholder="Notes..." style="padding:5px 8px;font-size:12px;width:120px"></td>
+            <td>
+              <button class="btn btn-gold btn-sm" onclick="saveTripEntry('${t.id}')">Save</button>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+async function saveTripEntry(id) {
+  const dep = document.getElementById('dep-'+id)?.value;
+  const arr = document.getElementById('arr-'+id)?.value;
+  const status = document.getElementById('status-'+id)?.value;
+  const notes = document.getElementById('note-'+id)?.value;
+  await supabase.from('trip_log').update({ actual_departure: dep||null, actual_arrival: arr||null, status, notes }).eq('id', id);
+  showToast('Trip updated!', 'success');
+}
+
+// ── NOTIFICATIONS ──
+function buildDelayMessage() {
+  const routeId = document.getElementById('notif-route').value;
+  const route = allRoutes.find(r=>r.id===routeId);
+  const delay = document.getElementById('notif-delay').value;
+  const reasonKey = document.getElementById('notif-reason').value;
+  const reasons = { traffic:'heavy traffic on the route', breakdown:'a bus breakdown', rain:'heavy rainfall', accident:'a road accident nearby', other:'an unexpected situation' };
+  const reason = reasons[reasonKey] || reasonKey;
+  const routeName = route?.name || 'the route';
+  const msg = `🚌 *DigiSmart School — Bus Delay Alert*\n\nDear Parents,\n\nWe regret to inform you that the *${routeName}* bus is delayed by approximately *${delay} minutes* due to ${reason}.\n\nWe apologize for the inconvenience and will ensure the safety of all students.\n\nThank you for your understanding.\n\n— School Transport Team`;
+  document.getElementById('notif-message').value = msg;
+}
+
+function copyNotifMessage() {
+  const msg = document.getElementById('notif-message').value;
+  if (!msg) { showToast('Please build a message first.','error'); return; }
+  navigator.clipboard.writeText(msg).then(() => {
+    showToast('Message copied! Paste in WhatsApp.','success');
+    logNotification(msg);
+  });
+}
+
+async function logNotification(msg) {
+  await supabase.from('transport_notifications').insert([{ school_id: SCHOOL_ID, message: msg.slice(0,200), sent_at: new Date().toISOString() }]);
+}
+
+function openWhatsApp() {
+  const msg = encodeURIComponent(document.getElementById('notif-message').value);
+  window.open('https://wa.me/?text='+msg, '_blank');
+}
+
+function buildAnnouncement() {
+  const type = document.getElementById('ann-type').value;
+  const templates = {
+    holiday: '🚌 *DigiSmart School — Transport Notice*\n\nDear Parents,\n\nKindly note that there will be *NO BUS SERVICE* tomorrow due to a school holiday.\n\nPlease make your own arrangements.\n\nThank you.',
+    resume: '🚌 *DigiSmart School — Transport Notice*\n\nDear Parents,\n\nBus service will *resume from tomorrow* as normal. All buses will operate on their regular timings.\n\nThank you.',
+    route_change: '🚌 *DigiSmart School — Route Change Notice*\n\nDear Parents,\n\nPlease note that there is a temporary route change effective from tomorrow. Details will be communicated by your class teacher.\n\nThank you.',
+    fee_due: '🚌 *DigiSmart School — Transport Fee Reminder*\n\nDear Parents,\n\nThis is a friendly reminder that *transport fees* for this term are due. Kindly pay at the school office at the earliest.\n\nThank you.',
+    custom: '',
+  };
+  document.getElementById('ann-message').value = templates[type] || '';
+}
+
+function copyAnnMessage() {
+  const msg = document.getElementById('ann-message').value;
+  if (!msg) { showToast('Please write a message first.','error'); return; }
+  navigator.clipboard.writeText(msg).then(() => showToast('Message copied!','success'));
+}
+
+async function loadNotifLog() {
+  const { data } = await supabase.from('transport_notifications').select('*').eq('school_id',SCHOOL_ID).order('sent_at',{ascending:false}).limit(10);
+  if (!data||data.length===0) { document.getElementById('notif-log').innerHTML='<div class="empty-state" style="padding:16px"><div class="icon">📣</div><p>No notifications yet.</p></div>'; return; }
+  document.getElementById('notif-log').innerHTML = data.map(n=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="color:var(--text-muted);font-size:10px">${new Date(n.sent_at).toLocaleString('en-IN')}</div>
+      <div style="margin-top:2px">${n.message}</div>
+    </div>
+  `).join('');
+}
+
+function loadETA() {
+  const routeId = document.getElementById('eta-route').value;
+  const route = allRoutes.find(r=>r.id===routeId);
+  if (!route) return;
+  const stops = route.stops || [];
+  const morningDep = route.morning_departure;
+
+  if (!morningDep || stops.length === 0) {
+    document.getElementById('eta-list').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:8px">No stops or departure time set for this route.</div>';
+    return;
+  }
+
+  const [h,m] = morningDep.split(':').map(Number);
+  const totalMins = stops.length > 1 ? Math.round((route.distance||20) / stops.length * 3) : 5;
+
+  document.getElementById('eta-list').innerHTML = `
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Estimated arrival based on ${route.morning_departure} departure · ${route.distance||'?'}km route</div>
+    ${stops.map((stop, i) => {
+      const mins = i * totalMins;
+      const eta = new Date(0, 0, 0, h, m + mins);
+      const etaStr = eta.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return `
+        <div class="stop-row">
+          <div class="stop-dot ${i===0?'start':i===stops.length-1?'end':''}"></div>
+          <div style="flex:1;font-size:12px">${stop}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--maroon)">${etaStr}</div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+// ── REPORTS ──
+async function loadRouteReport() {
+  const { data } = await supabase.from('student_transport').select('route_name,student_id').eq('school_id',SCHOOL_ID);
+  if (!data||data.length===0) { document.getElementById('route-report').innerHTML='<div class="empty-state"><div class="icon">📊</div><p>No assignments yet.</p></div>'; return; }
+  const byRoute = {};
+  data.forEach(d => { byRoute[d.route_name||'Unknown'] = (byRoute[d.route_name||'Unknown']||0)+1; });
+  document.getElementById('route-report').innerHTML=`
+    <table style="font-size:13px">
+      <thead><tr><th>Route</th><th style="text-align:right">Students</th><th style="text-align:right">Utilization</th></tr></thead>
+      <tbody>
+        ${Object.entries(byRoute).sort((a,b)=>b[1]-a[1]).map(([route,count])=>{
+          const bus = allBuses.find(b=>allRoutes.find(r=>r.name===route)?.bus_id===b.id);
+          const cap = bus?.capacity || 40;
+          const pct = Math.round((count/cap)*100);
+          return `<tr><td style="font-weight:500;color:var(--maroon)">${route}</td><td style="text-align:right;font-weight:600">${count}</td><td style="text-align:right"><span class="badge ${pct>=90?'badge-red':pct>=70?'badge-amber':'badge-green'}">${pct}%</span></td></tr>`;
+        }).join('')}
+        <tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td><td style="text-align:right">${data.length}</td><td></td></tr>
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadMonthTripReport() {
+  const month = document.getElementById('trip-month').value;
+  if (!month) return;
+  const { data } = await supabase.from('trip_log').select('status,trip_type,route_name').eq('school_id',SCHOOL_ID).gte('date',month+'-01').lte('date',month+'-31');
+  if (!data||data.length===0) { document.getElementById('month-trip-report').innerHTML='<div class="empty-state"><div class="icon">📅</div><p>No trip data for this month.</p></div>'; return; }
+  const total=data.length, comp=data.filter(d=>d.status==='completed').length, del=data.filter(d=>d.status==='delayed').length, can=data.filter(d=>d.status==='cancelled').length;
+  document.getElementById('month-trip-report').innerHTML=`
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="badge badge-blue">Total: ${total}</span>
+      <span class="badge badge-green">Completed: ${comp}</span>
+      <span class="badge badge-amber">Delayed: ${del}</span>
+      <span class="badge badge-red">Cancelled: ${can}</span>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted)">Completion rate: <b style="color:var(--maroon)">${total>0?Math.round((comp/total)*100):0}%</b></div>
+  `;
+}
+
+async function loadTransportFeeReport() {
+  const { data } = await supabase.from('student_transport').select('student_name,student_class,monthly_fee,route_name').eq('school_id',SCHOOL_ID).order('route_name');
+  if (!data||data.length===0) { document.getElementById('transport-fee-report').innerHTML='<div class="empty-state"><div class="icon">💰</div><p>No data.</p></div>'; return; }
+  const total = data.reduce((s,d)=>s+(d.monthly_fee||0),0);
+  document.getElementById('transport-fee-report').innerHTML=`
+    <div style="font-size:16px;font-weight:700;color:var(--maroon);margin-bottom:10px">₹${total.toLocaleString('en-IN')}<span style="font-size:12px;font-weight:500;color:var(--text-muted)"> /month potential</span></div>
+    <table style="font-size:12px">
+      <thead><tr><th>Student</th><th>Class</th><th>Route</th><th style="text-align:right">Monthly Fee</th></tr></thead>
+      <tbody>
+        ${data.map(d=>`<tr><td style="font-weight:500">${d.student_name}</td><td>${d.student_class}</td><td style="color:var(--maroon);font-size:11px">${d.route_name||'—'}</td><td style="text-align:right;font-weight:600">₹${(d.monthly_fee||0).toLocaleString('en-IN')}</td></tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadBusUtilization() {
+  const { data: assignments } = await supabase.from('student_transport').select('route_id').eq('school_id',SCHOOL_ID);
+  const byRoute = {};
+  (assignments||[]).forEach(a => { byRoute[a.route_id] = (byRoute[a.route_id]||0)+1; });
+  document.getElementById('bus-util-report').innerHTML=`
+    <table style="font-size:12px">
+      <thead><tr><th>Bus</th><th>Route</th><th style="text-align:right">Capacity</th><th style="text-align:right">Students</th><th>Fill %</th></tr></thead>
+      <tbody>
+        ${allBuses.map(b=>{
+          const route = allRoutes.find(r=>r.bus_id===b.id);
+          const count = route ? (byRoute[route.id]||0) : 0;
+          const cap = b.capacity||40;
+          const pct = Math.round((count/cap)*100);
+          return `<tr><td style="font-weight:600;font-family:monospace">${b.bus_number}</td><td style="font-size:11px;color:var(--maroon)">${route?.name||'Unassigned'}</td><td style="text-align:right">${cap}</td><td style="text-align:right;font-weight:600">${count}</td><td><span class="badge ${pct>=90?'badge-red':pct>=70?'badge-amber':'badge-green'}">${pct}%</span></td></tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// ── STATS ──
+async function loadStats() {
+  document.getElementById('st-buses').textContent = allBuses.filter(b=>b.status==='active').length;
+  document.getElementById('st-routes').textContent = allRoutes.length;
+  const { count } = await supabase.from('student_transport').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID);
+  document.getElementById('st-students').textContent = count || 0;
+}
+
+// ── TAB SWITCH ──
+function switchTab(tab, el) {
+  ['gps','buses','students','trips','notify','reports'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='notify') { buildDelayMessage(); buildAnnouncement(); loadNotifLog(); }
+  if (tab==='students') loadRouteStudents();
+}
+
+// Close modals
+['route-modal','driver-modal'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')});
+});
+</script>
+</body>
+</html>

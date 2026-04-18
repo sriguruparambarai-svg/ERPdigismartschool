@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Communication — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.comm-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color .15s}
+.comm-card:hover{border-color:var(--gold)}
+.priority-bar{width:4px;border-radius:2px;align-self:stretch;flex-shrink:0}
+.pbar-urgent{background:#E24B4A}
+.pbar-important{background:var(--gold)}
+.pbar-normal{background:#2D7A3A}
+.type-icon{font-size:24px;flex-shrink:0}
+.wa-preview{background:#E8F5EB;border:1px solid #b8dfc0;border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.7;color:#1A3A1A;white-space:pre-wrap;margin-top:10px;font-family:inherit}
+.consent-opt-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.consent-opt-inp{flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px}
+.response-bar{height:8px;border-radius:4px;background:#F0EBE3;overflow:hidden;margin-top:4px}
+.response-fill{height:100%;border-radius:4px;background:var(--maroon)}
+.stat-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Parent Communication</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Communication → All Channels</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Sent This Month</div>
+          <div class="stat-value" id="st-sent">—</div>
+          <div class="stat-sub">All communications</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Homework Posted</div>
+          <div class="stat-value" id="st-hw">—</div>
+          <div class="stat-sub">This month</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending Consent</div>
+          <div class="stat-value" id="st-consent" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Awaiting responses</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Parent Portal Link</div>
+          <div style="margin-top:6px">
+            <button class="btn btn-secondary btn-sm" onclick="copyPortalLink()">📋 Copy Link</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('compose',this)">✏️ Compose</div>
+        <div class="tab" onclick="switchTab('homework',this)">📚 Homework</div>
+        <div class="tab" onclick="switchTab('consent',this)">📋 Consent Forms</div>
+        <div class="tab" onclick="switchTab('events',this)">🗓 Events</div>
+        <div class="tab" onclick="switchTab('history',this)">📜 History</div>
+        <div class="tab" onclick="switchTab('portal',this)">🔗 Parent Portal</div>
+      </div>
+
+      <!-- ══ TAB: COMPOSE ══ -->
+      <div id="tab-compose">
+        <div style="display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start">
+
+          <!-- Form -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Send Communication</div>
+            <div id="compose-alert" class="hidden"></div>
+
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Type <span class="req">*</span></label>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
+                ${[['circular','📢','Circular'],['announcement','📣','Announcement'],['holiday','🏖','Holiday Alert'],['event_notice','🎉','Event Notice']].map(([v,ic,lb])=>`
+                  <label style="display:flex;align-items:center;gap:5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;transition:all .12s" class="type-chip">
+                    <input type="radio" name="comm-type" value="${v}" onchange="updateWAPreview()"> ${ic} ${lb}
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Priority</label>
+              <select id="c-priority" class="form-control" onchange="updateWAPreview()">
+                <option value="normal">Normal</option>
+                <option value="important">Important</option>
+                <option value="urgent">🚨 Urgent</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Send To <span class="req">*</span></label>
+              <select id="c-target" class="form-control" onchange="updateWAPreview()">
+                <option value="all">All Classes (Entire School)</option>
+                <option value="LKG">LKG</option><option value="UKG">UKG</option>
+                <option value="Class 1">Class 1</option><option value="Class 2">Class 2</option>
+                <option value="Class 3">Class 3</option><option value="Class 4">Class 4</option>
+                <option value="Class 5">Class 5</option><option value="Class 6">Class 6</option>
+                <option value="Class 7">Class 7</option><option value="Class 8">Class 8</option>
+                <option value="Class 9">Class 9</option><option value="Class 10">Class 10</option>
+                <option value="Class 11">Class 11</option><option value="Class 12">Class 12</option>
+              </select>
+            </div>
+
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Title <span class="req">*</span></label>
+              <input type="text" id="c-title" class="form-control" placeholder="e.g. School closed tomorrow — Holiday" oninput="updateWAPreview()">
+            </div>
+
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Message <span class="req">*</span></label>
+              <textarea id="c-message" class="form-control" rows="4" placeholder="Write the full message for parents..." oninput="updateWAPreview()"></textarea>
+            </div>
+
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-gold w-full" onclick="sendCommunication()">📤 Send Now</button>
+              <button class="btn btn-secondary btn-sm" onclick="clearCompose()">Clear</button>
+            </div>
+          </div>
+
+          <!-- WhatsApp Preview -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">WhatsApp Message Preview</div>
+              <button class="btn btn-secondary btn-sm" onclick="copyWAMessage()">📋 Copy Message</button>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">This message is auto-generated. Copy and paste into WhatsApp group.</div>
+            <div class="wa-preview" id="wa-preview">Select type and fill in the details to see WhatsApp preview...</div>
+            <div style="margin-top:12px;display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="openWhatsApp()">Open WhatsApp ↗</button>
+              <div style="font-size:11px;color:var(--text-muted);align-self:center">Opens WhatsApp with message pre-filled</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: HOMEWORK ══ -->
+      <div id="tab-homework" class="hidden">
+        <div style="display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start">
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Post Homework</div>
+            <div id="hw-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Class <span class="req">*</span></label>
+              <select id="hw-class" class="form-control">
+                <option value="">Select class</option>
+                <option>LKG</option><option>UKG</option>
+                <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Subject <span class="req">*</span></label>
+              <select id="hw-subject" class="form-control">
+                <option value="">Select subject</option>
+                <option>Tamil</option><option>English</option><option>Mathematics</option>
+                <option>Science</option><option>Social Science</option><option>Computer</option>
+                <option>Hindi</option><option>Drawing</option><option>Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Homework Title <span class="req">*</span></label>
+              <input type="text" id="hw-title" class="form-control" placeholder="e.g. Write 5 sentences about your family">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Description / Instructions</label>
+              <textarea id="hw-desc" class="form-control" rows="3" placeholder="Detailed instructions for the homework..."></textarea>
+            </div>
+            <div class="form-grid-2" style="margin-bottom:14px">
+              <div class="form-group">
+                <label class="form-label">Due Date <span class="req">*</span></label>
+                <input type="date" id="hw-due" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Section</label>
+                <select id="hw-section" class="form-control">
+                  <option value="all">All Sections</option>
+                  <option>A</option><option>B</option><option>C</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-gold w-full" onclick="postHomework()">📚 Post Homework</button>
+          </div>
+
+          <!-- HW List -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Posted Homework</div>
+              <div style="display:flex;gap:8px">
+                <select class="form-control" id="hw-filter-class" onchange="loadHomeworkList()" style="width:140px;padding:6px 10px">
+                  <option value="">All Classes</option>
+                  <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                  <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                  <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                  <option>Class 10</option>
+                </select>
+                <input type="date" id="hw-filter-date" class="form-control" style="width:150px;padding:6px 10px" onchange="loadHomeworkList()">
+              </div>
+            </div>
+            <div id="hw-list-content">
+              <div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: CONSENT FORMS ══ -->
+      <div id="tab-consent" class="hidden">
+        <div style="display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start">
+
+          <!-- Create Form -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Create Consent Form</div>
+            <div id="cf-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Title <span class="req">*</span></label>
+              <input type="text" id="cf-title" class="form-control" placeholder="e.g. Permission for Annual Day trip">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Description <span class="req">*</span></label>
+              <textarea id="cf-desc" class="form-control" rows="3" placeholder="Explain what this consent is for..."></textarea>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Send To</label>
+              <select id="cf-target" class="form-control">
+                <option value="all">All Classes</option>
+                <option>LKG</option><option>UKG</option>
+                <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Response Options</label>
+              <div id="consent-options-list">
+                <div class="consent-opt-row"><input type="text" class="consent-opt-inp" value="Yes, I give permission" placeholder="Option 1"><button class="btn btn-danger btn-sm btn-icon" onclick="this.parentNode.remove()">✕</button></div>
+                <div class="consent-opt-row"><input type="text" class="consent-opt-inp" value="No, I do not give permission" placeholder="Option 2"><button class="btn btn-danger btn-sm btn-icon" onclick="this.parentNode.remove()">✕</button></div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="addConsentOption()" style="margin-top:6px">+ Add Option</button>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Last Date to Respond</label>
+              <input type="date" id="cf-deadline" class="form-control">
+            </div>
+            <button class="btn btn-gold w-full" onclick="createConsentForm()">📋 Create & Send Form</button>
+          </div>
+
+          <!-- Consent Responses -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Consent Form Responses</div>
+              <button class="btn btn-primary btn-sm" onclick="loadConsentForms()">Refresh</button>
+            </div>
+            <div id="consent-forms-list">
+              <div class="empty-state"><div class="icon">📋</div><p>Loading consent forms...</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: EVENTS ══ -->
+      <div id="tab-events" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Add School Event</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Event Name <span class="req">*</span></label>
+              <input type="text" id="ev-title" class="form-control" placeholder="e.g. Annual Sports Day">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Event Type</label>
+              <select id="ev-type" class="form-control">
+                <option>School Event</option><option>Sports Day</option><option>Annual Day</option>
+                <option>PTM (Parent-Teacher Meeting)</option><option>Exam</option>
+                <option>Holiday</option><option>Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Event Date <span class="req">*</span></label>
+              <input type="date" id="ev-date" class="form-control">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Time</label>
+              <input type="time" id="ev-time" class="form-control">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Venue</label>
+              <input type="text" id="ev-venue" class="form-control" placeholder="e.g. School Grounds, Assembly Hall">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Description</label>
+              <textarea id="ev-desc" class="form-control" rows="2" placeholder="More details about the event..."></textarea>
+            </div>
+            <button class="btn btn-gold w-full" onclick="addEvent()">🗓 Add Event</button>
+          </div>
+
+          <!-- Events List -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Upcoming Events</div>
+            </div>
+            <div id="events-list-content">
+              <div class="empty-state"><div class="icon">⏳</div><p>Loading events...</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: HISTORY ══ -->
+      <div id="tab-history" class="hidden">
+        <div class="filter-row">
+          <div>
+            <label class="form-label">Type</label>
+            <select class="form-control" id="hist-type" style="width:160px;margin-top:4px" onchange="loadHistory()">
+              <option value="">All Types</option>
+              <option value="circular">Circular</option>
+              <option value="announcement">Announcement</option>
+              <option value="holiday">Holiday Alert</option>
+              <option value="homework">Homework</option>
+              <option value="consent_form">Consent Form</option>
+              <option value="event">Event</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Month</label>
+            <input type="month" id="hist-month" class="form-control" style="width:160px;margin-top:4px" onchange="loadHistory()">
+          </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-secondary" onclick="loadHistory()">Refresh</button>
+          </div>
+        </div>
+        <div class="card">
+          <div id="history-content">
+            <div class="empty-state"><div class="icon">📜</div><p>Loading history...</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: PARENT PORTAL ══ -->
+      <div id="tab-portal" class="hidden">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+          <!-- Portal Info -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Parent Portal Access</div>
+            </div>
+            <div style="background:var(--sandal-light);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid #E8D8B8">
+              <div style="font-size:13px;font-weight:600;color:var(--maroon);margin-bottom:6px">Portal Link</div>
+              <div id="portal-link-display" style="font-size:12px;color:var(--text-muted);word-break:break-all;background:var(--white);padding:8px 10px;border-radius:6px;border:1px solid var(--border)">Loading...</div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-gold btn-sm" onclick="copyPortalLink()">📋 Copy Link</button>
+                <button class="btn btn-secondary btn-sm" onclick="openPortalLink()">Open ↗</button>
+              </div>
+            </div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">How to share with parents:</div>
+            <div style="font-size:12px;color:var(--text-muted);line-height:1.8">
+              1. Copy the portal link above<br>
+              2. Send it to parents via WhatsApp class group<br>
+              3. Parents tap the link → opens Parent Portal<br>
+              4. They log in with: <b style="color:var(--maroon)">Admission No + DOB as password</b><br>
+              5. They install it as an app on their phone<br><br>
+              <b style="color:var(--maroon)">Default Password Format:</b><br>
+              Date of birth as DDMMYYYY<br>
+              Example: 15 April 2012 → <b>15042012</b>
+            </div>
+          </div>
+
+          <!-- Per-student portal link generator -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Per-Student Portal Links</div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Class</label>
+              <select id="plink-class" class="form-control" onchange="loadStudentPortalLinks()" style="margin-top:4px">
+                <option value="">Select class</option>
+                <option>LKG</option><option>UKG</option>
+                <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                <option>Class 10</option>
+              </select>
+            </div>
+            <div id="student-portal-links">
+              <div class="empty-state"><div class="icon">🔗</div><p>Select class to view student links</p></div>
+            </div>
+          </div>
+
+          <!-- WhatsApp bulk message -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Bulk WhatsApp Intro Message</div>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Send this message to all parent WhatsApp groups to introduce the parent portal</div>
+            <div class="wa-preview" id="portal-wa-msg"></div>
+            <button class="btn btn-gold btn-sm" onclick="copyPortalWAMsg()" style="margin-top:10px">📋 Copy Message</button>
+          </div>
+
+          <!-- Reset Password -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Reset Parent Password</div>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">If a parent forgets their password, reset it here</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Search Student</label>
+              <input type="text" id="pw-reset-search" class="form-control" placeholder="Admission No or name..." oninput="searchResetStudent()" style="margin-top:4px">
+              <div id="pw-reset-results" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none"></div>
+            </div>
+            <div id="pw-reset-student-info" style="display:none;background:var(--sandal-light);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px"></div>
+            <button class="btn btn-primary w-full" id="pw-reset-btn" onclick="resetParentPassword()" style="display:none">Reset to DOB Default</button>
+            <div id="pw-reset-msg" class="hidden"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let selectedResetStudent = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('communication');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('hw-due').value = today;
+  document.getElementById('cf-deadline').value = today;
+  document.getElementById('ev-date').value = today;
+  document.getElementById('hist-month').value = today.slice(0,7);
+  document.getElementById('hw-filter-date').value = today;
+
+  // Set portal link
+  const portalUrl = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+  document.getElementById('portal-link-display').textContent = portalUrl;
+  document.getElementById('portal-wa-msg').textContent = buildPortalWAMsg(portalUrl);
+
+  await loadStats();
+  await loadHistory();
+  await loadHomeworkList();
+  await loadConsentForms();
+  await loadEventsList();
+
+  // Style type chips
+  document.querySelectorAll('.type-chip').forEach(chip => {
+    chip.addEventListener('change', () => {
+      document.querySelectorAll('.type-chip').forEach(c => c.style.borderColor = 'var(--border)');
+      if (chip.querySelector('input').checked) chip.style.borderColor = 'var(--maroon)';
+    });
+  });
+});
+
+// ── SEND COMMUNICATION ──
+async function sendCommunication() {
+  const typeEl = document.querySelector('input[name="comm-type"]:checked');
+  const type = typeEl?.value;
+  const title = document.getElementById('c-title').value.trim();
+  const message = document.getElementById('c-message').value.trim();
+  const target = document.getElementById('c-target').value;
+  const priority = document.getElementById('c-priority').value;
+
+  if (!type) { showComposeAlert('⚠️ Please select a communication type.'); return; }
+  if (!title || !message) { showComposeAlert('⚠️ Please fill title and message.'); return; }
+
+  const { error } = await supabase.from('communications').insert([{
+    school_id: SCHOOL_ID, type, title, message,
+    target_class: target, priority,
+    sender_name: 'Admin',
+    created_at: new Date().toISOString(),
+  }]);
+
+  if (error) { showComposeAlert('⚠️ Error: ' + error.message); return; }
+  showToast(title + ' sent successfully!', 'success');
+  clearCompose();
+  await loadStats();
+  await loadHistory();
+}
+
+function clearCompose() {
+  document.querySelectorAll('input[name="comm-type"]').forEach(r => r.checked = false);
+  document.querySelectorAll('.type-chip').forEach(c => c.style.borderColor = 'var(--border)');
+  document.getElementById('c-title').value = '';
+  document.getElementById('c-message').value = '';
+  document.getElementById('c-target').value = 'all';
+  document.getElementById('c-priority').value = 'normal';
+  document.getElementById('wa-preview').textContent = 'Select type and fill in the details to see WhatsApp preview...';
+  document.getElementById('compose-alert').className = 'hidden';
+}
+
+function showComposeAlert(msg) {
+  document.getElementById('compose-alert').className = 'alert alert-danger';
+  document.getElementById('compose-alert').textContent = msg;
+}
+
+// ── WHATSAPP PREVIEW ──
+function updateWAPreview() {
+  const type = document.querySelector('input[name="comm-type"]:checked')?.value || '';
+  const title = document.getElementById('c-title').value || 'Notice Title';
+  const message = document.getElementById('c-message').value || 'Message content...';
+  const target = document.getElementById('c-target').value;
+  const priority = document.getElementById('c-priority').value;
+  const icons = { circular:'📢', announcement:'📣', holiday:'🏖', event_notice:'🎉' };
+  const icon = icons[type] || '📢';
+  const schoolName = sessionStorage.getItem('school_name') || 'DigiSmart School';
+  const urgent = priority === 'urgent' ? '🚨 *URGENT* 🚨\n\n' : priority === 'important' ? '⚠️ *IMPORTANT*\n\n' : '';
+  const targetText = target === 'all' ? 'All Students' : 'Class ' + target + ' Students';
+  const date = new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'});
+
+  document.getElementById('wa-preview').textContent =
+    `${icon} *${schoolName}*\n${urgent}*${title}*\n\nDear Parents,\n\n${message}\n\n📅 Date: ${date}\n👥 To: ${targetText}\n\n_This message is sent via DigiSmart ERP Parent Communication System_`;
+}
+
+function copyWAMessage() {
+  const msg = document.getElementById('wa-preview').textContent;
+  if (!msg || msg.includes('Select type')) { showToast('Please fill in the message first.','error'); return; }
+  navigator.clipboard.writeText(msg).then(() => showToast('WhatsApp message copied!','success'));
+}
+
+function openWhatsApp() {
+  const msg = encodeURIComponent(document.getElementById('wa-preview').textContent);
+  window.open('https://wa.me/?text=' + msg, '_blank');
+}
+
+// ── HOMEWORK ──
+async function postHomework() {
+  const cls = document.getElementById('hw-class').value;
+  const subject = document.getElementById('hw-subject').value;
+  const title = document.getElementById('hw-title').value.trim();
+  const desc = document.getElementById('hw-desc').value.trim();
+  const due = document.getElementById('hw-due').value;
+  const section = document.getElementById('hw-section').value;
+
+  if (!cls || !subject || !title || !due) {
+    document.getElementById('hw-alert').className = 'alert alert-danger';
+    document.getElementById('hw-alert').textContent = '⚠️ Please fill class, subject, title and due date.';
+    return;
+  }
+  document.getElementById('hw-alert').className = 'hidden';
+
+  const { error } = await supabase.from('communications').insert([{
+    school_id: SCHOOL_ID, type: 'homework',
+    title, message: desc, subject, target_class: cls,
+    target_section: section !== 'all' ? section : null,
+    due_date: due, priority: 'normal',
+    sender_name: 'Teacher',
+    created_at: new Date().toISOString(),
+  }]);
+
+  if (error) { document.getElementById('hw-alert').className='alert alert-danger'; document.getElementById('hw-alert').textContent='⚠️ '+error.message; return; }
+  showToast('Homework posted for ' + cls + '!','success');
+  document.getElementById('hw-title').value = '';
+  document.getElementById('hw-desc').value = '';
+  await loadHomeworkList();
+  await loadStats();
+}
+
+async function loadHomeworkList() {
+  const cls = document.getElementById('hw-filter-class').value;
+  const date = document.getElementById('hw-filter-date').value;
+
+  let query = supabase.from('communications').select('*').eq('school_id',SCHOOL_ID).eq('type','homework').order('due_date',{ascending:true});
+  if (cls) query = query.eq('target_class', cls);
+  if (date) query = query.gte('due_date', date);
+
+  const { data } = await query.limit(30);
+  if (!data||data.length===0) { document.getElementById('hw-list-content').innerHTML='<div class="empty-state"><div class="icon">📚</div><p>No homework posted yet.</p></div>'; return; }
+
+  document.getElementById('hw-list-content').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Subject</th><th>Title</th><th>Class</th><th>Due Date</th><th>Posted</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(h=>`
+          <tr>
+            <td><span class="badge badge-maroon" style="font-size:10px">${h.subject||'—'}</span></td>
+            <td style="font-weight:500">${h.title}</td>
+            <td>${h.target_class}${h.target_section?' '+h.target_section:''}</td>
+            <td style="font-weight:600;color:${h.due_date<new Date().toISOString().split('T')[0]?'#A32D2D':'#2D7A3A'}">${formatDate(h.due_date)}</td>
+            <td style="color:var(--text-muted)">${formatDate(h.created_at?.split('T')[0])}</td>
+            <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteComm('${h.id}')">🗑</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ── CONSENT FORMS ──
+function addConsentOption() {
+  const div = document.createElement('div');
+  div.className = 'consent-opt-row';
+  div.innerHTML = `<input type="text" class="consent-opt-inp" placeholder="Option"><button class="btn btn-danger btn-sm btn-icon" onclick="this.parentNode.remove()">✕</button>`;
+  document.getElementById('consent-options-list').appendChild(div);
+}
+
+async function createConsentForm() {
+  const title = document.getElementById('cf-title').value.trim();
+  const desc = document.getElementById('cf-desc').value.trim();
+  const target = document.getElementById('cf-target').value;
+  const deadline = document.getElementById('cf-deadline').value;
+
+  if (!title || !desc) { document.getElementById('cf-alert').className='alert alert-danger'; document.getElementById('cf-alert').textContent='⚠️ Please fill title and description.'; return; }
+
+  const options = [...document.querySelectorAll('.consent-opt-inp')].map(inp=>inp.value.trim()).filter(Boolean);
+  if (options.length < 2) { document.getElementById('cf-alert').className='alert alert-danger'; document.getElementById('cf-alert').textContent='⚠️ Please add at least 2 response options.'; return; }
+  document.getElementById('cf-alert').className = 'hidden';
+
+  const { error } = await supabase.from('communications').insert([{
+    school_id: SCHOOL_ID, type: 'consent_form',
+    title, message: desc, target_class: target,
+    consent_options: options, due_date: deadline,
+    priority: 'important', sender_name: 'Admin',
+    created_at: new Date().toISOString(),
+  }]);
+
+  if (error) { document.getElementById('cf-alert').className='alert alert-danger'; document.getElementById('cf-alert').textContent='⚠️ '+error.message; return; }
+  showToast('Consent form sent!','success');
+  document.getElementById('cf-title').value = '';
+  document.getElementById('cf-desc').value = '';
+  await loadConsentForms();
+  await loadStats();
+}
+
+async function loadConsentForms() {
+  const { data: forms } = await supabase.from('communications').select('*').eq('school_id',SCHOOL_ID).eq('type','consent_form').order('created_at',{ascending:false}).limit(10);
+  if (!forms||forms.length===0) { document.getElementById('consent-forms-list').innerHTML='<div class="empty-state"><div class="icon">📋</div><p>No consent forms yet.</p></div>'; return; }
+
+  // Load responses for each form
+  const ids = forms.map(f=>f.id);
+  const { data: responses } = await supabase.from('consent_responses').select('comm_id,response').in('comm_id',ids);
+
+  document.getElementById('consent-forms-list').innerHTML = forms.map(f => {
+    const fResponses = (responses||[]).filter(r=>r.comm_id===f.id);
+    const opts = f.consent_options || [];
+    const total = fResponses.length;
+    return `
+      <div class="comm-card">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div class="type-icon">📋</div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">${f.title}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${f.message}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Class: ${f.target_class} · Due: ${formatDate(f.due_date)}</div>
+            <div style="font-size:11px;font-weight:600;color:var(--maroon);margin-bottom:6px">Responses: ${total}</div>
+            ${opts.map(opt => {
+              const count = fResponses.filter(r=>r.response===opt).length;
+              const pct = total > 0 ? Math.round((count/total)*100) : 0;
+              return `
+                <div style="margin-bottom:6px">
+                  <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${opt}</span><span style="font-weight:600">${count} (${pct}%)</span></div>
+                  <div class="response-bar"><div class="response-fill" style="width:${pct}%"></div></div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteComm('${f.id}')">🗑</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── EVENTS ──
+async function addEvent() {
+  const title = document.getElementById('ev-title').value.trim();
+  const date = document.getElementById('ev-date').value;
+  if (!title || !date) { showToast('Please fill event name and date.','error'); return; }
+
+  const { error } = await supabase.from('communications').insert([{
+    school_id: SCHOOL_ID, type: 'event',
+    title, message: document.getElementById('ev-desc').value.trim(),
+    event_date: date, event_time: document.getElementById('ev-time').value,
+    event_venue: document.getElementById('ev-venue').value.trim(),
+    target_class: 'all', priority: 'normal',
+    sender_name: 'Admin',
+    created_at: new Date().toISOString(),
+  }]);
+
+  if (error) { showToast('Error: '+error.message,'error'); return; }
+  showToast(title + ' added!','success');
+  ['ev-title','ev-desc','ev-venue','ev-time'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  await loadEventsList();
+}
+
+async function loadEventsList() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data } = await supabase.from('communications').select('*').eq('school_id',SCHOOL_ID).eq('type','event').gte('event_date',today).order('event_date',{ascending:true}).limit(20);
+  if (!data||data.length===0) { document.getElementById('events-list-content').innerHTML='<div class="empty-state"><div class="icon">🗓</div><p>No upcoming events.</p></div>'; return; }
+
+  document.getElementById('events-list-content').innerHTML = data.map(e => {
+    const d = new Date(e.event_date+'T00:00:00');
+    return `
+      <div class="comm-card" style="display:flex;gap:12px;align-items:center">
+        <div style="width:48px;height:48px;background:var(--maroon);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0">
+          <div style="font-size:16px;font-weight:800;color:var(--gold)">${d.getDate()}</div>
+          <div style="font-size:9px;color:rgba(245,230,200,.8);text-transform:uppercase">${d.toLocaleString('en-IN',{month:'short'})}</div>
+        </div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">${e.title}</div>
+          ${e.message?`<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${e.message}</div>`:''}
+          ${e.event_venue?`<div style="font-size:11px;color:var(--text-muted);margin-top:2px">📍 ${e.event_venue}</div>`:''}
+          ${e.event_time?`<div style="font-size:11px;color:var(--text-muted)">⏰ ${e.event_time}</div>`:''}
+        </div>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="deleteComm('${e.id}')">🗑</button>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── HISTORY ──
+async function loadHistory() {
+  const type = document.getElementById('hist-type').value;
+  const month = document.getElementById('hist-month').value;
+  let query = supabase.from('communications').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false});
+  if (type) query = query.eq('type',type);
+  if (month) query = query.gte('created_at',month+'-01').lte('created_at',month+'-31T23:59:59');
+  const { data } = await query.limit(50);
+
+  if (!data||data.length===0) { document.getElementById('history-content').innerHTML='<div class="empty-state"><div class="icon">📜</div><p>No communication history found.</p></div>'; return; }
+  const icons = { circular:'📢', announcement:'📣', holiday:'🏖', homework:'📚', consent_form:'📋', event:'🗓', event_notice:'🎉' };
+  document.getElementById('history-content').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Type</th><th>Title</th><th>Sent To</th><th>Priority</th><th>Date</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(c=>`
+          <tr>
+            <td>${icons[c.type]||'📢'} <span style="font-size:11px">${c.type}</span></td>
+            <td style="font-weight:500">${c.title}</td>
+            <td>${c.target_class==='all'?'All Classes':'Class '+c.target_class}</td>
+            <td><span class="badge ${c.priority==='urgent'?'badge-red':c.priority==='important'?'badge-amber':'badge-green'}" style="font-size:10px">${c.priority}</span></td>
+            <td style="color:var(--text-muted)">${formatDate(c.created_at?.split('T')[0])}</td>
+            <td><button class="btn btn-danger btn-sm btn-icon" onclick="deleteComm('${c.id}')">🗑</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ── PORTAL ──
+function copyPortalLink() {
+  const link = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+  navigator.clipboard.writeText(link).then(() => showToast('Portal link copied!','success'));
+}
+
+function openPortalLink() {
+  window.open(window.location.origin + '/parent/index.html?school=' + SCHOOL_ID, '_blank');
+}
+
+function buildPortalWAMsg(url) {
+  const schoolName = sessionStorage.getItem('school_name') || 'Our School';
+  return `📱 *${schoolName} — Parent Portal*\n\nDear Parents,\n\nWe are happy to introduce our new *DigiSmart ERP Parent Portal* — where you can view:\n✅ Daily Homework\n📢 School Notices & Circulars\n🏖 Holiday Announcements\n🗓 Upcoming Events\n📋 Consent Forms\n\n*How to access:*\n1. Tap this link: ${url}\n2. Enter your child's Admission Number\n3. Password: Child's Date of Birth (DDMMYYYY)\n   Example: 15 April 2012 → 15042012\n4. Install as app on your phone for easy access\n\nFor any help, contact the school office.\n\n_Powered by DigiSmart ERP_`;
+}
+
+function copyPortalWAMsg() {
+  navigator.clipboard.writeText(document.getElementById('portal-wa-msg').textContent).then(() => showToast('Message copied!','success'));
+}
+
+async function loadStudentPortalLinks() {
+  const cls = document.getElementById('plink-class').value;
+  if (!cls) return;
+  const { data } = await supabase.from('students').select('full_name,admission_no,class').eq('school_id',SCHOOL_ID).eq('class',cls).eq('status','active').order('full_name').limit(50);
+  if (!data||data.length===0) { document.getElementById('student-portal-links').innerHTML='<div class="empty-state"><div class="icon">👥</div><p>No students found.</p></div>'; return; }
+  const baseUrl = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+  document.getElementById('student-portal-links').innerHTML = `
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${data.length} students · share admission no + DOB as password</div>
+    <table style="font-size:12px;width:100%;border-collapse:collapse">
+      <thead><tr><th style="text-align:left;padding:6px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Student</th><th style="text-align:left;padding:6px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Login ID</th></tr></thead>
+      <tbody>
+        ${data.map(s=>`
+          <tr>
+            <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-weight:500">${s.full_name}</td>
+            <td style="padding:7px 8px;border-bottom:1px solid var(--border)">
+              <span style="font-family:monospace;color:var(--maroon);font-weight:600">${s.admission_no}</span>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;padding:8px 10px;background:var(--sandal-light);border-radius:6px;font-size:11px;color:var(--text-muted)">
+      Portal URL: <b>${baseUrl}</b>
+    </div>
+  `;
+}
+
+// Password reset
+let resetStudentId = null;
+async function searchResetStudent() {
+  const q = document.getElementById('pw-reset-search').value.trim();
+  const res = document.getElementById('pw-reset-results');
+  if (q.length < 2) { res.style.display='none'; return; }
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,class,dob').eq('school_id',SCHOOL_ID).or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(5);
+  if (!data||data.length===0) { res.style.display='none'; return; }
+  res.style.display='block';
+  res.innerHTML = data.map(s=>`
+    <div onclick="selectResetStudent('${s.id}','${s.full_name.replace(/'/g,"\\'")}','${s.admission_no}','${s.class}','${s.dob||''}')" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <b>${s.full_name}</b> · ${s.admission_no} · ${s.class}
+    </div>
+  `).join('');
+}
+
+function selectResetStudent(id, name, admNo, cls, dob) {
+  resetStudentId = id;
+  document.getElementById('pw-reset-search').value = name;
+  document.getElementById('pw-reset-results').style.display = 'none';
+  const dobPw = dob ? dob.replace(/-/g,'') : 'Not set';
+  const info = document.getElementById('pw-reset-student-info');
+  info.style.display = 'block';
+  info.innerHTML = `<b>${name}</b> · ${admNo} · ${cls}<br><span style="color:var(--text-muted)">Default password will be: <b style="color:var(--maroon)">${dobPw}</b></span>`;
+  document.getElementById('pw-reset-btn').style.display = 'block';
+}
+
+async function resetParentPassword() {
+  if (!resetStudentId) return;
+  await supabase.from('students').update({ parent_password: null }).eq('id', resetStudentId);
+  showToast('Password reset to DOB default!','success');
+  document.getElementById('pw-reset-student-info').style.display = 'none';
+  document.getElementById('pw-reset-btn').style.display = 'none';
+  document.getElementById('pw-reset-search').value = '';
+  resetStudentId = null;
+}
+
+// ── DELETE ──
+async function deleteComm(id) {
+  if (!confirm('Delete this item?')) return;
+  await supabase.from('communications').delete().eq('id',id);
+  showToast('Deleted.','success');
+  await loadHistory(); await loadHomeworkList(); await loadConsentForms(); await loadEventsList(); await loadStats();
+}
+
+// ── STATS ──
+async function loadStats() {
+  const monthStart = new Date().toISOString().slice(0,7)+'-01';
+  const { data } = await supabase.from('communications').select('type,created_at').eq('school_id',SCHOOL_ID).gte('created_at',monthStart);
+  if (data) {
+    document.getElementById('st-sent').textContent = data.length;
+    document.getElementById('st-hw').textContent = data.filter(d=>d.type==='homework').length;
+  }
+  const { data: cf } = await supabase.from('communications').select('id').eq('school_id',SCHOOL_ID).eq('type','consent_form');
+  document.getElementById('st-consent').textContent = cf?.length || 0;
+}
+
+// ── TAB SWITCH ──
+function switchTab(tab, el) {
+  ['compose','homework','consent','events','history','portal'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='portal') { loadStudentPortalLinks(); const url=window.location.origin+'/parent/index.html?school='+SCHOOL_ID; document.getElementById('portal-wa-msg').textContent=buildPortalWAMsg(url); }
+}
+</script>
+</body>
+</html>

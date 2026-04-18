@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Billing & Accounts — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.ledger-row{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.ledger-row:last-child{border-bottom:none}
+.amount-cr{color:#2D7A3A;font-weight:600}
+.amount-dr{color:#A32D2D;font-weight:600}
+.cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.summary-band{display:flex;gap:12px;background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap}
+.sband-item{display:flex;flex-direction:column;gap:2px}
+.sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
+.sband-value{font-size:20px;font-weight:700;color:var(--maroon)}
+.chart-bar{height:20px;border-radius:4px;min-width:4px;transition:width .4s}
+.invoice-box{background:#fff;max-width:580px;margin:0 auto;padding:24px;border:1px solid var(--border);border-radius:12px}
+.invoice-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px}
+.invoice-table th{background:var(--maroon);color:var(--sandal);padding:8px 10px;text-align:left;font-size:11px}
+.invoice-table td{padding:7px 10px;border-bottom:1px solid #eee}
+.budget-bar{height:10px;border-radius:5px;background:#F0EBE3;overflow:hidden;margin-top:4px}
+.budget-fill{height:100%;border-radius:5px}
+.cat-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid transparent}
+.cat-chip:hover{border-color:var(--gold)}
+.cat-chip.selected{border-color:var(--maroon)}
+@media print{
+  .no-print{display:none!important}
+  .sidebar,.topbar,.tab-bar,.filter-row{display:none!important}
+  .main-content{margin-left:0!important}
+  .page-body{padding:0!important}
+}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Billing & Accounts</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Finance → Accounts</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Total Income (This Month)</div>
+          <div class="stat-value" id="st-income">—</div>
+          <div class="stat-sub" id="st-income-sub">All sources</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Expense (This Month)</div>
+          <div class="stat-value" id="st-expense" style="color:#A32D2D">—</div>
+          <div class="stat-sub">All categories</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Net Balance</div>
+          <div class="stat-value" id="st-balance">—</div>
+          <div class="stat-sub">Income − Expense</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending Invoices</div>
+          <div class="stat-value" id="st-invoices" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Awaiting payment</div>
+        </div>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('ledger',this)">📒 Day Book / Ledger</div>
+        <div class="tab" onclick="switchTab('income',this)">💚 Income</div>
+        <div class="tab" onclick="switchTab('expense',this)">💸 Expense</div>
+        <div class="tab" onclick="switchTab('invoices',this)">🧾 Invoices</div>
+        <div class="tab" onclick="switchTab('budget',this)">📊 Budget</div>
+        <div class="tab" onclick="switchTab('reports',this)">📈 Reports</div>
+        <div class="tab" onclick="switchTab('categories',this)">⚙️ Categories</div>
+      </div>
+
+      <!-- ══ TAB: LEDGER ══ -->
+      <div id="tab-ledger">
+        <div class="filter-row">
+          <div>
+            <label class="form-label">From Date</label>
+            <input type="date" id="led-from" class="form-control" style="width:160px;margin-top:4px" onchange="loadLedger()">
+          </div>
+          <div>
+            <label class="form-label">To Date</label>
+            <input type="date" id="led-to" class="form-control" style="width:160px;margin-top:4px" onchange="loadLedger()">
+          </div>
+          <div>
+            <label class="form-label">Type</label>
+            <select class="form-control" id="led-type" style="width:130px;margin-top:4px" onchange="loadLedger()">
+              <option value="">All</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Category</label>
+            <select class="form-control" id="led-cat" style="width:160px;margin-top:4px" onchange="loadLedger()">
+              <option value="">All Categories</option>
+            </select>
+          </div>
+          <div style="margin-top:20px;display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="loadLedger()">Refresh</button>
+            <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Transaction Ledger</div>
+            <div style="font-size:12px;color:var(--text-muted)" id="ledger-summary-line">Loading...</div>
+          </div>
+          <div class="table-wrap">
+            <div id="ledger-content"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: INCOME ══ -->
+      <div id="tab-income" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <!-- Add Income Form -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px" id="inc-form-title">Record Income</div>
+            <div id="inc-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Description <span class="req">*</span></label>
+              <input type="text" id="inc-desc" class="form-control" placeholder="e.g. Fee collection — Class 8">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Category <span class="req">*</span></label>
+              <select id="inc-cat" class="form-control">
+                <option value="">Select category</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Amount (₹) <span class="req">*</span></label>
+              <input type="number" id="inc-amount" class="form-control" placeholder="0">
+            </div>
+            <div class="form-grid-2" style="margin-bottom:10px">
+              <div class="form-group">
+                <label class="form-label">Date <span class="req">*</span></label>
+                <input type="date" id="inc-date" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Payment Mode</label>
+                <select id="inc-mode" class="form-control">
+                  <option value="cash">Cash</option>
+                  <option value="bank">Bank Transfer</option>
+                  <option value="upi">UPI</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Reference No</label>
+              <input type="text" id="inc-ref" class="form-control" placeholder="Cheque/UPI ref (optional)">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Remarks</label>
+              <textarea id="inc-remarks" class="form-control" rows="2" placeholder="Optional notes"></textarea>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-gold w-full" id="inc-save-btn" onclick="saveIncome()">Record Income</button>
+              <button class="btn btn-secondary btn-sm" onclick="clearIncomeForm()">Clear</button>
+            </div>
+          </div>
+
+          <!-- Income List -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Income Records</div>
+              <div style="display:flex;gap:8px">
+                <input type="month" id="inc-month" class="form-control" style="width:150px;padding:6px 10px" onchange="loadIncomeList()">
+                <select class="form-control" id="inc-list-cat" style="width:160px;padding:6px 10px" onchange="loadIncomeList()">
+                  <option value="">All Categories</option>
+                </select>
+              </div>
+            </div>
+            <div id="income-list-content"><div class="empty-state"><div class="icon">💚</div><p>Loading income records...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: EXPENSE ══ -->
+      <div id="tab-expense" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <!-- Add Expense Form -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px" id="exp-form-title">Record Expense</div>
+            <div id="exp-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Description <span class="req">*</span></label>
+              <input type="text" id="exp-desc" class="form-control" placeholder="e.g. Electricity bill — April">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Category <span class="req">*</span></label>
+              <select id="exp-cat" class="form-control">
+                <option value="">Select category</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Amount (₹) <span class="req">*</span></label>
+              <input type="number" id="exp-amount" class="form-control" placeholder="0">
+            </div>
+            <div class="form-grid-2" style="margin-bottom:10px">
+              <div class="form-group">
+                <label class="form-label">Date <span class="req">*</span></label>
+                <input type="date" id="exp-date" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Payment Mode</label>
+                <select id="exp-mode" class="form-control">
+                  <option value="cash">Cash</option>
+                  <option value="bank">Bank Transfer</option>
+                  <option value="upi">UPI</option>
+                  <option value="cheque">Cheque</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Vendor / Paid To</label>
+              <input type="text" id="exp-vendor" class="form-control" placeholder="e.g. TNEB, Stationery Shop">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Bill / Reference No</label>
+              <input type="text" id="exp-ref" class="form-control" placeholder="Bill number (optional)">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Remarks</label>
+              <textarea id="exp-remarks" class="form-control" rows="2" placeholder="Optional notes"></textarea>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary w-full" id="exp-save-btn" onclick="saveExpense()">Record Expense</button>
+              <button class="btn btn-secondary btn-sm" onclick="clearExpenseForm()">Clear</button>
+            </div>
+          </div>
+
+          <!-- Expense List -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Expense Records</div>
+              <div style="display:flex;gap:8px">
+                <input type="month" id="exp-month" class="form-control" style="width:150px;padding:6px 10px" onchange="loadExpenseList()">
+                <select class="form-control" id="exp-list-cat" style="width:160px;padding:6px 10px" onchange="loadExpenseList()">
+                  <option value="">All Categories</option>
+                </select>
+              </div>
+            </div>
+            <div id="expense-list-content"><div class="empty-state"><div class="icon">💸</div><p>Loading expense records...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: INVOICES ══ -->
+      <div id="tab-invoices" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <!-- Create Invoice -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Create Invoice</div>
+            <div id="inv-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Invoice To (Name) <span class="req">*</span></label>
+              <input type="text" id="inv-to" class="form-control" placeholder="Vendor / Party name">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Invoice For</label>
+              <input type="text" id="inv-for" class="form-control" placeholder="Purpose / description">
+            </div>
+            <div class="form-grid-2" style="margin-bottom:10px">
+              <div class="form-group">
+                <label class="form-label">Invoice Date</label>
+                <input type="date" id="inv-date" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Due Date</label>
+                <input type="date" id="inv-due" class="form-control">
+              </div>
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--maroon);margin-bottom:6px">Invoice Items</div>
+            <div id="inv-items"></div>
+            <button class="btn btn-secondary btn-sm" onclick="addInvItem()" style="margin-bottom:12px">+ Add Item</button>
+            <div style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+              <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+                <span>Subtotal</span><span id="inv-subtotal" style="font-weight:600">₹0</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+                <span>Tax (GST %)</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <input type="number" id="inv-tax" class="form-control" value="0" style="width:60px;padding:4px 6px;font-size:12px" onchange="calcInvTotal()">
+                  <span id="inv-tax-amt" style="font-size:12px;color:var(--text-muted)">₹0</span>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;color:var(--maroon);border-top:1px solid #E8D8B8;padding-top:6px;margin-top:6px">
+                <span>Total</span><span id="inv-total">₹0</span>
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Status</label>
+              <select id="inv-status" class="form-control">
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <button class="btn btn-gold w-full" onclick="saveInvoice()">Create Invoice</button>
+          </div>
+
+          <!-- Invoice List -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Invoices</div>
+              <div style="display:flex;gap:8px">
+                <select class="form-control" id="inv-filter-status" onchange="loadInvoices()" style="width:130px;padding:6px 10px">
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="paid">Paid</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+                <input type="month" id="inv-filter-month" class="form-control" style="width:150px;padding:6px 10px" onchange="loadInvoices()">
+              </div>
+            </div>
+            <div id="invoices-list"><div class="empty-state"><div class="icon">🧾</div><p>Loading invoices...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: BUDGET ══ -->
+      <div id="tab-budget" class="hidden">
+        <div style="display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start">
+
+          <!-- Set Budget -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Set Annual Budget</div>
+              <button class="btn btn-gold btn-sm" onclick="saveBudget()">Save Budget</button>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Academic Year</label>
+              <select id="bud-year" class="form-control" onchange="loadBudget()">
+                <option>2025-26</option><option>2024-25</option>
+              </select>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Set budget amounts for each expense category</div>
+            <div id="budget-inputs"></div>
+          </div>
+
+          <!-- Budget vs Actual -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Budget vs Actual Spending</div>
+              <button class="btn btn-primary btn-sm" onclick="loadBudgetActual()">Refresh</button>
+            </div>
+            <div id="budget-actual-content"><div class="empty-state"><div class="icon">📊</div><p>Loading budget data...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: REPORTS ══ -->
+      <div id="tab-reports" class="hidden">
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px">
+
+          <!-- P&L -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Profit & Loss Statement</div>
+              <div style="display:flex;gap:6px">
+                <input type="month" id="pl-from" class="form-control" style="width:150px;padding:6px 10px">
+                <input type="month" id="pl-to" class="form-control" style="width:150px;padding:6px 10px">
+                <button class="btn btn-primary btn-sm" onclick="loadPL()">Generate</button>
+              </div>
+            </div>
+            <div id="pl-content"><div class="empty-state"><div class="icon">📈</div><p>Select date range and generate</p></div></div>
+          </div>
+
+          <!-- Month-wise Chart -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Month-wise Income vs Expense</div>
+              <div style="display:flex;gap:6px">
+                <select id="chart-year" class="form-control" style="width:120px;padding:6px 10px">
+                  <option>2025-26</option><option>2024-25</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="loadMonthChart()">Generate</button>
+              </div>
+            </div>
+            <div id="month-chart-content"><div class="empty-state"><div class="icon">📊</div><p>Click Generate</p></div></div>
+          </div>
+
+          <!-- Category breakdown -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Category-wise Breakdown</div>
+              <div style="display:flex;gap:6px">
+                <input type="month" id="cat-month" class="form-control" style="width:150px;padding:6px 10px">
+                <button class="btn btn-primary btn-sm" onclick="loadCategoryBreakdown()">Go</button>
+              </div>
+            </div>
+            <div id="cat-breakdown-content"><div class="empty-state"><div class="icon">🍕</div><p>Select month and click Go</p></div></div>
+          </div>
+
+          <!-- Cash Flow -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Cash Flow Summary</div>
+              <div style="display:flex;gap:6px">
+                <select id="cf-year" class="form-control" style="width:120px;padding:6px 10px">
+                  <option>2025-26</option><option>2024-25</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="loadCashFlow()">Generate</button>
+              </div>
+            </div>
+            <div id="cash-flow-content"><div class="empty-state"><div class="icon">💧</div><p>Click Generate</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: CATEGORIES ══ -->
+      <div id="tab-categories" class="hidden">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+          <!-- Income Categories -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Income Categories</div>
+              <button class="btn btn-primary btn-sm" onclick="openCatModal('income')">+ Add</button>
+            </div>
+            <div id="income-cats-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+
+          <!-- Expense Categories -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Expense Categories</div>
+              <button class="btn btn-primary btn-sm" onclick="openCatModal('expense')">+ Add</button>
+            </div>
+            <div id="expense-cats-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ CATEGORY MODAL ══ -->
+<div class="modal-overlay" id="cat-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title" id="cat-modal-title">Add Category</div>
+      <button class="modal-close" onclick="closeCatModal()">✕</button>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Category Name <span class="req">*</span></label>
+      <input type="text" id="cat-name" class="form-control" placeholder="e.g. Fee Income, Salary Expense">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Color</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        ${['#6B1A1A','#185FA5','#2D7A3A','#854F0B','#4A1070','#0F6E56','#993C1D','#185FA5'].map(c=>`
+          <div onclick="this.parentNode.querySelectorAll('.cc').forEach(e=>e.style.border='2px solid transparent');this.style.border='2px solid var(--gold)';document.getElementById('cat-color').value='${c}'" class="cc" style="width:24px;height:24px;border-radius:5px;background:${c};cursor:pointer;border:2px solid transparent"></div>
+        `).join('')}
+      </div>
+      <input type="hidden" id="cat-color" value="#6B1A1A">
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Description</label>
+      <input type="text" id="cat-desc" class="form-control" placeholder="Optional description">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCatModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveCategory()">Save Category</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ INVOICE VIEW MODAL ══ -->
+<div class="modal-overlay" id="invoice-view-modal">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header no-print">
+      <div class="modal-title">Invoice</div>
+      <button class="modal-close" onclick="document.getElementById('invoice-view-modal').classList.remove('open')">✕</button>
+    </div>
+    <div id="invoice-view-content"></div>
+    <div class="modal-footer no-print">
+      <button class="btn btn-secondary" onclick="document.getElementById('invoice-view-modal').classList.remove('open')">Close</button>
+      <button class="btn btn-gold" onclick="window.print()">🖨 Print Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TRANSACTION EDIT MODAL ══ -->
+<div class="modal-overlay" id="txn-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-title" id="txn-modal-title">Edit Transaction</div>
+      <button class="modal-close" onclick="closeTxnModal()">✕</button>
+    </div>
+    <div id="txn-modal-content"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="txn-delete-btn">Delete</button>
+      <button class="btn btn-secondary" onclick="closeTxnModal()">Cancel</button>
+      <button class="btn btn-gold" id="txn-save-btn">Update</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let allCategories = [];
+let catModalType = 'income';
+let invItemCount = 0;
+let editingTxnId = null;
+let editingIncId = null, editingExpId = null;
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('billing');
+  const today = new Date().toISOString().split('T')[0];
+  const thisMonth = today.slice(0,7);
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+
+  // Set defaults
+  ['inc-date','exp-date','inv-date','inv-due'].forEach(id => { const el=document.getElementById(id); if(el) el.value=today; });
+  ['inc-month','exp-month','inv-filter-month','cat-month','pl-from','pl-to'].forEach(id => { const el=document.getElementById(id); if(el) el.value=thisMonth; });
+  const monthStart = thisMonth + '-01';
+  const monthEnd = today;
+  document.getElementById('led-from').value = monthStart;
+  document.getElementById('led-to').value = today;
+
+  addInvItem();
+  await loadCategories();
+  await loadLedger();
+  await loadStats();
+});
+
+// ── CATEGORIES ──
+async function loadCategories() {
+  const { data } = await supabase.from('account_categories').select('*').eq('school_id',SCHOOL_ID).order('type').order('name');
+  allCategories = data || [];
+
+  if (allCategories.length === 0) await seedDefaultCategories();
+  renderCategoryLists();
+  populateCategorySelects();
+}
+
+async function seedDefaultCategories() {
+  const defaults = [
+    // Income
+    {name:'Fee Income',type:'income',color:'#2D7A3A',description:'Student fee collections'},
+    {name:'Transport Fee',type:'income',color:'#185FA5',description:'Bus fee income'},
+    {name:'Exam Fee',type:'income',color:'#0F6E56',description:'Examination fees'},
+    {name:'Donation',type:'income',color:'#854F0B',description:'Donations received'},
+    {name:'Government Grant',type:'income',color:'#4A1070',description:'Govt grants and aid'},
+    {name:'Other Income',type:'income',color:'#6B1A1A',description:'Miscellaneous income'},
+    // Expense
+    {name:'Staff Salary',type:'expense',color:'#A32D2D',description:'Monthly salary payments'},
+    {name:'Electricity',type:'expense',color:'#854F0B',description:'Electricity bills'},
+    {name:'Water & Maintenance',type:'expense',color:'#185FA5',description:'Maintenance costs'},
+    {name:'Stationery',type:'expense',color:'#0F6E56',description:'Books, paper, pens'},
+    {name:'Transport Expense',type:'expense',color:'#8B5E00',description:'Bus fuel, maintenance'},
+    {name:'Infrastructure',type:'expense',color:'#4A1070',description:'Building, construction'},
+    {name:'Equipment',type:'expense',color:'#6B1A1A',description:'Computers, lab equipment'},
+    {name:'Events & Functions',type:'expense',color:'#993C1D',description:'Annual day, sports day'},
+    {name:'Other Expense',type:'expense',color:'#888',description:'Miscellaneous expense'},
+  ];
+  const records = defaults.map(d => ({...d, school_id: SCHOOL_ID}));
+  const { data } = await supabase.from('account_categories').insert(records).select();
+  allCategories = data || [];
+}
+
+function renderCategoryLists() {
+  const inc = allCategories.filter(c=>c.type==='income');
+  const exp = allCategories.filter(c=>c.type==='expense');
+  const render = (list) => list.length===0
+    ? '<div style="padding:12px;font-size:12px;color:var(--text-muted)">No categories yet.</div>'
+    : list.map(c=>`
+        <div class="ledger-row">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div class="cat-dot" style="background:${c.color}"></div>
+            <div>
+              <div style="font-weight:500">${c.name}</div>
+              ${c.description?`<div style="font-size:11px;color:var(--text-muted)">${c.description}</div>`:''}
+            </div>
+          </div>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="deleteCategory('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')">🗑</button>
+        </div>
+      `).join('');
+  document.getElementById('income-cats-list').innerHTML = render(inc);
+  document.getElementById('expense-cats-list').innerHTML = render(exp);
+}
+
+function populateCategorySelects() {
+  const inc = allCategories.filter(c=>c.type==='income');
+  const exp = allCategories.filter(c=>c.type==='expense');
+  const all = allCategories;
+
+  const incOpts = inc.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const expOpts = exp.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const allOpts = all.map(c=>`<option value="${c.id}">${c.name} (${c.type})</option>`).join('');
+
+  ['inc-cat','inc-list-cat'].forEach(id => { const el=document.getElementById(id); if(el) el.innerHTML='<option value="">All / Select</option>'+incOpts; });
+  ['exp-cat','exp-list-cat'].forEach(id => { const el=document.getElementById(id); if(el) el.innerHTML='<option value="">All / Select</option>'+expOpts; });
+  ['led-cat'].forEach(id => { const el=document.getElementById(id); if(el) el.innerHTML='<option value="">All Categories</option>'+allOpts; });
+}
+
+function openCatModal(type) {
+  catModalType = type;
+  document.getElementById('cat-modal-title').textContent = `Add ${type === 'income' ? 'Income' : 'Expense'} Category`;
+  document.getElementById('cat-name').value = '';
+  document.getElementById('cat-desc').value = '';
+  document.getElementById('cat-modal').classList.add('open');
+}
+function closeCatModal() { document.getElementById('cat-modal').classList.remove('open'); }
+
+async function saveCategory() {
+  const name = document.getElementById('cat-name').value.trim();
+  if (!name) { showToast('Please enter category name.','error'); return; }
+  const color = document.getElementById('cat-color').value;
+  const desc = document.getElementById('cat-desc').value.trim();
+  const { error } = await supabase.from('account_categories').insert([{ school_id: SCHOOL_ID, name, type: catModalType, color, description: desc }]);
+  if (error) { showToast('Error: '+error.message,'error'); return; }
+  closeCatModal();
+  showToast(name+' added!','success');
+  await loadCategories();
+}
+
+async function deleteCategory(id, name) {
+  if (!confirm(`Delete category "${name}"?`)) return;
+  await supabase.from('account_categories').delete().eq('id',id);
+  await loadCategories();
+}
+
+// ── INCOME ──
+async function saveIncome() {
+  const desc = document.getElementById('inc-desc').value.trim();
+  const catId = document.getElementById('inc-cat').value;
+  const amount = parseFloat(document.getElementById('inc-amount').value);
+  const date = document.getElementById('inc-date').value;
+  if (!desc || !catId || !amount || !date) {
+    document.getElementById('inc-alert').className='alert alert-danger';
+    document.getElementById('inc-alert').textContent='⚠️ Please fill description, category, amount and date.';
+    return;
+  }
+  document.getElementById('inc-alert').className='hidden';
+
+  const cat = allCategories.find(c=>c.id===catId);
+  const btn = document.getElementById('inc-save-btn');
+  btn.textContent='Saving...'; btn.disabled=true;
+
+  const record = {
+    school_id: SCHOOL_ID, type: 'income', description: desc,
+    category_id: catId, category_name: cat?.name||'',
+    category_color: cat?.color||'#2D7A3A', amount, date,
+    payment_mode: document.getElementById('inc-mode').value,
+    reference_no: document.getElementById('inc-ref').value.trim(),
+    remarks: document.getElementById('inc-remarks').value.trim(),
+  };
+
+  let error;
+  if (editingIncId) { ({ error } = await supabase.from('account_transactions').update(record).eq('id',editingIncId)); }
+  else { ({ error } = await supabase.from('account_transactions').insert([record])); }
+
+  btn.textContent='Record Income'; btn.disabled=false;
+  if (error) { document.getElementById('inc-alert').className='alert alert-danger'; document.getElementById('inc-alert').textContent='⚠️ '+error.message; return; }
+
+  showToast(editingIncId?'Income updated!':'Income recorded! ₹'+amount.toLocaleString('en-IN'),'success');
+  clearIncomeForm();
+  await loadIncomeList();
+  await loadLedger();
+  await loadStats();
+}
+
+function clearIncomeForm() {
+  editingIncId=null;
+  ['inc-desc','inc-ref','inc-remarks'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('inc-cat').value='';
+  document.getElementById('inc-amount').value='';
+  document.getElementById('inc-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('inc-mode').value='cash';
+  document.getElementById('inc-form-title').textContent='Record Income';
+  document.getElementById('inc-save-btn').textContent='Record Income';
+  document.getElementById('inc-alert').className='hidden';
+}
+
+async function loadIncomeList() {
+  const month = document.getElementById('inc-month').value;
+  const catId = document.getElementById('inc-list-cat').value;
+  let query = supabase.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).eq('type','income').order('date',{ascending:false});
+  if (month) query = query.gte('date',month+'-01').lte('date',month+'-31');
+  if (catId) query = query.eq('category_id',catId);
+  const { data } = await query.limit(100);
+  renderTransactionList(data, 'income-list-content', 'income');
+}
+
+async function loadExpenseList() {
+  const month = document.getElementById('exp-month').value;
+  const catId = document.getElementById('exp-list-cat').value;
+  let query = supabase.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).eq('type','expense').order('date',{ascending:false});
+  if (month) query = query.gte('date',month+'-01').lte('date',month+'-31');
+  if (catId) query = query.eq('category_id',catId);
+  const { data } = await query.limit(100);
+  renderTransactionList(data, 'expense-list-content', 'expense');
+}
+
+function renderTransactionList(data, elId, type) {
+  const el = document.getElementById(elId);
+  if (!data||data.length===0) { el.innerHTML=`<div class="empty-state"><div class="icon">${type==='income'?'💚':'💸'}</div><p>No records found.</p></div>`; return; }
+  const total = data.reduce((s,r)=>s+r.amount,0);
+  el.innerHTML = `
+    <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;display:flex;justify-content:space-between">
+      <span>${data.length} records</span>
+      <span style="color:${type==='income'?'#2D7A3A':'#A32D2D'}">Total: ₹${total.toLocaleString('en-IN')}</span>
+    </div>
+    <div class="table-wrap">
+    <table style="font-size:12px">
+      <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Mode</th><th style="text-align:right">Amount</th><th style="width:70px"></th></tr></thead>
+      <tbody>
+        ${data.map(r=>`
+          <tr>
+            <td style="white-space:nowrap">${formatDate(r.date)}</td>
+            <td>
+              <div style="font-weight:500">${r.description}</div>
+              ${r.vendor?`<div style="font-size:10px;color:var(--text-muted)">${r.vendor}</div>`:''}
+              ${r.remarks?`<div style="font-size:10px;color:var(--text-muted)">${r.remarks}</div>`:''}
+            </td>
+            <td><span style="display:inline-flex;align-items:center;gap:4px;font-size:11px"><span style="width:7px;height:7px;border-radius:50%;background:${r.category_color||'#888'};flex-shrink:0"></span>${r.category_name||'—'}</span></td>
+            <td><span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${r.payment_mode||'—'}</span></td>
+            <td style="text-align:right;font-weight:700;color:${type==='income'?'#2D7A3A':'#A32D2D'}">₹${r.amount.toLocaleString('en-IN')}</td>
+            <td style="text-align:right">
+              <div style="display:flex;gap:3px;justify-content:flex-end">
+                <button class="btn btn-secondary btn-sm btn-icon" onclick="editTransaction('${r.id}')">✏️</button>
+                <button class="btn btn-danger btn-sm btn-icon" onclick="deleteTransaction('${r.id}')">🗑</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+// ── EXPENSE ──
+async function saveExpense() {
+  const desc = document.getElementById('exp-desc').value.trim();
+  const catId = document.getElementById('exp-cat').value;
+  const amount = parseFloat(document.getElementById('exp-amount').value);
+  const date = document.getElementById('exp-date').value;
+  if (!desc||!catId||!amount||!date) {
+    document.getElementById('exp-alert').className='alert alert-danger';
+    document.getElementById('exp-alert').textContent='⚠️ Please fill description, category, amount and date.';
+    return;
+  }
+  document.getElementById('exp-alert').className='hidden';
+
+  const cat = allCategories.find(c=>c.id===catId);
+  const btn = document.getElementById('exp-save-btn');
+  btn.textContent='Saving...'; btn.disabled=true;
+
+  const record = {
+    school_id: SCHOOL_ID, type: 'expense', description: desc,
+    category_id: catId, category_name: cat?.name||'',
+    category_color: cat?.color||'#A32D2D', amount, date,
+    payment_mode: document.getElementById('exp-mode').value,
+    vendor: document.getElementById('exp-vendor').value.trim(),
+    reference_no: document.getElementById('exp-ref').value.trim(),
+    remarks: document.getElementById('exp-remarks').value.trim(),
+  };
+
+  let error;
+  if (editingExpId) { ({ error } = await supabase.from('account_transactions').update(record).eq('id',editingExpId)); }
+  else { ({ error } = await supabase.from('account_transactions').insert([record])); }
+
+  btn.textContent='Record Expense'; btn.disabled=false;
+  if (error) { document.getElementById('exp-alert').className='alert alert-danger'; document.getElementById('exp-alert').textContent='⚠️ '+error.message; return; }
+
+  showToast(editingExpId?'Expense updated!':'Expense recorded! ₹'+amount.toLocaleString('en-IN'),'success');
+  clearExpenseForm();
+  await loadExpenseList();
+  await loadLedger();
+  await loadStats();
+}
+
+function clearExpenseForm() {
+  editingExpId=null;
+  ['exp-desc','exp-vendor','exp-ref','exp-remarks'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('exp-cat').value='';
+  document.getElementById('exp-amount').value='';
+  document.getElementById('exp-date').value=new Date().toISOString().split('T')[0];
+  document.getElementById('exp-mode').value='cash';
+  document.getElementById('exp-form-title').textContent='Record Expense';
+  document.getElementById('exp-save-btn').textContent='Record Expense';
+  document.getElementById('exp-alert').className='hidden';
+}
+
+async function editTransaction(id) {
+  const { data } = await supabase.from('account_transactions').select('*').eq('id',id).single();
+  if (!data) return;
+  if (data.type==='income') {
+    editingIncId=id;
+    document.getElementById('inc-desc').value=data.description||'';
+    document.getElementById('inc-cat').value=data.category_id||'';
+    document.getElementById('inc-amount').value=data.amount||'';
+    document.getElementById('inc-date').value=data.date||'';
+    document.getElementById('inc-mode').value=data.payment_mode||'cash';
+    document.getElementById('inc-ref').value=data.reference_no||'';
+    document.getElementById('inc-remarks').value=data.remarks||'';
+    document.getElementById('inc-form-title').textContent='Edit Income';
+    document.getElementById('inc-save-btn').textContent='Update Income';
+    switchTab('income', document.querySelector('.tab.active'));
+  } else {
+    editingExpId=id;
+    document.getElementById('exp-desc').value=data.description||'';
+    document.getElementById('exp-cat').value=data.category_id||'';
+    document.getElementById('exp-amount').value=data.amount||'';
+    document.getElementById('exp-date').value=data.date||'';
+    document.getElementById('exp-mode').value=data.payment_mode||'cash';
+    document.getElementById('exp-vendor').value=data.vendor||'';
+    document.getElementById('exp-ref').value=data.reference_no||'';
+    document.getElementById('exp-remarks').value=data.remarks||'';
+    document.getElementById('exp-form-title').textContent='Edit Expense';
+    document.getElementById('exp-save-btn').textContent='Update Expense';
+    switchTab('expense', document.querySelector('.tab.active'));
+  }
+  showToast('Edit the form above and click Update.','info');
+}
+
+async function deleteTransaction(id) {
+  if (!confirm('Delete this transaction?')) return;
+  await supabase.from('account_transactions').delete().eq('id',id);
+  showToast('Transaction deleted.','success');
+  await loadLedger(); await loadIncomeList(); await loadExpenseList(); await loadStats();
+}
+
+function closeTxnModal() { document.getElementById('txn-modal').classList.remove('open'); }
+
+// ── LEDGER ──
+async function loadLedger() {
+  const from = document.getElementById('led-from').value;
+  const to = document.getElementById('led-to').value;
+  const type = document.getElementById('led-type').value;
+  const catId = document.getElementById('led-cat').value;
+
+  let query = supabase.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).order('date',{ascending:false}).order('created_at',{ascending:false});
+  if (from) query = query.gte('date',from);
+  if (to) query = query.lte('date',to);
+  if (type) query = query.eq('type',type);
+  if (catId) query = query.eq('category_id',catId);
+
+  const { data } = await query.limit(200);
+  if (!data||data.length===0) {
+    document.getElementById('ledger-content').innerHTML='<div class="empty-state"><div class="icon">📒</div><p>No transactions found for this period.</p></div>';
+    document.getElementById('ledger-summary-line').textContent='0 transactions';
+    return;
+  }
+
+  const totalInc = data.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
+  const totalExp = data.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
+  const balance = totalInc - totalExp;
+  document.getElementById('ledger-summary-line').innerHTML = `
+    <span class="amount-cr">Income: ₹${totalInc.toLocaleString('en-IN')}</span>
+    <span style="margin:0 8px;color:var(--border)">|</span>
+    <span class="amount-dr">Expense: ₹${totalExp.toLocaleString('en-IN')}</span>
+    <span style="margin:0 8px;color:var(--border)">|</span>
+    <span style="font-weight:700;color:${balance>=0?'#2D7A3A':'#A32D2D'}">Balance: ₹${balance.toLocaleString('en-IN')}</span>
+  `;
+
+  let running = 0;
+  const reversed = [...data].reverse();
+  const withBalance = reversed.map(r => { running += r.type==='income' ? r.amount : -r.amount; return {...r, running}; }).reverse();
+
+  document.getElementById('ledger-content').innerHTML = `
+    <div class="table-wrap">
+    <table style="font-size:12px">
+      <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Mode</th><th style="text-align:right;color:#2D7A3A">Credit (₹)</th><th style="text-align:right;color:#A32D2D">Debit (₹)</th><th style="text-align:right">Balance (₹)</th><th style="width:60px"></th></tr></thead>
+      <tbody>
+        ${withBalance.map(r=>`
+          <tr>
+            <td style="white-space:nowrap">${formatDate(r.date)}</td>
+            <td>
+              <div style="font-weight:500">${r.description}</div>
+              ${r.vendor?`<div style="font-size:10px;color:var(--text-muted)">${r.vendor}</div>`:''}
+            </td>
+            <td><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:${r.category_color||'#888'}"></span><span style="font-size:11px">${r.category_name||'—'}</span></span></td>
+            <td style="font-size:11px;text-transform:capitalize">${r.payment_mode||'—'}</td>
+            <td style="text-align:right;color:#2D7A3A;font-weight:600">${r.type==='income'?'₹'+r.amount.toLocaleString('en-IN'):'—'}</td>
+            <td style="text-align:right;color:#A32D2D;font-weight:600">${r.type==='expense'?'₹'+r.amount.toLocaleString('en-IN'):'—'}</td>
+            <td style="text-align:right;font-weight:700;color:${r.running>=0?'#2D7A3A':'#A32D2D'}">₹${r.running.toLocaleString('en-IN')}</td>
+            <td style="text-align:right">
+              <div style="display:flex;gap:2px;justify-content:flex-end">
+                <button class="btn btn-secondary btn-sm btn-icon" onclick="editTransaction('${r.id}')">✏️</button>
+                <button class="btn btn-danger btn-sm btn-icon" onclick="deleteTransaction('${r.id}')">🗑</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+// ── INVOICES ──
+function addInvItem(desc='', qty=1, rate=0) {
+  const id = invItemCount++;
+  const div = document.createElement('div');
+  div.id = 'inv-item-'+id;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr 60px 80px 80px 30px;gap:6px;margin-bottom:6px;align-items:center';
+  div.innerHTML = `
+    <input type="text" class="form-control inv-desc" placeholder="Item description" value="${desc}" style="padding:6px 8px;font-size:12px">
+    <input type="number" class="form-control inv-qty" placeholder="Qty" value="${qty}" min="1" style="padding:6px 6px;font-size:12px;text-align:center" onchange="calcInvTotal()">
+    <input type="number" class="form-control inv-rate" placeholder="Rate" value="${rate||''}" style="padding:6px 6px;font-size:12px;text-align:right" onchange="calcInvTotal()">
+    <div style="font-size:12px;font-weight:600;color:var(--maroon);text-align:right;padding:6px 2px" id="inv-item-amt-${id}">₹0</div>
+    <button class="btn btn-danger btn-sm btn-icon" onclick="document.getElementById('inv-item-${id}').remove();calcInvTotal()">✕</button>
+  `;
+  document.getElementById('inv-items').appendChild(div);
+  calcInvTotal();
+}
+
+function calcInvTotal() {
+  let subtotal = 0;
+  document.querySelectorAll('[id^=inv-item-]:not([id*=amt])').forEach(row => {
+    const qty = parseFloat(row.querySelector('.inv-qty')?.value)||0;
+    const rate = parseFloat(row.querySelector('.inv-rate')?.value)||0;
+    const amt = qty*rate;
+    subtotal += amt;
+    const amtEl = row.querySelector('[id^=inv-item-amt-]');
+    if (amtEl) amtEl.textContent = '₹'+amt.toLocaleString('en-IN');
+  });
+  const taxPct = parseFloat(document.getElementById('inv-tax').value)||0;
+  const taxAmt = Math.round(subtotal*taxPct/100);
+  const total = subtotal+taxAmt;
+  document.getElementById('inv-subtotal').textContent = '₹'+subtotal.toLocaleString('en-IN');
+  document.getElementById('inv-tax-amt').textContent = '₹'+taxAmt.toLocaleString('en-IN');
+  document.getElementById('inv-total').textContent = '₹'+total.toLocaleString('en-IN');
+}
+
+async function saveInvoice() {
+  const to = document.getElementById('inv-to').value.trim();
+  if (!to) { document.getElementById('inv-alert').className='alert alert-danger'; document.getElementById('inv-alert').textContent='⚠️ Please enter invoice recipient.'; return; }
+
+  const items = [];
+  document.querySelectorAll('[id^=inv-item-]:not([id*=amt])').forEach(row => {
+    const desc = row.querySelector('.inv-desc')?.value.trim();
+    const qty = parseFloat(row.querySelector('.inv-qty')?.value)||1;
+    const rate = parseFloat(row.querySelector('.inv-rate')?.value)||0;
+    if (desc) items.push({description:desc, qty, rate, amount:qty*rate});
+  });
+
+  if (items.length===0) { document.getElementById('inv-alert').className='alert alert-danger'; document.getElementById('inv-alert').textContent='⚠️ Please add at least one item.'; return; }
+  document.getElementById('inv-alert').className='hidden';
+
+  const taxPct = parseFloat(document.getElementById('inv-tax').value)||0;
+  const subtotal = items.reduce((s,i)=>s+i.amount,0);
+  const taxAmt = Math.round(subtotal*taxPct/100);
+  const total = subtotal+taxAmt;
+
+  // Generate invoice number
+  const { data: lastInv } = await supabase.from('invoices').select('invoice_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
+  let num = 1;
+  if (lastInv&&lastInv.length>0) { const last=lastInv[0].invoice_no?.split('-').pop(); if(last) num=parseInt(last)+1; }
+  const invoiceNo = `INV-${new Date().getFullYear()}-${String(num).padStart(4,'0')}`;
+
+  const { error } = await supabase.from('invoices').insert([{
+    school_id: SCHOOL_ID, invoice_no: invoiceNo,
+    invoice_to: to, invoice_for: document.getElementById('inv-for').value.trim(),
+    invoice_date: document.getElementById('inv-date').value,
+    due_date: document.getElementById('inv-due').value,
+    items, subtotal, tax_percent: taxPct, tax_amount: taxAmt, total_amount: total,
+    status: document.getElementById('inv-status').value,
+  }]);
+
+  if (error) { document.getElementById('inv-alert').className='alert alert-danger'; document.getElementById('inv-alert').textContent='⚠️ '+error.message; return; }
+  showToast(`Invoice ${invoiceNo} created!`,'success');
+  document.getElementById('inv-to').value=''; document.getElementById('inv-for').value='';
+  document.getElementById('inv-items').innerHTML=''; invItemCount=0; addInvItem();
+  calcInvTotal();
+  await loadInvoices(); await loadStats();
+}
+
+async function loadInvoices() {
+  const status = document.getElementById('inv-filter-status').value;
+  const month = document.getElementById('inv-filter-month').value;
+  let query = supabase.from('invoices').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false});
+  if (status) query = query.eq('status',status);
+  if (month) query = query.gte('invoice_date',month+'-01').lte('invoice_date',month+'-31');
+  const { data } = await query.limit(50);
+
+  if (!data||data.length===0) { document.getElementById('invoices-list').innerHTML='<div class="empty-state"><div class="icon">🧾</div><p>No invoices found.</p></div>'; return; }
+  document.getElementById('invoices-list').innerHTML = `
+    <div class="table-wrap">
+    <table style="font-size:12px">
+      <thead><tr><th>Invoice No</th><th>To</th><th>Date</th><th>Due</th><th style="text-align:right">Amount</th><th>Status</th><th style="width:80px"></th></tr></thead>
+      <tbody>
+        ${data.map(inv=>`
+          <tr>
+            <td style="font-weight:700;color:var(--maroon)">${inv.invoice_no}</td>
+            <td style="font-weight:500">${inv.invoice_to}</td>
+            <td>${formatDate(inv.invoice_date)}</td>
+            <td>${formatDate(inv.due_date)}</td>
+            <td style="text-align:right;font-weight:700">₹${inv.total_amount.toLocaleString('en-IN')}</td>
+            <td><span class="badge ${inv.status==='paid'?'badge-green':inv.status==='pending'?'badge-amber':'badge-red'}">${inv.status}</span></td>
+            <td>
+              <div style="display:flex;gap:4px">
+                <button class="btn btn-secondary btn-sm btn-icon" onclick="viewInvoice('${inv.id}')" title="View">👁</button>
+                ${inv.status==='pending'?`<button class="btn btn-gold btn-sm" onclick="markInvoicePaid('${inv.id}')" style="font-size:10px;padding:3px 7px">Paid</button>`:''}
+                <button class="btn btn-danger btn-sm btn-icon" onclick="deleteInvoice('${inv.id}')">🗑</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+}
+
+async function viewInvoice(id) {
+  const { data: inv } = await supabase.from('invoices').select('*').eq('id',id).single();
+  if (!inv) return;
+  document.getElementById('invoice-view-content').innerHTML = `
+    <div class="invoice-box" id="printable-invoice">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:14px;border-bottom:2px solid var(--maroon)">
+        <div>
+          <div style="font-size:18px;font-weight:700;color:var(--maroon)">${cardSettings?.name1||'School Name'}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${cardSettings?.address||''}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${cardSettings?.phone||''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:700;color:var(--maroon)">${inv.invoice_no}</div>
+          <div style="font-size:12px;color:var(--text-muted)">Date: ${formatDate(inv.invoice_date)}</div>
+          <div style="font-size:12px;color:var(--text-muted)">Due: ${formatDate(inv.due_date)}</div>
+          <span class="badge ${inv.status==='paid'?'badge-green':inv.status==='pending'?'badge-amber':'badge-red'}" style="margin-top:4px">${inv.status}</span>
+        </div>
+      </div>
+      <div style="margin-bottom:14px;padding:10px 12px;background:var(--sandal-light);border-radius:8px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px">INVOICE TO</div>
+        <div style="font-weight:700;font-size:15px">${inv.invoice_to}</div>
+        ${inv.invoice_for?`<div style="font-size:12px;color:var(--text-muted)">${inv.invoice_for}</div>`:''}
+      </div>
+      <table class="invoice-table">
+        <thead><tr><th>Description</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody>
+          ${(inv.items||[]).map(item=>`<tr><td>${item.description}</td><td style="text-align:center">${item.qty}</td><td style="text-align:right">₹${item.rate.toLocaleString('en-IN')}</td><td style="text-align:right;font-weight:600">₹${item.amount.toLocaleString('en-IN')}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="max-width:240px;margin-left:auto">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px"><span>Subtotal</span><span>₹${inv.subtotal.toLocaleString('en-IN')}</span></div>
+        ${inv.tax_percent>0?`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px"><span>GST (${inv.tax_percent}%)</span><span>₹${inv.tax_amount.toLocaleString('en-IN')}</span></div>`:''}
+        <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:16px;font-weight:700;color:var(--maroon);border-top:2px solid var(--maroon);margin-top:4px"><span>Total</span><span>₹${inv.total_amount.toLocaleString('en-IN')}</span></div>
+      </div>
+      <div style="margin-top:20px;padding-top:12px;border-top:1px dashed var(--border);text-align:center;font-size:11px;color:var(--text-muted)">Thank you for your business. — Computer Generated Invoice</div>
+    </div>
+  `;
+  document.getElementById('invoice-view-modal').classList.add('open');
+}
+
+async function markInvoicePaid(id) {
+  await supabase.from('invoices').update({status:'paid'}).eq('id',id);
+  showToast('Invoice marked as paid!','success');
+  await loadInvoices(); await loadStats();
+}
+
+async function deleteInvoice(id) {
+  if (!confirm('Delete this invoice?')) return;
+  await supabase.from('invoices').delete().eq('id',id);
+  showToast('Invoice deleted.','success');
+  await loadInvoices(); await loadStats();
+}
+
+// ── BUDGET ──
+let budgetData = {};
+async function loadBudget() {
+  const year = document.getElementById('bud-year').value;
+  const { data } = await supabase.from('account_budget').select('*').eq('school_id',SCHOOL_ID).eq('academic_year',year);
+  budgetData = {};
+  if (data) data.forEach(b => { budgetData[b.category_id] = b.budget_amount; });
+
+  const expCats = allCategories.filter(c=>c.type==='expense');
+  document.getElementById('budget-inputs').innerHTML = expCats.map(c=>`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <div style="flex:1;font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px">
+        <div style="width:8px;height:8px;border-radius:50%;background:${c.color}"></div>${c.name}
+      </div>
+      <input type="number" class="form-control" id="bud-${c.id}" value="${budgetData[c.id]||''}" placeholder="₹ Annual Budget" style="width:140px;padding:6px 8px;font-size:12px;text-align:right">
+    </div>
+  `).join('');
+}
+
+async function saveBudget() {
+  const year = document.getElementById('bud-year').value;
+  const expCats = allCategories.filter(c=>c.type==='expense');
+  await supabase.from('account_budget').delete().eq('school_id',SCHOOL_ID).eq('academic_year',year);
+  const records = expCats.map(c => ({
+    school_id: SCHOOL_ID, academic_year: year,
+    category_id: c.id, category_name: c.name,
+    budget_amount: parseFloat(document.getElementById('bud-'+c.id)?.value)||0,
+  })).filter(r=>r.budget_amount>0);
+  if (records.length>0) await supabase.from('account_budget').insert(records);
+  showToast('Budget saved!','success');
+  await loadBudgetActual();
+}
+
+async function loadBudgetActual() {
+  const year = document.getElementById('bud-year').value;
+  const [fy] = year.split('-');
+  const from = fy+'-04-01';
+  const to = (parseInt(fy)+1)+'-03-31';
+
+  const { data: budgets } = await supabase.from('account_budget').select('*').eq('school_id',SCHOOL_ID).eq('academic_year',year);
+  const { data: txns } = await supabase.from('account_transactions').select('category_id,amount').eq('school_id',SCHOOL_ID).eq('type','expense').gte('date',from).lte('date',to);
+
+  const actualMap = {};
+  if (txns) txns.forEach(t => { actualMap[t.category_id] = (actualMap[t.category_id]||0)+t.amount; });
+
+  if (!budgets||budgets.length===0) { document.getElementById('budget-actual-content').innerHTML='<div class="empty-state"><div class="icon">📊</div><p>No budget set. Set budget amounts on the left.</p></div>'; return; }
+
+  document.getElementById('budget-actual-content').innerHTML = budgets.map(b => {
+    const actual = actualMap[b.category_id]||0;
+    const pct = b.budget_amount>0 ? Math.round((actual/b.budget_amount)*100) : 0;
+    const over = pct>100;
+    const cat = allCategories.find(c=>c.id===b.category_id);
+    return `
+      <div style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px">
+            <div style="width:8px;height:8px;border-radius:50%;background:${cat?.color||'#888'}"></div>${b.category_name}
+          </div>
+          <div style="font-size:12px">
+            <span style="color:#A32D2D;font-weight:600">₹${actual.toLocaleString('en-IN')}</span>
+            <span style="color:var(--text-muted)"> / ₹${b.budget_amount.toLocaleString('en-IN')}</span>
+            <span class="badge ${over?'badge-red':pct>=80?'badge-amber':'badge-green'}" style="margin-left:4px;font-size:10px">${pct}%</span>
+          </div>
+        </div>
+        <div class="budget-bar">
+          <div class="budget-fill" style="width:${Math.min(pct,100)}%;background:${over?'#A32D2D':pct>=80?'#8B5E00':cat?.color||'#2D7A3A'}"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── REPORTS ──
+async function loadStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const monthStart = today.slice(0,7)+'-01';
+  const { data } = await supabase.from('account_transactions').select('type,amount').eq('school_id',SCHOOL_ID).gte('date',monthStart).lte('date',today);
+  if (data) {
+    const inc = data.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
+    const exp = data.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
+    document.getElementById('st-income').textContent = '₹'+(inc/1000).toFixed(0)+'K';
+    document.getElementById('st-expense').textContent = '₹'+(exp/1000).toFixed(0)+'K';
+    const bal = inc-exp;
+    document.getElementById('st-balance').textContent = '₹'+(Math.abs(bal)/1000).toFixed(0)+'K';
+    document.getElementById('st-balance').style.color = bal>=0?'#2D7A3A':'#A32D2D';
+  }
+  const { count } = await supabase.from('invoices').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','pending');
+  document.getElementById('st-invoices').textContent = count||0;
+}
+
+async function loadPL() {
+  const from = document.getElementById('pl-from').value;
+  const to = document.getElementById('pl-to').value;
+  if (!from||!to) return;
+  const { data } = await supabase.from('account_transactions').select('type,category_name,category_color,amount').eq('school_id',SCHOOL_ID).gte('date',from+'-01').lte('date',to+'-31');
+  if (!data||data.length===0) { document.getElementById('pl-content').innerHTML='<div class="empty-state"><div class="icon">📈</div><p>No data for this period.</p></div>'; return; }
+
+  const incByCat={}, expByCat={};
+  data.forEach(r => {
+    if (r.type==='income') { if(!incByCat[r.category_name]) incByCat[r.category_name]={amt:0,color:r.category_color}; incByCat[r.category_name].amt+=r.amount; }
+    else { if(!expByCat[r.category_name]) expByCat[r.category_name]={amt:0,color:r.category_color}; expByCat[r.category_name].amt+=r.amount; }
+  });
+  const totalInc = Object.values(incByCat).reduce((s,v)=>s+v.amt,0);
+  const totalExp = Object.values(expByCat).reduce((s,v)=>s+v.amt,0);
+  const net = totalInc-totalExp;
+
+  document.getElementById('pl-content').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#2D7A3A;margin-bottom:8px;text-transform:uppercase">Income</div>
+        ${Object.entries(incByCat).map(([n,v])=>`
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:${v.color}"></span>${n}</span>
+            <span style="font-weight:600;color:#2D7A3A">₹${v.amt.toLocaleString('en-IN')}</span>
+          </div>
+        `).join('')}
+        <div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700;font-size:13px;color:#2D7A3A">
+          <span>Total Income</span><span>₹${totalInc.toLocaleString('en-IN')}</span>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#A32D2D;margin-bottom:8px;text-transform:uppercase">Expense</div>
+        ${Object.entries(expByCat).map(([n,v])=>`
+          <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+            <span style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:${v.color}"></span>${n}</span>
+            <span style="font-weight:600;color:#A32D2D">₹${v.amt.toLocaleString('en-IN')}</span>
+          </div>
+        `).join('')}
+        <div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700;font-size:13px;color:#A32D2D">
+          <span>Total Expense</span><span>₹${totalExp.toLocaleString('en-IN')}</span>
+        </div>
+      </div>
+    </div>
+    <div style="background:${net>=0?'#E8F5EB':'#FCEBEB'};border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:15px;font-weight:700">Net ${net>=0?'Surplus':'Deficit'}</div>
+      <div style="font-size:24px;font-weight:700;color:${net>=0?'#2D7A3A':'#A32D2D'}">₹${Math.abs(net).toLocaleString('en-IN')}</div>
+    </div>
+  `;
+}
+
+async function loadMonthChart() {
+  const year = document.getElementById('chart-year').value;
+  const [fy] = year.split('-');
+  const months = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+  const dates = [
+    [fy+'-04-01',fy+'-04-30'],[fy+'-05-01',fy+'-05-31'],[fy+'-06-01',fy+'-06-30'],
+    [fy+'-07-01',fy+'-07-31'],[fy+'-08-01',fy+'-08-31'],[fy+'-09-01',fy+'-09-30'],
+    [fy+'-10-01',fy+'-10-31'],[fy+'-11-01',fy+'-11-30'],[fy+'-12-01',fy+'-12-31'],
+    [(parseInt(fy)+1)+'-01-01',(parseInt(fy)+1)+'-01-31'],
+    [(parseInt(fy)+1)+'-02-01',(parseInt(fy)+1)+'-02-28'],
+    [(parseInt(fy)+1)+'-03-01',(parseInt(fy)+1)+'-03-31'],
+  ];
+
+  const { data } = await supabase.from('account_transactions').select('type,amount,date').eq('school_id',SCHOOL_ID).gte('date',fy+'-04-01').lte('date',(parseInt(fy)+1)+'-03-31');
+  const monthData = dates.map(([from,to],i) => {
+    const filtered = data?.filter(r=>r.date>=from&&r.date<=to)||[];
+    return {
+      month: months[i],
+      inc: filtered.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0),
+      exp: filtered.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0),
+    };
+  });
+
+  const maxVal = Math.max(...monthData.map(m=>Math.max(m.inc,m.exp)),1);
+  document.getElementById('month-chart-content').innerHTML = `
+    <div style="display:flex;gap:12px;margin-bottom:8px;font-size:11px">
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:8px;border-radius:2px;background:#2D7A3A"></span>Income</span>
+      <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:8px;border-radius:2px;background:#A32D2D"></span>Expense</span>
+    </div>
+    <div style="display:flex;gap:4px;align-items:flex-end;height:150px;padding-bottom:20px;position:relative;border-bottom:1px solid var(--border)">
+      ${monthData.map(m=>`
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;justify-content:flex-end;height:100%">
+          <div style="width:100%;display:flex;gap:1px;align-items:flex-end;justify-content:center;height:130px">
+            <div style="flex:1;height:${Math.round((m.inc/maxVal)*120)}px;background:#2D7A3A;border-radius:2px 2px 0 0;min-height:1px"></div>
+            <div style="flex:1;height:${Math.round((m.exp/maxVal)*120)}px;background:#A32D2D;border-radius:2px 2px 0 0;min-height:1px"></div>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted);margin-top:4px">${m.month}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:8px;display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)">
+      <span>Total Income: <b style="color:#2D7A3A">₹${monthData.reduce((s,m)=>s+m.inc,0).toLocaleString('en-IN')}</b></span>
+      <span>Total Expense: <b style="color:#A32D2D">₹${monthData.reduce((s,m)=>s+m.exp,0).toLocaleString('en-IN')}</b></span>
+    </div>
+  `;
+}
+
+async function loadCategoryBreakdown() {
+  const month = document.getElementById('cat-month').value;
+  if (!month) return;
+  const { data } = await supabase.from('account_transactions').select('type,category_name,category_color,amount').eq('school_id',SCHOOL_ID).gte('date',month+'-01').lte('date',month+'-31');
+  if (!data||data.length===0) { document.getElementById('cat-breakdown-content').innerHTML='<div class="empty-state"><div class="icon">🍕</div><p>No data for this month.</p></div>'; return; }
+
+  const expData={}, incData={};
+  data.forEach(r => {
+    if(r.type==='expense'){if(!expData[r.category_name])expData[r.category_name]={amt:0,color:r.category_color};expData[r.category_name].amt+=r.amount;}
+    else{if(!incData[r.category_name])incData[r.category_name]={amt:0,color:r.category_color};incData[r.category_name].amt+=r.amount;}
+  });
+  const totalExp=Object.values(expData).reduce((s,v)=>s+v.amt,0);
+  const totalInc=Object.values(incData).reduce((s,v)=>s+v.amt,0);
+
+  const renderBreakdown = (map, total, label, totalColor) => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:${totalColor};margin-bottom:8px">${label} — ₹${total.toLocaleString('en-IN')}</div>
+      ${Object.entries(map).sort((a,b)=>b[1].amt-a[1].amt).map(([n,v])=>{
+        const pct=total>0?Math.round((v.amt/total)*100):0;
+        return `
+          <div style="margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+              <span style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:${v.color}"></span>${n}</span>
+              <span style="font-weight:600">₹${v.amt.toLocaleString('en-IN')} <span style="font-weight:400;color:var(--text-muted)">(${pct}%)</span></span>
+            </div>
+            <div style="height:6px;border-radius:3px;background:var(--bg)"><div style="height:100%;border-radius:3px;width:${pct}%;background:${v.color}"></div></div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  document.getElementById('cat-breakdown-content').innerHTML =
+    renderBreakdown(incData, totalInc, 'Income', '#2D7A3A') +
+    renderBreakdown(expData, totalExp, 'Expense', '#A32D2D');
+}
+
+async function loadCashFlow() {
+  const year = document.getElementById('cf-year').value;
+  const [fy] = year.split('-');
+  const months = ['April','May','June','July','August','September','October','November','December','January','February','March'];
+  const dates = [
+    [fy+'-04-01',fy+'-04-30'],[fy+'-05-01',fy+'-05-31'],[fy+'-06-01',fy+'-06-30'],
+    [fy+'-07-01',fy+'-07-31'],[fy+'-08-01',fy+'-08-31'],[fy+'-09-01',fy+'-09-30'],
+    [fy+'-10-01',fy+'-10-31'],[fy+'-11-01',fy+'-11-30'],[fy+'-12-01',fy+'-12-31'],
+    [(parseInt(fy)+1)+'-01-01',(parseInt(fy)+1)+'-01-31'],
+    [(parseInt(fy)+1)+'-02-01',(parseInt(fy)+1)+'-02-28'],
+    [(parseInt(fy)+1)+'-03-01',(parseInt(fy)+1)+'-03-31'],
+  ];
+  const { data } = await supabase.from('account_transactions').select('type,amount,date').eq('school_id',SCHOOL_ID).gte('date',fy+'-04-01').lte('date',(parseInt(fy)+1)+'-03-31');
+
+  let cumulative = 0;
+  const rows = dates.map(([from,to],i) => {
+    const filtered = data?.filter(r=>r.date>=from&&r.date<=to)||[];
+    const inc = filtered.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
+    const exp = filtered.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
+    const net = inc-exp;
+    cumulative += net;
+    return { month: months[i], inc, exp, net, cumulative };
+  });
+
+  document.getElementById('cash-flow-content').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Month</th><th style="text-align:right;color:#2D7A3A">Income</th><th style="text-align:right;color:#A32D2D">Expense</th><th style="text-align:right">Net</th><th style="text-align:right">Cumulative</th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`
+          <tr>
+            <td style="font-weight:500">${r.month}</td>
+            <td style="text-align:right;color:#2D7A3A">${r.inc>0?'₹'+r.inc.toLocaleString('en-IN'):'—'}</td>
+            <td style="text-align:right;color:#A32D2D">${r.exp>0?'₹'+r.exp.toLocaleString('en-IN'):'—'}</td>
+            <td style="text-align:right;font-weight:600;color:${r.net>=0?'#2D7A3A':'#A32D2D'}">${r.net!==0?'₹'+r.net.toLocaleString('en-IN'):'—'}</td>
+            <td style="text-align:right;font-weight:700;color:${r.cumulative>=0?'#2D7A3A':'#A32D2D'}">₹${r.cumulative.toLocaleString('en-IN')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ── TAB SWITCH ──
+function switchTab(tab, el) {
+  ['ledger','income','expense','invoices','budget','reports','categories'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (tab==='income') loadIncomeList();
+  if (tab==='expense') loadExpenseList();
+  if (tab==='invoices') loadInvoices();
+  if (tab==='budget') { loadBudget(); loadBudgetActual(); }
+}
+
+['cat-modal','invoice-view-modal','txn-modal'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el) el.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')});
+});
+</script>
+</body>
+</html>
