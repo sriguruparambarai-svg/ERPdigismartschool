@@ -143,7 +143,7 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
 <body>
 
 <!-- ══ LANDING ══ -->
-<div id="pg-landing" class="screen active">
+<div id="pg-landing" class="screen" style="display:none">
   <nav class="land-nav">
     <div class="land-logo" onclick="showPage('landing')">
       <div class="logo-box">DS</div>
@@ -456,16 +456,29 @@ let allSchools = [];
 
 // ── PAGE NAVIGATION ──
 function showPage(name) {
-  // include pg-contact in navigation
+  // Hide all pages first
   document.querySelectorAll('.screen, .flex-screen, .sa-shell').forEach(el => {
     el.classList.remove('active');
-    if (el.classList.contains('screen')) el.style.display = 'none';
+    el.style.display = 'none';
   });
   const target = document.getElementById('pg-' + name);
   if (!target) return;
-  if (target.classList.contains('sa-shell')) { target.classList.add('active'); }
-  else if (target.classList.contains('screen')) { target.classList.add('active'); target.style.display = 'block'; }
-  else { target.classList.add('active'); }
+
+  // Show the target page with correct display type
+  if (target.classList.contains('sa-shell')) {
+    target.style.display = 'flex';
+    target.classList.add('active');
+  } else if (target.id === 'pg-landing') {
+    target.style.display = 'flex';
+    target.style.flexDirection = 'column';
+    target.classList.add('active');
+  } else if (target.classList.contains('flex-screen')) {
+    target.style.display = 'flex';
+    target.classList.add('active');
+  } else {
+    target.style.display = 'block';
+    target.classList.add('active');
+  }
 }
 
 // ── INIT ──
