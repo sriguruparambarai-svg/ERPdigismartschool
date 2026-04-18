@@ -141,6 +141,15 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
 </style>
 </head>
 <body>
+<div id="initial-loader" style="position:fixed;inset:0;background:#F7F4F0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px">
+  <div style="width:52px;height:52px;background:#6B1A1A;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#C9A84C;font-size:20px;font-weight:800">DS</div>
+  <div style="font-size:16px;font-weight:700;color:#6B1A1A">DigiSmart ERP</div>
+  <div style="font-size:12px;color:#9B928A">Loading...</div>
+  <div style="width:40px;height:3px;background:#E8E0D5;border-radius:2px;overflow:hidden;margin-top:4px">
+    <div style="width:40px;height:100%;background:#6B1A1A;border-radius:2px;animation:slide 1s ease-in-out infinite"></div>
+  </div>
+</div>
+<style>@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}</style>
 
 <!-- ══ LANDING ══ -->
 <div id="pg-landing" class="screen" style="display:none">
@@ -450,7 +459,7 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
 <script>
 const SUPABASE_URL = 'https://pzxosqukijwpjdlfdfst.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_AeMrzyinAl4n2AifhC-j3A_wRh_nda3';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const SUPER_ADMIN = 'sriguruparambarai@gmail.com';
 let allSchools = [];
 
@@ -483,9 +492,21 @@ function showPage(name) {
 
 // ── INIT ──
 window.addEventListener('DOMContentLoaded', async () => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.user) { await handleUser(session.user); }
-  else { showPage('landing'); }
+  // Show landing page immediately — don't wait for session check
+  showPage('landing');
+  
+  // Hide the loader
+  const loader = document.getElementById('initial-loader');
+  if (loader) loader.style.display = 'none';
+
+  // Then check session in background
+  try {
+    const { data: { session } } = await db.auth.getSession();
+    if (session?.user) { await handleUser(session.user); }
+  } catch(e) {
+    // Supabase failed to load — still show landing page
+    console.log('Session check failed:', e);
+  }
 });
 
 async function handleUser(user) {
@@ -494,7 +515,7 @@ async function handleUser(user) {
     showPage('super-admin');
     await loadSA();
   } else {
-    const { data: school } = await supabase.from('schools').select('*').eq('admin_email', user.email).single();
+    const { data: school } = await db.from('schools').select('*').eq('admin_email', user.email).single();
     if (school) {
       sessionStorage.setItem('digismart_school_id', school.school_id);
       sessionStorage.setItem('school_name', school.name);
@@ -520,7 +541,7 @@ async function doLogin() {
     return;
   }
   btn.textContent = 'Signing in...'; btn.disabled = true;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password: pw });
+  const { data, error } = await db.auth.signInWithPassword({ email, password: pw });
   btn.textContent = 'Sign In →'; btn.disabled = false;
   if (error) { setAlert('login-alert', '⚠️ ' + (error.message.includes('Invalid') ? 'Incorrect email or password.' : error.message), 'err'); return; }
   await handleUser(data.user);
@@ -545,10 +566,10 @@ async function doRegister() {
   const schoolId = sname.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,20) + '-' + Date.now().toString(36);
   const trialEnd = new Date(); trialEnd.setDate(trialEnd.getDate()+30);
 
-  const { error: authErr } = await supabase.auth.signUp({ email, password: pw, options: { data: { school_name: sname, admin_name: name } } });
+  const { error: authErr } = await db.auth.signUp({ email, password: pw, options: { data: { school_name: sname, admin_name: name } } });
   if (authErr) { btn.textContent='Create School Account →'; btn.disabled=false; setAlert('reg-alert','⚠️ '+authErr.message,'err'); return; }
 
-  const { error: dbErr } = await supabase.from('schools').insert([{
+  const { error: dbErr } = await db.from('schools').insert([{
     school_id: schoolId, name: sname, type: stype,
     classes: document.getElementById('r-classes').value,
     city, district: document.getElementById('r-district').value,
@@ -576,17 +597,17 @@ async function doForgot() {
   const email = document.getElementById('forgot-email').value.trim();
   clearAlert('forgot-alert');
   if (!email) { setAlert('forgot-alert','⚠️ Please enter your email.','err'); return; }
-  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password.html' });
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/reset-password.html' });
   if (error) { setAlert('forgot-alert','⚠️ '+error.message,'err'); return; }
   setAlert('forgot-alert','✓ Reset link sent to '+email+'. Check your inbox.','ok');
 }
 
 // ── LOGOUT ──
-async function doLogout() { await supabase.auth.signOut(); sessionStorage.clear(); showPage('landing'); }
+async function doLogout() { await db.auth.signOut(); sessionStorage.clear(); showPage('landing'); }
 
 // ── SUPER ADMIN ──
 async function loadSA() {
-  const { data } = await supabase.from('schools').select('*').order('registered_at',{ascending:false});
+  const { data } = await db.from('schools').select('*').order('registered_at',{ascending:false});
   allSchools = data || [];
   const active = allSchools.filter(s=>s.status==='active').length;
   const trial = allSchools.filter(s=>s.status==='trial').length;
@@ -638,14 +659,14 @@ function filterSA() {
 }
 
 async function changeStatus(id, status) {
-  await supabase.from('schools').update({status}).eq('school_id',id);
+  await db.from('schools').update({status}).eq('school_id',id);
   toast(status==='active'?'School activated!':'School suspended.');
   await loadSA();
 }
 
 async function delSchool(id, name) {
   if (!confirm('Delete "'+name+'"? This cannot be undone.')) return;
-  await supabase.from('schools').delete().eq('school_id',id);
+  await db.from('schools').delete().eq('school_id',id);
   toast('Deleted.'); await loadSA();
 }
 
@@ -660,7 +681,7 @@ async function submitContact() {
   clearAlert('contact-alert');
   if (!school || !name || !mobile) { setAlert('contact-alert','⚠️ Please fill school name, your name and mobile number.','err'); return; }
   btn.textContent = 'Sending...'; btn.disabled = true;
-  const { error } = await supabase.from('demo_requests').insert([{
+  const { error } = await db.from('demo_requests').insert([{
     school_name: school,
     contact_name: name,
     mobile,
