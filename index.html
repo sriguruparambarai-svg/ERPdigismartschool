@@ -154,7 +154,7 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
       <span class="nav-link" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Pricing</span>
       <span class="nav-link" onclick="showPage('login')">Login</span>
       <button class="btn-nav-login" onclick="showPage('login')">Login</button>
-      <button class="btn-nav-trial" onclick="showPage('register')">Free Trial →</button>
+      <button class="btn-nav-trial" onclick="showPage('contact')">Get Demo →</button>
     </div>
   </nav>
 
@@ -165,8 +165,8 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
         <h1 class="hero-h1">Complete School ERP<br>for <em>Every School</em></h1>
         <p class="hero-p">Manage admissions, attendance, fees, exams, salary, transport and more — all in one place. Built for Tamil Nadu schools, LKG to Class 12.</p>
         <div class="hero-btns">
-          <button class="btn-hero-p" onclick="showPage('register')">Start Free 30-Day Trial →</button>
-          <button class="btn-hero-s" onclick="showPage('login')">Login to Dashboard</button>
+          <button class="btn-hero-p" onclick="showPage('contact')">Get a Demo →</button>
+          <button class="btn-hero-s" onclick="showPage('login')">School Login →</button>
         </div>
         <div class="hero-stats">
           <div><div class="hstat-n">13+</div><div class="hstat-l">Modules</div></div>
@@ -219,41 +219,41 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
       <div class="sec-h2">One price. All modules. No hidden fees.</div>
       <div class="pricing-grid">
         <div class="p-card">
-          <div class="p-name">Starter</div>
-          <div class="p-price">₹999</div>
+          <div class="p-name">Basic Plan</div>
+          <div class="p-price">₹2,499</div>
           <div class="p-period">per month · up to 300 students</div>
           <div class="p-feat"><span class="ck">✓</span>All 13 modules</div>
           <div class="p-feat"><span class="ck">✓</span>Up to 300 students</div>
           <div class="p-feat"><span class="ck">✓</span>Up to 20 staff</div>
           <div class="p-feat"><span class="ck">✓</span>Email support</div>
           <div class="p-feat"><span class="nx">✗</span>Custom domain</div>
-          <button class="btn-plan" onclick="showPage('register');document.getElementById('plan-val').value='starter'">Get Started Free</button>
+          <button class="btn-plan" onclick="showPage('contact')">Contact to Purchase</button>
         </div>
         <div class="p-card pop">
           <div class="p-tag">Most Popular</div>
-          <div class="p-name">School</div>
-          <div class="p-price">₹1,999</div>
-          <div class="p-period">per month · up to 1000 students</div>
+          <div class="p-name">Standard Plan</div>
+          <div class="p-price">₹3,999</div>
+          <div class="p-period">per month · up to 600 students</div>
           <div class="p-feat"><span class="ck">✓</span>All 13 modules</div>
           <div class="p-feat"><span class="ck">✓</span>Up to 1000 students</div>
           <div class="p-feat"><span class="ck">✓</span>Unlimited staff</div>
           <div class="p-feat"><span class="ck">✓</span>Priority support</div>
           <div class="p-feat"><span class="ck">✓</span>Custom domain</div>
-          <button class="btn-plan" onclick="showPage('register');document.getElementById('plan-val').value='school'">Get Started Free</button>
+          <button class="btn-plan" onclick="showPage('contact')">Contact to Purchase</button>
         </div>
         <div class="p-card">
-          <div class="p-name">Institution</div>
-          <div class="p-price">₹3,499</div>
-          <div class="p-period">per month · unlimited</div>
+          <div class="p-name">Premium Plan</div>
+          <div class="p-price">₹5,999</div>
+          <div class="p-period">per month · up to 1000 students</div>
           <div class="p-feat"><span class="ck">✓</span>All 13 modules</div>
           <div class="p-feat"><span class="ck">✓</span>Unlimited students</div>
           <div class="p-feat"><span class="ck">✓</span>Unlimited staff</div>
           <div class="p-feat"><span class="ck">✓</span>Dedicated support</div>
           <div class="p-feat"><span class="ck">✓</span>Custom domain + branding</div>
-          <button class="btn-plan" onclick="showPage('register');document.getElementById('plan-val').value='institution'">Get Started Free</button>
+          <button class="btn-plan" onclick="showPage('contact')">Contact to Purchase</button>
         </div>
       </div>
-      <div class="trial-note">All plans include a <b style="color:var(--maroon)">30-day free trial</b>. No credit card required.</div>
+      <div class="trial-note" style="font-size:13px;color:var(--text-muted);margin-top:20px">Contact us to get started. We will set up your school account within 24 hours.</div>
     </div>
   </section>
 
@@ -286,7 +286,49 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
   </div>
 </div>
 
-<!-- ══ REGISTER ══ -->
+<!-- ══ CONTACT / GET DEMO ══ -->
+<div id="pg-contact" class="flex-screen">
+  <div class="auth-wrap">
+    <div class="auth-head">
+      <div class="logo-box">DS</div>
+      <div><div style="font-size:15px;font-weight:800;color:var(--maroon)">DigiSmart ERP</div><div style="font-size:11px;color:var(--text-muted)">Request Demo & Purchase</div></div>
+    </div>
+    <div class="auth-h">Get Started with DigiSmart ERP</div>
+    <div class="auth-sub">Fill this form — we will contact you within 24 hours to set up your school account</div>
+    <div id="contact-alert" class="auth-alert"></div>
+    <label class="form-lbl">School Name <span style="color:#A32D2D">*</span></label>
+    <input type="text" id="ct-school" class="form-inp" placeholder="e.g. ARK Global Matriculation School">
+    <label class="form-lbl">Your Name <span style="color:#A32D2D">*</span></label>
+    <input type="text" id="ct-name" class="form-inp" placeholder="Principal / Admin name">
+    <label class="form-lbl">Mobile Number <span style="color:#A32D2D">*</span></label>
+    <input type="tel" id="ct-mobile" class="form-inp" placeholder="WhatsApp number preferred">
+    <label class="form-lbl">Email</label>
+    <input type="email" id="ct-email" class="form-inp" placeholder="your@email.com">
+    <label class="form-lbl">City / District</label>
+    <input type="text" id="ct-city" class="form-inp" placeholder="e.g. Mayiladuthurai, Nagapattinam">
+    <label class="form-lbl">Number of Students (approx)</label>
+    <select id="ct-students" class="form-inp">
+      <option value="">Select range</option>
+      <option>Below 300 students</option>
+      <option>300 to 600 students</option>
+      <option>600 to 1000 students</option>
+      <option>Above 1000 students</option>
+    </select>
+    <label class="form-lbl">Plan Interested In</label>
+    <select id="ct-plan" class="form-inp">
+      <option value="">Select plan</option>
+      <option>Basic — ₹2,499/month</option>
+      <option>Standard — ₹3,999/month</option>
+      <option>Premium — ₹5,999/month</option>
+      <option>Not sure — need guidance</option>
+    </select>
+    <button class="btn-submit" id="ct-btn" onclick="submitContact()">Send Request →</button>
+    <div class="auth-foot" style="margin-top:14px">Already a customer? <span class="alink" onclick="showPage('login')">Login here</span></div>
+    <div class="auth-foot" style="margin-top:6px"><span class="alink" onclick="showPage('landing')">← Back to Home</span></div>
+  </div>
+</div>
+
+<!-- ══ REGISTER (hidden — only super admin can create accounts) ══ -->
 <div id="pg-register" class="flex-screen">
   <div class="auth-wrap wide">
     <div class="auth-head">
@@ -414,6 +456,7 @@ let allSchools = [];
 
 // ── PAGE NAVIGATION ──
 function showPage(name) {
+  // include pg-contact in navigation
   document.querySelectorAll('.screen, .flex-screen, .sa-shell').forEach(el => {
     el.classList.remove('active');
     if (el.classList.contains('screen')) el.style.display = 'none';
@@ -596,6 +639,32 @@ async function delSchool(id, name) {
 // ── UTILS ──
 function setAlert(id, msg, cls) { const el=document.getElementById(id); el.textContent=msg; el.className='auth-alert '+cls; }
 function clearAlert(id) { const el=document.getElementById(id); el.textContent=''; el.className='auth-alert'; }
+async function submitContact() {
+  const school = document.getElementById('ct-school').value.trim();
+  const name = document.getElementById('ct-name').value.trim();
+  const mobile = document.getElementById('ct-mobile').value.trim();
+  const btn = document.getElementById('ct-btn');
+  clearAlert('contact-alert');
+  if (!school || !name || !mobile) { setAlert('contact-alert','⚠️ Please fill school name, your name and mobile number.','err'); return; }
+  btn.textContent = 'Sending...'; btn.disabled = true;
+  const { error } = await supabase.from('demo_requests').insert([{
+    school_name: school,
+    contact_name: name,
+    mobile,
+    email: document.getElementById('ct-email').value.trim(),
+    city: document.getElementById('ct-city').value.trim(),
+    students: document.getElementById('ct-students').value,
+    plan: document.getElementById('ct-plan').value,
+    requested_at: new Date().toISOString(),
+  }]);
+  btn.textContent = 'Send Request →'; btn.disabled = false;
+  if (error && !error.message.includes('does not exist')) {
+    setAlert('contact-alert','⚠️ Error. Please call us directly.','err'); return;
+  }
+  setAlert('contact-alert','✓ Request sent! We will contact you on WhatsApp within 24 hours. Thank you!','ok');
+  setTimeout(() => { document.getElementById('ct-school').value=''; document.getElementById('ct-name').value=''; document.getElementById('ct-mobile').value=''; }, 2000);
+}
+
 function toast(msg) {
   const t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:24px;right:24px;background:#6B1A1A;color:#F5E6C8;padding:12px 20px;border-radius:9px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.15);font-family:Inter,sans-serif';
