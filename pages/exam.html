@@ -396,7 +396,7 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
-const ANTHROPIC_API_KEY = 'your-api-key-here'; // Replace with your key
+// Anthropic API key is stored safely in Vercel environment variables
 let allExams = [];
 let gradingScale = [];
 let passPercent = 35;
@@ -1081,17 +1081,14 @@ Subject-wise: ${subjectSummary}
 Write warm, constructive remarks suitable for a Tamil Nadu school report card. Keep it under 50 words.`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Calls our safe Vercel API function — key is never exposed in browser
+    const response = await fetch('/api/generate-remarks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 150,
-        messages: [{ role: 'user', content: prompt }]
-      })
+      body: JSON.stringify({ prompt })
     });
     const data = await response.json();
-    const remark = data.content?.[0]?.text || 'Good effort! Keep working hard and aim higher next time.';
+    const remark = data.remark || 'Good effort! Keep working hard and aim higher next time.';
     document.getElementById('ai-remarks-area').innerHTML = `<div style="font-size:13px;line-height:1.6">${remark}</div>`;
   } catch (e) {
     document.getElementById('ai-remarks-area').innerHTML = `<div style="font-size:13px">Good effort! Keep working hard and aim higher next time.</div>`;
