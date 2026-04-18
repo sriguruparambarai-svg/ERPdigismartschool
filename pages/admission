@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admission Management — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div class="erp-layout">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- MAIN -->
+  <div class="main-content">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Admission Management</div>
+        <div class="breadcrumb" style="margin-left:10px; padding-left:10px; border-left:1px solid #E8E0D5; color:#9B928A; font-size:12px">Academic → Admission</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px; color:#9B928A;" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <!-- PAGE BODY -->
+    <div class="page-body">
+
+      <!-- STAT CARDS -->
+      <div class="stats-row" id="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Total Students</div>
+          <div class="stat-value" id="stat-total">—</div>
+          <div class="stat-sub">All classes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">This Academic Year</div>
+          <div class="stat-value" id="stat-year">—</div>
+          <div class="stat-sub" id="stat-year-label">2025–26</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">New This Month</div>
+          <div class="stat-value" id="stat-month">—</div>
+          <div class="stat-sub">New admissions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pending Docs</div>
+          <div class="stat-value" id="stat-pending">—</div>
+          <div class="stat-sub">Documents due</div>
+        </div>
+      </div>
+
+      <!-- ALERT -->
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Student Records</div>
+            <div class="card-subtitle" id="record-count">Loading...</div>
+          </div>
+          <div class="flex gap-2">
+            <div class="search-bar">
+              <span style="color:#9B928A; font-size:14px">🔍</span>
+              <input type="text" id="search-input" placeholder="Search by name, admission no, class..." oninput="filterStudents()">
+            </div>
+            <select class="form-control" id="filter-class" onchange="filterStudents()" style="width:130px; padding:7px 10px">
+              <option value="">All Classes</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+            <select class="form-control" id="filter-year" onchange="filterStudents()" style="width:110px; padding:7px 10px">
+              <option value="">All Years</option>
+              <option>2025-26</option><option>2024-25</option><option>2023-24</option>
+            </select>
+            <button class="btn btn-primary" onclick="openAddModal()">+ New Admission</button>
+          </div>
+        </div>
+
+        <!-- TABLE -->
+        <div class="table-wrap" id="table-wrap">
+          <div class="empty-state" id="loading-state">
+            <div class="icon">⏳</div>
+            <p>Loading students...</p>
+          </div>
+          <table id="students-table" class="hidden">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>Admission No</th>
+                <th>Student Name</th>
+                <th>Class</th>
+                <th>Father's Name</th>
+                <th>Mobile</th>
+                <th>Admission Date</th>
+                <th>Status</th>
+                <th style="width:120px">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="students-tbody"></tbody>
+          </table>
+          <div class="empty-state hidden" id="empty-state">
+            <div class="icon">📋</div>
+            <p>No students found. Click <strong>+ New Admission</strong> to add one.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- ADD / EDIT MODAL -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="admission-modal">
+  <div class="modal" style="max-width:780px">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">New Student Admission</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <!-- STEPPER -->
+    <div class="stepper" id="stepper">
+      <div class="step-item">
+        <div class="step-circle active" id="circle-1">1</div>
+        <div class="step-label active" id="label-1">Student Details</div>
+      </div>
+      <div class="step-line" id="line-1"></div>
+      <div class="step-item">
+        <div class="step-circle" id="circle-2">2</div>
+        <div class="step-label" id="label-2">Parent Details</div>
+      </div>
+      <div class="step-line" id="line-2"></div>
+      <div class="step-item">
+        <div class="step-circle" id="circle-3">3</div>
+        <div class="step-label" id="label-3">Academic & Address</div>
+      </div>
+    </div>
+
+    <div id="modal-alert" class="hidden"></div>
+
+    <!-- STEP 1: STUDENT -->
+    <div id="step-1">
+      <div class="form-section">
+        <div class="form-section-title">👤 Student Details</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Full Name (English) <span class="req">*</span></label>
+            <input type="text" id="f-name" class="form-control" placeholder="e.g. Abirami Sundaram">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Full Name (Tamil)</label>
+            <input type="text" id="f-name-tamil" class="form-control" placeholder="தமிழில் பெயர்">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date of Birth <span class="req">*</span></label>
+            <input type="date" id="f-dob" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gender <span class="req">*</span></label>
+            <select id="f-gender" class="form-control">
+              <option value="">Select</option>
+              <option>Male</option><option>Female</option><option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Blood Group</label>
+            <select id="f-blood" class="form-control">
+              <option value="">Select</option>
+              <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Aadhar Number <span class="req">*</span></label>
+            <input type="text" id="f-aadhar" class="form-control" placeholder="12-digit number" maxlength="12">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Religion</label>
+            <select id="f-religion" class="form-control">
+              <option value="">Select</option>
+              <option>Hindu</option><option>Muslim</option><option>Christian</option><option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Caste / Community</label>
+            <input type="text" id="f-caste" class="form-control" placeholder="e.g. BC, OC, MBC, SC">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mother Tongue</label>
+            <select id="f-tongue" class="form-control">
+              <option value="">Select</option>
+              <option>Tamil</option><option>Telugu</option><option>Malayalam</option>
+              <option>Hindi</option><option>Urdu</option><option>Other</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="goToStep(2)">Next → Parent Details</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: PARENT -->
+    <div id="step-2" class="hidden">
+      <div class="form-section">
+        <div class="form-section-title">👨‍👩‍👧 Parent / Guardian Details</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Father's Name <span class="req">*</span></label>
+            <input type="text" id="f-father" class="form-control" placeholder="Father's full name">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mother's Name <span class="req">*</span></label>
+            <input type="text" id="f-mother" class="form-control" placeholder="Mother's full name">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Father's Occupation</label>
+            <input type="text" id="f-occupation" class="form-control" placeholder="e.g. Farmer, Teacher">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mobile Number <span class="req">*</span></label>
+            <input type="tel" id="f-mobile" class="form-control" placeholder="10-digit mobile" maxlength="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label">WhatsApp Number</label>
+            <input type="tel" id="f-whatsapp" class="form-control" placeholder="If different from mobile" maxlength="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="f-email" class="form-control" placeholder="parent@email.com">
+          </div>
+        </div>
+        <div class="form-section-title" style="margin-top:20px">🏠 Address</div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label class="form-label">Full Address <span class="req">*</span></label>
+            <textarea id="f-address" class="form-control" placeholder="House no, Street, Area..."></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">City / Town <span class="req">*</span></label>
+            <input type="text" id="f-city" class="form-control" placeholder="e.g. Mayiladuthurai">
+          </div>
+          <div class="form-group">
+            <label class="form-label">District</label>
+            <input type="text" id="f-district" class="form-control" placeholder="e.g. Nagapattinam">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Pincode</label>
+            <input type="text" id="f-pincode" class="form-control" placeholder="6-digit pincode" maxlength="6">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+        <button class="btn btn-primary" onclick="goToStep(3)">Next → Academic Details</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: ACADEMIC -->
+    <div id="step-3" class="hidden">
+      <div class="form-section">
+        <div class="form-section-title">🏫 Academic Details</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Applying for Class <span class="req">*</span></label>
+            <select id="f-class" class="form-control">
+              <option value="">Select Class</option>
+              <option>LKG</option><option>UKG</option>
+              <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+              <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+              <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+              <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Section</label>
+            <select id="f-section" class="form-control">
+              <option value="">Select</option>
+              <option>A</option><option>B</option><option>C</option><option>D</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Academic Year <span class="req">*</span></label>
+            <select id="f-acyear" class="form-control">
+              <option>2025-26</option><option>2024-25</option><option>2023-24</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Admission Date <span class="req">*</span></label>
+            <input type="date" id="f-admdate" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Previous School</label>
+            <input type="text" id="f-prevschool" class="form-control" placeholder="Name of previous school">
+          </div>
+          <div class="form-group">
+            <label class="form-label">TC Number</label>
+            <input type="text" id="f-tc" class="form-control" placeholder="Transfer Certificate No.">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Transport Route</label>
+            <select id="f-transport" class="form-control">
+              <option value="">No Transport</option>
+              <option>Sirkazhi Route</option>
+              <option>Kollidam Route</option>
+              <option>Nagapattinam Route</option>
+              <option>Chidambaram Route</option>
+              <option>Karaikal Route</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select id="f-status" class="form-control">
+              <option value="active">Active</option>
+              <option value="pending">Pending (Docs Due)</option>
+              <option value="left">Left School</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+        <button class="btn btn-gold" id="save-btn" onclick="saveStudent()">✓ Save Admission</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- VIEW STUDENT MODAL -->
+<!-- ═══════════════════════════════════════ -->
+<div class="modal-overlay" id="view-modal">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <div class="modal-title">Student Profile</div>
+      <button class="modal-close" onclick="closeViewModal()">✕</button>
+    </div>
+    <div id="view-content"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeViewModal()">Close</button>
+      <button class="btn btn-secondary no-print" onclick="window.print()">🖨 Print</button>
+      <button class="btn btn-primary" id="edit-from-view-btn">✏️ Edit</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" style="color:#A32D2D">Delete Student Record</div>
+      <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+    </div>
+    <p style="font-size:14px; color:#6B6560; margin-bottom:8px">Are you sure you want to delete this student record?</p>
+    <p style="font-size:13px; font-weight:600; color:#1A1A1A" id="delete-name"></p>
+    <p style="font-size:12px; color:#A32D2D; margin-top:8px">⚠️ This action cannot be undone.</p>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-delete-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+
+// ── Init ──
+let allStudents = [];
+let editingId = null;
+let deletingId = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('admission');
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
+  document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
+  await loadStudents();
+  await loadStats();
+  await createTableIfNeeded();
+});
+
+// ── Create Supabase table SQL reminder (run once in Supabase dashboard) ──
+async function createTableIfNeeded() {
+  // Table is created via Supabase dashboard SQL editor (see setup-db.sql)
+}
+
+// ── Load all students ──
+async function loadStudents() {
+  document.getElementById('loading-state').classList.remove('hidden');
+  document.getElementById('students-table').classList.add('hidden');
+  document.getElementById('empty-state').classList.add('hidden');
+
+  const { data, error } = await supabase
+    .from('students')
+    .select('*')
+    .eq('school_id', SCHOOL_ID)
+    .order('created_at', { ascending: false });
+
+  document.getElementById('loading-state').classList.add('hidden');
+
+  if (error) {
+    showPageAlert('Could not load students. Check your Supabase connection.', 'danger');
+    return;
+  }
+
+  allStudents = data || [];
+  renderTable(allStudents);
+}
+
+// ── Load Stats ──
+async function loadStats() {
+  const now = new Date();
+  const thisYear = `${now.getFullYear()}-${String(now.getFullYear()+1).slice(2)}`;
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  document.getElementById('stat-total').textContent = allStudents.length;
+
+  const yearStudents = allStudents.filter(s => s.academic_year === '2025-26');
+  document.getElementById('stat-year').textContent = yearStudents.length;
+
+  const monthStudents = allStudents.filter(s => s.created_at && s.created_at >= monthStart);
+  document.getElementById('stat-month').textContent = monthStudents.length;
+
+  const pending = allStudents.filter(s => s.status === 'pending');
+  document.getElementById('stat-pending').textContent = pending.length;
+}
+
+// ── Render Table ──
+function renderTable(students) {
+  const tbody = document.getElementById('students-tbody');
+  document.getElementById('record-count').textContent = `${students.length} student${students.length !== 1 ? 's' : ''} found`;
+
+  if (students.length === 0) {
+    document.getElementById('students-table').classList.add('hidden');
+    document.getElementById('empty-state').classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('students-table').classList.remove('hidden');
+  document.getElementById('empty-state').classList.add('hidden');
+
+  tbody.innerHTML = students.map(s => {
+    const statusBadge = {
+      active: '<span class="badge badge-green">Active</span>',
+      pending: '<span class="badge badge-amber">Docs Pending</span>',
+      left: '<span class="badge badge-red">Left</span>',
+    }[s.status] || '<span class="badge badge-blue">—</span>';
+
+    return `
+      <tr>
+        <td><div class="avatar">${getInitials(s.full_name)}</div></td>
+        <td><span class="fw-600 text-maroon">${s.admission_no || '—'}</span></td>
+        <td>
+          <div class="fw-600">${s.full_name || '—'}</div>
+          ${s.full_name_tamil ? `<div class="text-small text-muted">${s.full_name_tamil}</div>` : ''}
+        </td>
+        <td>${s.class || '—'} ${s.section ? '– ' + s.section : ''}</td>
+        <td>${s.father_name || '—'}</td>
+        <td>${s.mobile || '—'}</td>
+        <td>${formatDate(s.admission_date)}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm btn-icon" title="View" onclick="viewStudent('${s.id}')">👁</button>
+            <button class="btn btn-secondary btn-sm btn-icon" title="Edit" onclick="editStudent('${s.id}')">✏️</button>
+            <button class="btn btn-danger btn-sm btn-icon" title="Delete" onclick="askDelete('${s.id}', '${(s.full_name||'').replace(/'/g,"\\'")}')">🗑</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ── Filter ──
+function filterStudents() {
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const cls = document.getElementById('filter-class').value;
+  const yr = document.getElementById('filter-year').value;
+
+  const filtered = allStudents.filter(s => {
+    const matchSearch = !search ||
+      (s.full_name || '').toLowerCase().includes(search) ||
+      (s.admission_no || '').toLowerCase().includes(search) ||
+      (s.father_name || '').toLowerCase().includes(search) ||
+      (s.mobile || '').includes(search);
+    const matchClass = !cls || s.class === cls;
+    const matchYear = !yr || s.academic_year === yr;
+    return matchSearch && matchClass && matchYear;
+  });
+
+  renderTable(filtered);
+}
+
+// ── STEP NAVIGATION ──
+let currentStep = 1;
+
+function goToStep(step) {
+  // Validate before going forward
+  if (step > currentStep) {
+    if (!validateStep(currentStep)) return;
+  }
+
+  // Hide all steps
+  document.getElementById('step-1').classList.add('hidden');
+  document.getElementById('step-2').classList.add('hidden');
+  document.getElementById('step-3').classList.add('hidden');
+  document.getElementById('step-' + step).classList.remove('hidden');
+
+  // Update stepper UI
+  for (let i = 1; i <= 3; i++) {
+    const circle = document.getElementById('circle-' + i);
+    const label = document.getElementById('label-' + i);
+    const line = document.getElementById('line-' + i);
+
+    if (i < step) {
+      circle.className = 'step-circle done';
+      circle.textContent = '✓';
+      label.className = 'step-label';
+      if (line) line.className = 'step-line done';
+    } else if (i === step) {
+      circle.className = 'step-circle active';
+      circle.textContent = i;
+      label.className = 'step-label active';
+    } else {
+      circle.className = 'step-circle';
+      circle.textContent = i;
+      label.className = 'step-label';
+      if (line) line.className = 'step-line';
+    }
+  }
+
+  currentStep = step;
+  clearModalAlert();
+}
+
+function validateStep(step) {
+  if (step === 1) {
+    if (!document.getElementById('f-name').value.trim()) { showModalAlert('Please enter student full name.'); return false; }
+    if (!document.getElementById('f-dob').value) { showModalAlert('Please enter date of birth.'); return false; }
+    if (!document.getElementById('f-gender').value) { showModalAlert('Please select gender.'); return false; }
+    if (!document.getElementById('f-aadhar').value.trim() || document.getElementById('f-aadhar').value.trim().length !== 12) { showModalAlert('Please enter valid 12-digit Aadhar number.'); return false; }
+  }
+  if (step === 2) {
+    if (!document.getElementById('f-father').value.trim()) { showModalAlert('Please enter father\'s name.'); return false; }
+    if (!document.getElementById('f-mother').value.trim()) { showModalAlert('Please enter mother\'s name.'); return false; }
+    if (!document.getElementById('f-mobile').value.trim() || document.getElementById('f-mobile').value.trim().length !== 10) { showModalAlert('Please enter valid 10-digit mobile number.'); return false; }
+    if (!document.getElementById('f-address').value.trim()) { showModalAlert('Please enter address.'); return false; }
+    if (!document.getElementById('f-city').value.trim()) { showModalAlert('Please enter city/town.'); return false; }
+  }
+  if (step === 3) {
+    if (!document.getElementById('f-class').value) { showModalAlert('Please select the class.'); return false; }
+    if (!document.getElementById('f-acyear').value) { showModalAlert('Please select academic year.'); return false; }
+    if (!document.getElementById('f-admdate').value) { showModalAlert('Please enter admission date.'); return false; }
+  }
+  return true;
+}
+
+// ── OPEN ADD MODAL ──
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'New Student Admission';
+  document.getElementById('save-btn').textContent = '✓ Save Admission';
+  clearForm();
+  goToStep(1);
+  document.getElementById('admission-modal').classList.add('open');
+}
+
+// ── EDIT STUDENT ──
+function editStudent(id) {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  editingId = id;
+  document.getElementById('modal-title').textContent = 'Edit Student Record';
+  document.getElementById('save-btn').textContent = '✓ Update Record';
+
+  // Fill form fields
+  document.getElementById('f-name').value = s.full_name || '';
+  document.getElementById('f-name-tamil').value = s.full_name_tamil || '';
+  document.getElementById('f-dob').value = s.dob || '';
+  document.getElementById('f-gender').value = s.gender || '';
+  document.getElementById('f-blood').value = s.blood_group || '';
+  document.getElementById('f-aadhar').value = s.aadhar || '';
+  document.getElementById('f-religion').value = s.religion || '';
+  document.getElementById('f-caste').value = s.caste || '';
+  document.getElementById('f-tongue').value = s.mother_tongue || '';
+  document.getElementById('f-father').value = s.father_name || '';
+  document.getElementById('f-mother').value = s.mother_name || '';
+  document.getElementById('f-occupation').value = s.father_occupation || '';
+  document.getElementById('f-mobile').value = s.mobile || '';
+  document.getElementById('f-whatsapp').value = s.whatsapp || '';
+  document.getElementById('f-email').value = s.email || '';
+  document.getElementById('f-address').value = s.address || '';
+  document.getElementById('f-city').value = s.city || '';
+  document.getElementById('f-district').value = s.district || '';
+  document.getElementById('f-pincode').value = s.pincode || '';
+  document.getElementById('f-class').value = s.class || '';
+  document.getElementById('f-section').value = s.section || '';
+  document.getElementById('f-acyear').value = s.academic_year || '2025-26';
+  document.getElementById('f-admdate').value = s.admission_date || '';
+  document.getElementById('f-prevschool').value = s.prev_school || '';
+  document.getElementById('f-tc').value = s.tc_number || '';
+  document.getElementById('f-transport').value = s.transport_route || '';
+  document.getElementById('f-status').value = s.status || 'active';
+
+  goToStep(1);
+  document.getElementById('admission-modal').classList.add('open');
+}
+
+// ── SAVE STUDENT ──
+async function saveStudent() {
+  if (!validateStep(3)) return;
+
+  const btn = document.getElementById('save-btn');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  const admission_no = editingId
+    ? allStudents.find(s => s.id === editingId)?.admission_no
+    : await generateAdmissionNo();
+
+  const record = {
+    school_id: SCHOOL_ID,
+    admission_no,
+    full_name: document.getElementById('f-name').value.trim(),
+    full_name_tamil: document.getElementById('f-name-tamil').value.trim(),
+    dob: document.getElementById('f-dob').value,
+    gender: document.getElementById('f-gender').value,
+    blood_group: document.getElementById('f-blood').value,
+    aadhar: document.getElementById('f-aadhar').value.trim(),
+    religion: document.getElementById('f-religion').value,
+    caste: document.getElementById('f-caste').value.trim(),
+    mother_tongue: document.getElementById('f-tongue').value,
+    father_name: document.getElementById('f-father').value.trim(),
+    mother_name: document.getElementById('f-mother').value.trim(),
+    father_occupation: document.getElementById('f-occupation').value.trim(),
+    mobile: document.getElementById('f-mobile').value.trim(),
+    whatsapp: document.getElementById('f-whatsapp').value.trim(),
+    email: document.getElementById('f-email').value.trim(),
+    address: document.getElementById('f-address').value.trim(),
+    city: document.getElementById('f-city').value.trim(),
+    district: document.getElementById('f-district').value.trim(),
+    pincode: document.getElementById('f-pincode').value.trim(),
+    class: document.getElementById('f-class').value,
+    section: document.getElementById('f-section').value,
+    academic_year: document.getElementById('f-acyear').value,
+    admission_date: document.getElementById('f-admdate').value,
+    prev_school: document.getElementById('f-prevschool').value.trim(),
+    tc_number: document.getElementById('f-tc').value.trim(),
+    transport_route: document.getElementById('f-transport').value,
+    status: document.getElementById('f-status').value,
+  };
+
+  let error;
+
+  if (editingId) {
+    ({ error } = await supabase.from('students').update(record).eq('id', editingId));
+  } else {
+    ({ error } = await supabase.from('students').insert([record]));
+  }
+
+  btn.textContent = editingId ? '✓ Update Record' : '✓ Save Admission';
+  btn.disabled = false;
+
+  if (error) {
+    showModalAlert('Error saving record: ' + error.message);
+    return;
+  }
+
+  closeModal();
+  showToast(editingId ? 'Student record updated!' : `Admission saved! No: ${admission_no}`, 'success');
+  await loadStudents();
+  await loadStats();
+}
+
+// ── VIEW STUDENT ──
+function viewStudent(id) {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+
+  document.getElementById('view-content').innerHTML = `
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border)">
+      <div class="avatar" style="width:52px;height:52px;font-size:18px">${getInitials(s.full_name)}</div>
+      <div>
+        <div style="font-size:17px; font-weight:700; color:var(--text)">${s.full_name || '—'}</div>
+        ${s.full_name_tamil ? `<div style="font-size:14px; color:var(--text-muted)">${s.full_name_tamil}</div>` : ''}
+        <div style="margin-top:4px; display:flex; gap:8px">
+          <span class="badge badge-maroon">${s.admission_no}</span>
+          <span class="badge ${s.status === 'active' ? 'badge-green' : s.status === 'pending' ? 'badge-amber' : 'badge-red'}">${s.status || 'active'}</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px">
+      ${row('Class', (s.class || '') + (s.section ? ' – ' + s.section : ''))}
+      ${row('Academic Year', s.academic_year)}
+      ${row('Date of Birth', formatDate(s.dob))}
+      ${row('Gender', s.gender)}
+      ${row('Blood Group', s.blood_group)}
+      ${row('Aadhar', s.aadhar)}
+      ${row('Religion', s.religion)}
+      ${row('Caste', s.caste)}
+      ${row('Father', s.father_name)}
+      ${row('Mother', s.mother_name)}
+      ${row('Mobile', s.mobile)}
+      ${row('WhatsApp', s.whatsapp)}
+      ${row('Email', s.email)}
+      ${row('Address', s.address + (s.city ? ', ' + s.city : '') + (s.pincode ? ' – ' + s.pincode : ''))}
+      ${row('Transport', s.transport_route || 'None')}
+      ${row('Prev. School', s.prev_school)}
+      ${row('TC Number', s.tc_number)}
+      ${row('Admission Date', formatDate(s.admission_date))}
+    </div>
+  `;
+
+  document.getElementById('edit-from-view-btn').onclick = () => {
+    closeViewModal();
+    editStudent(id);
+  };
+  document.getElementById('view-modal').classList.add('open');
+}
+
+function row(label, value) {
+  return `
+    <div style="padding:7px 0; border-bottom:1px solid var(--border)">
+      <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px">${label}</div>
+      <div style="font-weight:500">${value || '—'}</div>
+    </div>
+  `;
+}
+
+// ── DELETE ──
+function askDelete(id, name) {
+  deletingId = id;
+  document.getElementById('delete-name').textContent = name;
+  document.getElementById('confirm-delete-btn').onclick = confirmDelete;
+  document.getElementById('delete-modal').classList.add('open');
+}
+
+async function confirmDelete() {
+  const { error } = await supabase.from('students').delete().eq('id', deletingId);
+  closeDeleteModal();
+  if (error) { showToast('Error deleting record.', 'error'); return; }
+  showToast('Student record deleted.', 'success');
+  await loadStudents();
+  await loadStats();
+}
+
+// ── HELPERS ──
+function closeModal() { document.getElementById('admission-modal').classList.remove('open'); clearForm(); }
+function closeViewModal() { document.getElementById('view-modal').classList.remove('open'); }
+function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); deletingId = null; }
+
+function clearForm() {
+  ['f-name','f-name-tamil','f-dob','f-gender','f-blood','f-aadhar','f-religion','f-caste','f-tongue',
+   'f-father','f-mother','f-occupation','f-mobile','f-whatsapp','f-email','f-address','f-city',
+   'f-district','f-pincode','f-class','f-section','f-acyear','f-admdate','f-prevschool','f-tc',
+   'f-transport','f-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = el.tagName === 'SELECT' ? el.options[0]?.value || '' : '';
+  });
+  document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('f-acyear').value = '2025-26';
+  document.getElementById('f-status').value = 'active';
+  editingId = null;
+}
+
+function showModalAlert(msg) {
+  const el = document.getElementById('modal-alert');
+  el.className = 'alert alert-danger';
+  el.textContent = '⚠️ ' + msg;
+}
+function clearModalAlert() { document.getElementById('modal-alert').className = 'hidden'; }
+function showPageAlert(msg, type) {
+  const el = document.getElementById('page-alert');
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+
+// Close modal on overlay click
+document.getElementById('admission-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+document.getElementById('view-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeViewModal();
+});
+document.getElementById('delete-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeDeleteModal();
+});
+</script>
+</body>
+</html>
