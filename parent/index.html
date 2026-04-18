@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#6B1A1A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DigiSmart ERP">
+<link rel="manifest" href="../manifest.json">
+<link rel="apple-touch-icon" href="../assets/icons/icon-192.png">
+<title>Parent Portal — DigiSmart ERP</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F7F4F0;min-height:100vh;display:flex;flex-direction:column}
+:root{--maroon:#6B1A1A;--gold:#C9A84C;--sandal:#F5E6C8;--border:#E8E0D5;--white:#fff}
+
+.top-bar{background:var(--maroon);padding:env(safe-area-inset-top,0) 0 0;position:sticky;top:0;z-index:100}
+.top-inner{height:56px;display:flex;align-items:center;justify-content:center;padding:0 16px}
+.top-title{font-size:16px;font-weight:700;color:var(--sandal)}
+
+.hero-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px}
+
+.school-badge{width:80px;height:80px;border-radius:20px;background:var(--maroon);display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:28px;font-weight:800;margin:0 auto 16px;box-shadow:0 8px 24px rgba(107,26,26,.2)}
+.welcome-title{font-size:22px;font-weight:800;color:var(--maroon);text-align:center;margin-bottom:6px}
+.welcome-sub{font-size:13px;color:#6B6560;text-align:center;margin-bottom:32px;line-height:1.6}
+
+.login-card{background:var(--white);border-radius:20px;padding:24px;width:100%;max-width:400px;box-shadow:0 4px 24px rgba(107,26,26,.1);border:1px solid var(--border)}
+.login-card h2{font-size:16px;font-weight:700;color:var(--maroon);margin-bottom:18px;text-align:center}
+
+.input-group{margin-bottom:16px}
+.input-label{font-size:12px;font-weight:600;color:#6B6560;margin-bottom:6px;display:block}
+.input-wrap{position:relative;display:flex;align-items:center}
+.input-icon{position:absolute;left:12px;font-size:16px;color:#9B928A;pointer-events:none}
+.inp{width:100%;padding:12px 12px 12px 40px;border:1.5px solid var(--border);border-radius:12px;font-size:14px;color:#1A1A1A;background:var(--white);-webkit-appearance:none;font-family:inherit}
+.inp:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.15)}
+.inp.pw{padding-right:44px}
+.pw-toggle{position:absolute;right:12px;font-size:16px;cursor:pointer;color:#9B928A;padding:4px;background:none;border:none}
+
+.btn-login{width:100%;padding:14px;background:var(--maroon);color:var(--sandal);border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;margin-top:4px}
+.btn-login:active{transform:scale(.98);background:#4A1010}
+.btn-login:disabled{opacity:.6;cursor:not-allowed}
+
+.alert-box{padding:11px 14px;border-radius:10px;font-size:13px;margin-bottom:14px;display:none;align-items:flex-start;gap:8px}
+.alert-box.err{background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;display:flex}
+.alert-box.ok{background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;display:flex}
+
+.help-text{font-size:12px;color:#9B928A;text-align:center;margin-top:16px;line-height:1.6}
+.help-text b{color:var(--maroon)}
+
+.install-banner{background:var(--sandal);border:1px solid #E8D8B8;border-radius:12px;padding:12px 14px;margin-top:16px;display:none;align-items:center;gap:10px;max-width:400px;width:100%}
+.install-banner.show{display:flex}
+.install-icon{font-size:24px;flex-shrink:0}
+.install-text{font-size:12px;color:var(--maroon);line-height:1.5;flex:1}
+.btn-install{padding:7px 14px;background:var(--maroon);color:var(--sandal);border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit}
+
+.school-name-display{font-size:13px;font-weight:600;color:var(--maroon);text-align:center;margin-bottom:20px;background:var(--sandal);padding:6px 16px;border-radius:20px;display:inline-block}
+
+.forgot-link{text-align:center;margin-top:12px;font-size:12px;color:#6B6560}
+.forgot-link span{color:var(--maroon);font-weight:600;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="top-inner">
+    <div class="top-title">Parent Portal</div>
+  </div>
+</div>
+
+<div class="hero-wrap">
+  <div class="school-badge" id="school-initials">DS</div>
+  <div class="welcome-title">Parent Portal</div>
+  <div id="school-name-badge" class="school-name-display" style="display:none"></div>
+  <div class="welcome-sub">Sign in to view your child's homework,<br>circulars and school updates</div>
+
+  <div class="login-card">
+    <h2>🔐 Parent Login</h2>
+    <div id="login-alert" class="alert-box"></div>
+
+    <div class="input-group">
+      <label class="input-label">Admission Number</label>
+      <div class="input-wrap">
+        <span class="input-icon">🎫</span>
+        <input type="text" id="adm-no" class="inp" placeholder="e.g. 2025-0042" autocomplete="username" autocapitalize="characters">
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label class="input-label">Password</label>
+      <div class="input-wrap">
+        <span class="input-icon">🔑</span>
+        <input type="password" id="parent-pw" class="inp pw" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doParentLogin()">
+        <button class="pw-toggle" onclick="togglePw()" id="pw-eye">👁</button>
+      </div>
+    </div>
+
+    <button class="btn-login" id="login-btn" onclick="doParentLogin()">Sign In →</button>
+
+    <div class="forgot-link">
+      Forgot password? <span onclick="showForgot()">Contact your school office</span>
+    </div>
+  </div>
+
+  <div class="help-text">
+    <b>First time login?</b><br>
+    Admission No: Found on your child's I-Card<br>
+    Default Password: Child's date of birth (DDMMYYYY)<br>
+    Example: 15042012 for 15 April 2012
+  </div>
+
+  <!-- PWA Install Banner -->
+  <div class="install-banner" id="install-banner">
+    <div class="install-icon">📱</div>
+    <div class="install-text"><b>Install as App</b><br>Add to home screen for quick access — works like a real app!</div>
+    <button class="btn-install" id="install-btn" onclick="installPWA()">Install</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://pzxosqukijwpjdlfdfst.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_AeMrzyinAl4n2AifhC-j3A_wRh_nda3';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let deferredPrompt = null;
+let schoolId = null;
+
+// ── INIT ──
+document.addEventListener('DOMContentLoaded', async () => {
+  // Get school from URL param or session
+  const params = new URLSearchParams(window.location.search);
+  schoolId = params.get('school') || sessionStorage.getItem('parent_school_id');
+
+  if (schoolId) {
+    sessionStorage.setItem('parent_school_id', schoolId);
+    await loadSchoolInfo(schoolId);
+  }
+
+  // Check if already logged in
+  const saved = sessionStorage.getItem('parent_session');
+  if (saved) {
+    const sess = JSON.parse(saved);
+    if (sess.school_id === schoolId || !schoolId) {
+      window.location.href = 'dashboard.html';
+      return;
+    }
+  }
+
+  // PWA Install
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); deferredPrompt = e;
+    document.getElementById('install-banner').classList.add('show');
+  });
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('../sw.js').catch(() => {});
+  }
+});
+
+async function loadSchoolInfo(sid) {
+  const { data } = await supabase.from('schools').select('name').eq('school_id', sid).single();
+  if (data) {
+    document.getElementById('school-name-badge').textContent = data.name;
+    document.getElementById('school-name-badge').style.display = 'inline-block';
+    document.getElementById('school-initials').textContent = data.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  }
+}
+
+async function doParentLogin() {
+  const admNo = document.getElementById('adm-no').value.trim().toUpperCase();
+  const pw = document.getElementById('parent-pw').value;
+  const btn = document.getElementById('login-btn');
+  const alertEl = document.getElementById('login-alert');
+  alertEl.className = 'alert-box';
+
+  if (!admNo || !pw) { showAlert('⚠️ Please enter admission number and password.'); return; }
+
+  btn.textContent = 'Signing in...'; btn.disabled = true;
+
+  // Find student by admission number
+  let query = supabase.from('students').select('id,full_name,class,section,school_id,parent_password,dob').eq('admission_no', admNo);
+  if (schoolId) query = query.eq('school_id', schoolId);
+
+  const { data: student, error } = await query.single();
+  btn.textContent = 'Sign In →'; btn.disabled = false;
+
+  if (error || !student) { showAlert('⚠️ Admission number not found. Please check and try again.'); return; }
+
+  // Check password — stored hash or default (DOB as DDMMYYYY)
+  const defaultPw = student.dob ? student.dob.replace(/-/g,'').split('').reverse().join('').slice(0,4) + student.dob.replace(/-/g,'').slice(0,4) : '';
+  const dobPw = student.dob ? student.dob.replace(/-/g,'').split('').slice(6,8).join('') + student.dob.replace(/-/g,'').slice(4,6) + student.dob.replace(/-/g,'').slice(0,4) : '';
+
+  // Simple check: stored password OR dob-based default
+  const storedPw = student.parent_password;
+  const isValid = storedPw ? pw === storedPw : (pw === dobPw || pw === student.dob?.replace(/-/g,''));
+
+  if (!isValid) { showAlert('⚠️ Incorrect password. Default password is child\'s date of birth (DDMMYYYY). E.g. 15042012'); return; }
+
+  // Save session
+  sessionStorage.setItem('parent_session', JSON.stringify({
+    student_id: student.id,
+    student_name: student.full_name,
+    class: student.class,
+    section: student.section,
+    admission_no: admNo,
+    school_id: student.school_id,
+  }));
+  sessionStorage.setItem('parent_school_id', student.school_id);
+
+  window.location.href = 'dashboard.html';
+}
+
+function showAlert(msg) {
+  const el = document.getElementById('login-alert');
+  el.className = 'alert-box err';
+  el.textContent = msg;
+}
+
+function showForgot() {
+  alert('Please contact your school office to reset your parent portal password.\n\nDefault password is your child\'s date of birth in format: DDMMYYYY\nExample: 15042012 for 15 April 2012');
+}
+
+function togglePw() {
+  const inp = document.getElementById('parent-pw');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  document.getElementById('pw-eye').textContent = inp.type === 'password' ? '👁' : '🙈';
+}
+
+async function installPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') document.getElementById('install-banner').style.display = 'none';
+    deferredPrompt = null;
+  }
+}
+</script>
+</body>
+</html>
