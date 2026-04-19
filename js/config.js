@@ -72,3 +72,38 @@ async function generateAdmissionNo() {
 function confirmAction(message) {
   return window.confirm(message);
 }
+
+// ── Performance: Add loading overlay ──
+function showLoading(msg = 'Saving...') {
+  let el = document.getElementById('global-loader');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'global-loader';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9998;display:flex;align-items:center;justify-content:center';
+    el.innerHTML = `<div style="background:#fff;border-radius:12px;padding:20px 28px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 32px rgba(0,0,0,.15)">
+      <div style="width:20px;height:20px;border:3px solid #E8E0D5;border-top-color:#6B1A1A;border-radius:50%;animation:spin .7s linear infinite"></div>
+      <span style="font-size:14px;font-weight:600;color:#6B1A1A" id="loader-msg">${msg}</span>
+    </div>`;
+    const style = document.createElement('style');
+    style.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(style);
+    document.body.appendChild(el);
+  } else {
+    document.getElementById('loader-msg').textContent = msg;
+    el.style.display = 'flex';
+  }
+}
+
+function hideLoading() {
+  const el = document.getElementById('global-loader');
+  if (el) el.style.display = 'none';
+}
+
+// ── Academic Year ──
+const ACADEMIC_YEAR = '2026-27';
+
+// ── Classes list ──
+const ALL_CLASSES = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+
+// ── Subjects list ──
+const ALL_SUBJECTS = ['Tamil','English','Mathematics','Science','Social Science','Computer Science','Hindi','Drawing','Physical Education','Other'];

@@ -3,9 +3,6 @@
 
 function renderSidebar(activePage) {
   const nav = [
-    { group: 'Overview', items: [
-      { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard.html' },
-    ]},
     { group: 'Attendance', items: [
       { id: 'face', icon: '📷', label: 'Face Recognition', href: 'face-attendance.html' },
       { id: 'student-att', icon: '✅', label: 'Student Attendance', href: 'student-attendance.html' },
@@ -13,7 +10,7 @@ function renderSidebar(activePage) {
     { group: 'Academic', items: [
       { id: 'admission', icon: '📝', label: 'Admission', href: 'admission.html' },
       { id: 'exam', icon: '📄', label: 'Exam Management', href: 'exam.html' },
-      { id: 'timetable', icon: '🗓', label: 'Time Table', href: 'timetable.html' },
+      { id: 'icard', icon: '🪪', label: 'I-Card & Timetable', href: 'icard.html' },
     ]},
     { group: 'Finance', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },
@@ -21,15 +18,12 @@ function renderSidebar(activePage) {
     ]},
     { group: 'Staff & HR', items: [
       { id: 'hrm', icon: '👥', label: 'HRM & Salary', href: 'hrm.html' },
-      { id: 'frontoffice', icon: '🏢', label: 'Front Office', href: 'frontoffice.html' },
     ]},
     { group: 'Transport', items: [
-      { id: 'transport', icon: '🚌', label: 'Transport', href: 'transport.html' },
-      { id: 'gps', icon: '📍', label: 'GPS Tracking', href: 'gps.html' },
+      { id: 'transport', icon: '🚌', label: 'Transport & GPS', href: 'transport.html' },
     ]},
-    { group: 'Other', items: [
-      { id: 'icard', icon: '🪪', label: 'I-Card', href: 'icard.html' },
-      { id: 'communication', icon: '📣', label: 'Communication', href: 'communication.html' },
+    { group: 'Communication', items: [
+      { id: 'communication', icon: '📣', label: 'Parent Communication', href: 'communication.html' },
     ]},
   ];
 
