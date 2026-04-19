@@ -363,12 +363,13 @@
               <button class="btn btn-gold btn-sm" onclick="saveWorkingDays()">Save</button>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px" id="working-days">
-              ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(d=>`
-                <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:5px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer">
-                  <input type="checkbox" value="${d}" class="day-cb" ${['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].includes(d)?'checked':''}>
-                  ${d.slice(0,3)}
-                </label>
-              `).join('')}
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Monday" class="day-cb" checked> Mon</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Tuesday" class="day-cb" checked> Tue</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Wednesday" class="day-cb" checked> Wed</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Thursday" class="day-cb" checked> Thu</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Friday" class="day-cb" checked> Fri</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Saturday" class="day-cb" checked> Sat</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;padding:6px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer"><input type="checkbox" value="Sunday" class="day-cb"> Sun</label>
             </div>
           </div>
 

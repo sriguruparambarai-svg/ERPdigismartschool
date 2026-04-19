@@ -109,7 +109,8 @@
             <button class="btn btn-secondary btn-sm" onclick="markAll('present')">✓ All Present</button>
             <button class="btn btn-secondary btn-sm" onclick="markAll('absent')">✗ All Absent</button>
           </div>
-          <div style="margin-top:20px;margin-left:auto">
+          <div style="margin-top:20px;display:flex;gap:8px;margin-left:auto">
+            <button class="btn btn-secondary" onclick="openAddStudentModal()">+ Add Student</button>
             <button class="btn btn-primary" onclick="saveAttendance()" id="save-att-btn">💾 Save Attendance</button>
           </div>
         </div>
@@ -501,6 +502,137 @@ function switchTab(tab, el) {
   document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
 }
+</script>
+
+<!-- QUICK ADD STUDENT MODAL -->
+<div id="add-student-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div style="font-size:17px;font-weight:700;color:var(--maroon)">Add New Student</div>
+      <button onclick="closeAddStudentModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#9B928A">✕</button>
+    </div>
+    <div id="add-stu-alert" style="padding:10px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="grid-column:1/-1">
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Full Name *</label>
+        <input type="text" id="ns-name" class="form-control" placeholder="Student full name">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Class *</label>
+        <select id="ns-class" class="form-control">
+          <option value="">Select</option>
+          <option>LKG</option><option>UKG</option>
+          <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+          <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+          <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+          <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Section</label>
+        <select id="ns-section" class="form-control">
+          <option value="">None</option><option>A</option><option>B</option><option>C</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Father's Name</label>
+        <input type="text" id="ns-father" class="form-control" placeholder="Father name">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Mobile Number</label>
+        <input type="tel" id="ns-mobile" class="form-control" placeholder="Parent mobile">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Date of Birth</label>
+        <input type="date" id="ns-dob" class="form-control">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:4px">Gender</label>
+        <select id="ns-gender" class="form-control">
+          <option value="">Select</option><option>Male</option><option>Female</option>
+        </select>
+      </div>
+    </div>
+    <div style="background:#E6F1FB;border-radius:8px;padding:10px 12px;font-size:12px;color:#185FA5;margin:14px 0;border:1px solid #b5d4f4">
+      💡 For complete student profile with all details, go to <b>Admission</b> module. This quick form adds basic info for attendance.
+    </div>
+    <button onclick="quickAddStudent()" id="add-stu-btn" style="width:100%;padding:12px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Add Student →</button>
+  </div>
+</div>
+
+<script>
+function openAddStudentModal() {
+  const cls = document.getElementById('sel-class').value;
+  if (cls) document.getElementById('ns-class').value = cls;
+  document.getElementById('add-student-modal').style.display = 'flex';
+}
+
+function closeAddStudentModal() {
+  document.getElementById('add-student-modal').style.display = 'none';
+}
+
+async function quickAddStudent() {
+  const name = document.getElementById('ns-name').value.trim();
+  const cls = document.getElementById('ns-class').value;
+  const btn = document.getElementById('add-stu-btn');
+  const alertEl = document.getElementById('add-stu-alert');
+
+  if (!name || !cls) {
+    alertEl.style.cssText = 'display:block;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;padding:10px;border-radius:8px;font-size:12px;margin-bottom:12px';
+    alertEl.textContent = '⚠️ Please enter student name and select class.';
+    return;
+  }
+
+  btn.textContent = 'Adding...'; btn.disabled = true;
+  alertEl.style.display = 'none';
+
+  // Generate admission number
+  const year = new Date().getFullYear();
+  const { data: lastStu } = await supabase.from('students').select('admission_no').eq('school_id',SCHOOL_ID).like('admission_no', year + '-%').order('admission_no',{ascending:false}).limit(1);
+  const lastNum = lastStu?.length > 0 ? parseInt(lastStu[0].admission_no.split('-')[1]) || 0 : 0;
+  const admNo = year + '-' + String(lastNum + 1).padStart(4,'0');
+
+  const { error } = await supabase.from('students').insert([{
+    school_id: SCHOOL_ID,
+    full_name: name,
+    class: cls,
+    section: document.getElementById('ns-section').value || null,
+    father_name: document.getElementById('ns-father').value.trim() || null,
+    mobile: document.getElementById('ns-mobile').value.trim() || null,
+    dob: document.getElementById('ns-dob').value || null,
+    gender: document.getElementById('ns-gender').value || null,
+    admission_no: admNo,
+    academic_year: '2026-27',
+    status: 'active',
+    admission_date: new Date().toISOString().split('T')[0],
+    created_at: new Date().toISOString()
+  }]);
+
+  btn.textContent = 'Add Student →'; btn.disabled = false;
+
+  if (error) {
+    alertEl.style.cssText = 'display:block;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;padding:10px;border-radius:8px;font-size:12px;margin-bottom:12px';
+    alertEl.textContent = '⚠️ Error: ' + error.message;
+    return;
+  }
+
+  alertEl.style.cssText = 'display:block;background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;padding:10px;border-radius:8px;font-size:12px;margin-bottom:12px';
+  alertEl.textContent = '✅ ' + name + ' added! Adm No: ' + admNo;
+
+  // Clear form
+  ['ns-name','ns-father','ns-mobile','ns-dob'].forEach(id => document.getElementById(id).value = '');
+
+  // Reload attendance list
+  await loadStudentsForAtt();
+
+  // Close after 2 seconds
+  setTimeout(() => closeAddStudentModal(), 2000);
+}
+
+// Close modal on background click
+document.getElementById('add-student-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAddStudentModal();
+});
 </script>
 </body>
 </html>

@@ -588,6 +588,7 @@ async function postHomework() {
   const combined = subjects.map(s => s.subject + ': ' + s.task).join('\n');
   const title = cls + ' Homework — ' + new Date(due+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
 
+  showLoading('Sending homework to parents...');
   const { error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type: 'homework',
     title,
@@ -601,16 +602,19 @@ async function postHomework() {
   }]);
 
   if (error) {
-    document.getElementById('hw-alert').className='alert alert-danger';
-    document.getElementById('hw-alert').textContent='⚠️ '+error.message;
+    hideLoading();
+    const alertEl = document.getElementById('hw-alert');
+    alertEl.className = 'alert alert-danger';
+    alertEl.textContent = '⚠️ Error: ' + error.message;
     return;
   }
 
-  showToast('Homework sent to parents for ' + cls + '! (' + subjects.length + ' subjects)','success');
+  hideLoading();
+  showToast('✅ Homework sent for ' + cls + '! (' + subjects.length + ' subjects)','success');
 
-  // Reset form
+  // Reset form - clear only task fields, keep subjects
   document.querySelectorAll('.hw-sub-task').forEach(el => el.value = '');
-  document.querySelectorAll('.hw-sub-name').forEach(el => el.value = '');
+  document.getElementById('hw-alert').className = 'hidden';
 
   await loadHomeworkList();
   await loadStats();
@@ -637,11 +641,14 @@ async function loadHomeworkList() {
   const cls = document.getElementById('hw-filter-class').value;
   const date = document.getElementById('hw-filter-date').value;
 
-  let query = supabase.from('communications').select('*').eq('school_id',SCHOOL_ID).eq('type','homework').order('due_date',{ascending:true});
+  let query = supabase.from('communications').select('id,title,message,subject,target_class,due_date,created_at').eq('school_id',SCHOOL_ID).eq('type','homework').order('created_at',{ascending:false});
   if (cls) query = query.eq('target_class', cls);
-  if (date) query = query.gte('due_date', date);
 
-  const { data } = await query.limit(30);
+  const { data, error: queryErr } = await query.limit(20);
+  if (queryErr) {
+    document.getElementById('hw-list-content').innerHTML = '<div class="alert alert-danger">Error loading: ' + queryErr.message + '</div>';
+    return;
+  }
   if (!data||data.length===0) { document.getElementById('hw-list-content').innerHTML='<div class="empty-state"><div class="icon">📚</div><p>No homework posted yet.</p></div>'; return; }
 
   document.getElementById('hw-list-content').innerHTML = `
@@ -818,7 +825,23 @@ async function loadHistory() {
 // ── PORTAL ──
 function copyPortalLink() {
   const link = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
-  navigator.clipboard.writeText(link).then(() => showToast('Portal link copied!','success'));
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(() => showToast('Portal link copied! ✓','success')).catch(() => fallbackCopy(link));
+  } else {
+    fallbackCopy(link);
+  }
+}
+
+function fallbackCopy(text) {
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  el.select();
+  try { document.execCommand('copy'); showToast('Portal link copied! ✓','success'); }
+  catch(e) { alert('Copy this link: ' + text); }
+  document.body.removeChild(el);
 }
 
 function openPortalLink() {
@@ -923,8 +946,19 @@ function switchTab(tab, el) {
   ['compose','homework','consent','events','history','portal'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
   document.getElementById('tab-'+tab).classList.remove('hidden');
   document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
-  el.classList.add('active');
-  if (tab==='portal') { loadStudentPortalLinks(); const url=window.location.origin+'/parent/index.html?school='+SCHOOL_ID; document.getElementById('portal-wa-msg').textContent=buildPortalWAMsg(url); }
+  if(el) el.classList.add('active');
+  if (tab==='homework') loadHomeworkList();
+  if (tab==='consent') loadConsentForms();
+  if (tab==='events') loadEventsList();
+  if (tab==='history') loadHistory();
+  if (tab==='portal') {
+    const url = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+    const display = document.getElementById('portal-link-display');
+    if(display) display.textContent = url;
+    const waMsg = document.getElementById('portal-wa-msg');
+    if(waMsg) waMsg.textContent = buildPortalWAMsg(url);
+    loadStudentPortalLinks();
+  }
 }
 </script>
 </body>
