@@ -92,11 +92,18 @@
             <div class="form-group" style="margin-bottom:10px">
               <label class="form-label">Type <span class="req">*</span></label>
               <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
-                ${[['circular','📢','Circular'],['announcement','📣','Announcement'],['holiday','🏖','Holiday Alert'],['event_notice','🎉','Event Notice']].map(([v,ic,lb])=>`
-                  <label style="display:flex;align-items:center;gap:5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;transition:all .12s" class="type-chip">
-                    <input type="radio" name="comm-type" value="${v}" onchange="updateWAPreview()"> ${ic} ${lb}
-                  </label>
-                `).join('')}
+                <label style="display:flex;align-items:center;gap:5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500" class="type-chip">
+                  <input type="radio" name="comm-type" value="circular" onchange="updateWAPreview()"> 📢 Circular
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500" class="type-chip">
+                  <input type="radio" name="comm-type" value="announcement" onchange="updateWAPreview()"> 📣 Announcement
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500" class="type-chip">
+                  <input type="radio" name="comm-type" value="holiday" onchange="updateWAPreview()"> 🏖 Holiday Alert
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;font-weight:500" class="type-chip">
+                  <input type="radio" name="comm-type" value="event_notice" onchange="updateWAPreview()"> 🎉 Event Notice
+                </label>
               </div>
             </div>
 
