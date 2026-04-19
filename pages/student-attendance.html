@@ -269,7 +269,12 @@ function renderAttList() {
   const date = document.getElementById('att-date').value;
 
   if (studentsForAtt.length === 0) {
-    document.getElementById('att-loading').innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>No active students found for this class.</p></div>';
+    document.getElementById('att-loading').innerHTML = `<div class="empty-state">
+      <div class="icon">👥</div>
+      <p style="font-weight:600;color:var(--maroon)">No students found for ${cls}</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-top:6px">Students must be added first via the <b>Admission</b> module.</p>
+      <a href="admission.html" style="display:inline-block;margin-top:12px;padding:8px 18px;background:var(--maroon);color:var(--sandal);border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">Go to Admission →</a>
+    </div>`;
     return;
   }
 

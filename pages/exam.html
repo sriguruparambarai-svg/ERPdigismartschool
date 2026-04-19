@@ -120,7 +120,7 @@
             <div class="form-group" style="margin-bottom:10px">
               <label class="form-label">Academic Year <span class="req">*</span></label>
               <select id="ef-year" class="form-control">
-                <option>2025-26</option><option>2024-25</option><option>2023-24</option>
+                <option>2026-27</option><option>2024-25</option><option>2023-24</option>
               </select>
             </div>
             <div class="form-grid-2" style="margin-bottom:10px">
@@ -160,7 +160,7 @@
               <div class="card-title">Exam Schedule</div>
               <div style="display:flex;gap:8px">
                 <select class="form-control" id="exam-year-filter" onchange="loadExams()" style="width:120px;padding:6px 10px">
-                  <option>2025-26</option><option>2024-25</option>
+                  <option>2026-27</option><option>2024-25</option>
                 </select>
                 <select class="form-control" id="exam-type-filter" onchange="loadExams()" style="width:140px;padding:6px 10px">
                   <option value="">All Types</option>
@@ -536,7 +536,7 @@ function clearExamForm() {
   editingExamId = null;
   document.getElementById('ef-name').value = '';
   document.getElementById('ef-type').value = '';
-  document.getElementById('ef-year').value = '2025-26';
+  document.getElementById('ef-year').value = '2026-27';
   document.getElementById('ef-start').value = new Date().toISOString().split('T')[0];
   document.getElementById('ef-end').value = new Date().toISOString().split('T')[0];
   document.querySelectorAll('.exam-class-cb').forEach(cb => cb.checked = false);

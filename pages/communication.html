@@ -160,40 +160,20 @@
         <div style="display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start">
 
           <div class="card">
-            <div class="card-title" style="margin-bottom:14px">Post Homework</div>
+            <div class="card-title" style="margin-bottom:4px">Post Homework</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Add homework for multiple subjects at once</div>
             <div id="hw-alert" class="hidden"></div>
-            <div class="form-group" style="margin-bottom:10px">
-              <label class="form-label">Class <span class="req">*</span></label>
-              <select id="hw-class" class="form-control">
-                <option value="">Select class</option>
-                <option>LKG</option><option>UKG</option>
-                <option>Class 1</option><option>Class 2</option><option>Class 3</option>
-                <option>Class 4</option><option>Class 5</option><option>Class 6</option>
-                <option>Class 7</option><option>Class 8</option><option>Class 9</option>
-                <option>Class 10</option><option>Class 11</option><option>Class 12</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin-bottom:10px">
-              <label class="form-label">Subject <span class="req">*</span></label>
-              <select id="hw-subject" class="form-control">
-                <option value="">Select subject</option>
-                <option>Tamil</option><option>English</option><option>Mathematics</option>
-                <option>Science</option><option>Social Science</option><option>Computer</option>
-                <option>Hindi</option><option>Drawing</option><option>Other</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin-bottom:10px">
-              <label class="form-label">Homework Title <span class="req">*</span></label>
-              <input type="text" id="hw-title" class="form-control" placeholder="e.g. Write 5 sentences about your family">
-            </div>
-            <div class="form-group" style="margin-bottom:10px">
-              <label class="form-label">Description / Instructions</label>
-              <textarea id="hw-desc" class="form-control" rows="3" placeholder="Detailed instructions for the homework..."></textarea>
-            </div>
-            <div class="form-grid-2" style="margin-bottom:14px">
+            <div class="form-grid-2" style="margin-bottom:10px">
               <div class="form-group">
-                <label class="form-label">Due Date <span class="req">*</span></label>
-                <input type="date" id="hw-due" class="form-control">
+                <label class="form-label">Class <span class="req">*</span></label>
+                <select id="hw-class" class="form-control">
+                  <option value="">Select class</option>
+                  <option>LKG</option><option>UKG</option>
+                  <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+                  <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+                  <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+                  <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+                </select>
               </div>
               <div class="form-group">
                 <label class="form-label">Section</label>
@@ -203,7 +183,25 @@
                 </select>
               </div>
             </div>
-            <button class="btn btn-gold w-full" onclick="postHomework()">📚 Post Homework</button>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Due Date <span class="req">*</span></label>
+              <input type="date" id="hw-due" class="form-control">
+            </div>
+            <div style="font-size:12px;font-weight:600;color:var(--maroon);margin-bottom:8px">Subject-wise Homework</div>
+            <div id="hw-subjects-list">
+              <div class="hw-subject-row" style="display:grid;grid-template-columns:130px 1fr 28px;gap:6px;margin-bottom:8px;align-items:start">
+                <select class="form-control hw-sub-name" style="padding:7px 8px;font-size:12px">
+                  <option value="">Subject</option>
+                  <option>Tamil</option><option>English</option><option>Mathematics</option>
+                  <option>Science</option><option>Social Science</option><option>Computer</option>
+                  <option>Hindi</option><option>Drawing</option><option>Other</option>
+                </select>
+                <input type="text" class="form-control hw-sub-task" placeholder="Homework task / description" style="padding:7px 8px;font-size:12px">
+                <button onclick="this.closest('.hw-subject-row').remove()" style="padding:6px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:6px;cursor:pointer;font-size:12px;height:34px">✕</button>
+              </div>
+            </div>
+            <button onclick="addHWSubjectRow()" class="btn btn-secondary btn-sm" style="margin-bottom:14px;width:100%">+ Add Another Subject</button>
+            <button class="btn btn-gold w-full" onclick="postHomework()">📚 Send Homework to Parents</button>
           </div>
 
           <!-- HW List -->
@@ -554,34 +552,78 @@ function openWhatsApp() {
 // ── HOMEWORK ──
 async function postHomework() {
   const cls = document.getElementById('hw-class').value;
-  const subject = document.getElementById('hw-subject').value;
-  const title = document.getElementById('hw-title').value.trim();
-  const desc = document.getElementById('hw-desc').value.trim();
   const due = document.getElementById('hw-due').value;
   const section = document.getElementById('hw-section').value;
 
-  if (!cls || !subject || !title || !due) {
+  if (!cls || !due) {
     document.getElementById('hw-alert').className = 'alert alert-danger';
-    document.getElementById('hw-alert').textContent = '⚠️ Please fill class, subject, title and due date.';
+    document.getElementById('hw-alert').textContent = '⚠️ Please select class and due date.';
+    return;
+  }
+
+  // Collect all subject rows
+  const rows = document.querySelectorAll('.hw-subject-row');
+  const subjects = [];
+  rows.forEach(row => {
+    const subName = row.querySelector('.hw-sub-name').value;
+    const task = row.querySelector('.hw-sub-task').value.trim();
+    if (subName && task) subjects.push({ subject: subName, task });
+  });
+
+  if (subjects.length === 0) {
+    document.getElementById('hw-alert').className = 'alert alert-danger';
+    document.getElementById('hw-alert').textContent = '⚠️ Please add at least one subject with homework task.';
     return;
   }
   document.getElementById('hw-alert').className = 'hidden';
 
+  // Build combined message for parent portal
+  const combined = subjects.map(s => s.subject + ': ' + s.task).join('\n');
+  const title = cls + ' Homework — ' + new Date(due+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+
   const { error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type: 'homework',
-    title, message: desc, subject, target_class: cls,
+    title,
+    message: combined,
+    subject: subjects.map(s=>s.subject).join(', '),
+    target_class: cls,
     target_section: section !== 'all' ? section : null,
     due_date: due, priority: 'normal',
     sender_name: 'Teacher',
     created_at: new Date().toISOString(),
   }]);
 
-  if (error) { document.getElementById('hw-alert').className='alert alert-danger'; document.getElementById('hw-alert').textContent='⚠️ '+error.message; return; }
-  showToast('Homework posted for ' + cls + '!','success');
-  document.getElementById('hw-title').value = '';
-  document.getElementById('hw-desc').value = '';
+  if (error) {
+    document.getElementById('hw-alert').className='alert alert-danger';
+    document.getElementById('hw-alert').textContent='⚠️ '+error.message;
+    return;
+  }
+
+  showToast('Homework sent to parents for ' + cls + '! (' + subjects.length + ' subjects)','success');
+
+  // Reset form
+  document.querySelectorAll('.hw-sub-task').forEach(el => el.value = '');
+  document.querySelectorAll('.hw-sub-name').forEach(el => el.value = '');
+
   await loadHomeworkList();
   await loadStats();
+}
+
+function addHWSubjectRow() {
+  const row = document.createElement('div');
+  row.className = 'hw-subject-row';
+  row.style.cssText = 'display:grid;grid-template-columns:130px 1fr 28px;gap:6px;margin-bottom:8px;align-items:start';
+  row.innerHTML = `
+    <select class="form-control hw-sub-name" style="padding:7px 8px;font-size:12px">
+      <option value="">Subject</option>
+      <option>Tamil</option><option>English</option><option>Mathematics</option>
+      <option>Science</option><option>Social Science</option><option>Computer</option>
+      <option>Hindi</option><option>Drawing</option><option>Other</option>
+    </select>
+    <input type="text" class="form-control hw-sub-task" placeholder="Homework task / description" style="padding:7px 8px;font-size:12px">
+    <button onclick="this.closest('.hw-subject-row').remove()" style="padding:6px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:6px;cursor:pointer;font-size:12px;height:34px">✕</button>
+  `;
+  document.getElementById('hw-subjects-list').appendChild(row);
 }
 
 async function loadHomeworkList() {

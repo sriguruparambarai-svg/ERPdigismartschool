@@ -99,7 +99,7 @@
             <div class="form-group" style="margin-bottom:10px">
               <label class="form-label">Academic Year</label>
               <select id="si-year" class="form-control" style="margin-top:4px">
-                <option>2025-26</option><option>2024-25</option>
+                <option>2026-27</option><option>2024-25</option>
               </select>
             </div>
             <div class="form-group" style="margin-bottom:10px">
@@ -239,7 +239,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">Academic Year on Card</label>
-              <input type="text" id="cs-acyear" class="form-control" value="2025-26">
+              <input type="text" id="cs-acyear" class="form-control" value="2026-27">
             </div>
             <div class="form-group">
               <label class="form-label">Blood Group on Card</label>
@@ -284,7 +284,7 @@
           <div>
             <label class="form-label">Academic Year</label>
             <select class="form-control" id="tt-year" style="width:120px;margin-top:4px">
-              <option>2025-26</option><option>2024-25</option>
+              <option>2026-27</option><option>2024-25</option>
             </select>
           </div>
           <div style="margin-top:20px;display:flex;gap:8px">
@@ -425,7 +425,7 @@ let cardSettings = {
   phone: '',
   email: '',
   website: '',
-  acyear: '2025-26',
+  acyear: '2026-27',
   studentColor: '#6B1A1A',
   staffColor: '#1a3a6b',
   showBlood: true,
@@ -482,7 +482,7 @@ async function loadCardSettings() {
     document.getElementById('cs-phone').value = data.phone || '';
     document.getElementById('cs-email').value = data.email || '';
     document.getElementById('cs-website').value = data.website || '';
-    document.getElementById('cs-acyear').value = data.acyear || '2025-26';
+    document.getElementById('cs-acyear').value = data.acyear || '2026-27';
     document.getElementById('cs-bloodgroup').value = data.showBlood ? 'yes' : 'no';
   }
 }
@@ -527,7 +527,7 @@ function updateSettingsPreview() {
 
 function buildStudentCard(s) {
   const color = cardSettings.studentColor || '#6B1A1A';
-  const year = cardSettings.acyear || '2025-26';
+  const year = cardSettings.acyear || '2026-27';
   const showBlood = cardSettings.showBlood !== false;
   const bars = Array.from({length:18},(_,i)=>`<div class="bar" style="width:${1+Math.random()*2}px;height:${10+Math.random()*8}px"></div>`).join('');
   return `
@@ -577,7 +577,7 @@ function buildStaffCard(s) {
       </div>
       <div class="icard-footer">
         <div class="icard-admno" style="color:${color}">${s.employee_id||'EMP-0000'}</div>
-        <div class="icard-year">Staff Identity Card · ${cardSettings.acyear||'2025-26'}</div>
+        <div class="icard-year">Staff Identity Card · ${cardSettings.acyear||'2026-27'}</div>
         <div class="icard-barcode">${bars}</div>
       </div>
     </div>

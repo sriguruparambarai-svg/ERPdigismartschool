@@ -81,7 +81,7 @@
             </select>
             <select class="form-control" id="filter-year" onchange="filterStudents()" style="width:110px; padding:7px 10px">
               <option value="">All Years</option>
-              <option>2025-26</option><option>2024-25</option><option>2023-24</option>
+              <option>2026-27</option><option>2024-25</option><option>2023-24</option>
             </select>
             <button class="btn btn-primary" onclick="openAddModal()">+ New Admission</button>
           </div>
@@ -295,7 +295,7 @@
           <div class="form-group">
             <label class="form-label">Academic Year <span class="req">*</span></label>
             <select id="f-acyear" class="form-control">
-              <option>2025-26</option><option>2024-25</option><option>2023-24</option>
+              <option>2026-27</option><option>2024-25</option><option>2023-24</option>
             </select>
           </div>
           <div class="form-group">
@@ -429,7 +429,7 @@ async function loadStats() {
 
   document.getElementById('stat-total').textContent = allStudents.length;
 
-  const yearStudents = allStudents.filter(s => s.academic_year === '2025-26');
+  const yearStudents = allStudents.filter(s => s.academic_year === '2026-27');
   document.getElementById('stat-year').textContent = yearStudents.length;
 
   const monthStudents = allStudents.filter(s => s.created_at && s.created_at >= monthStart);
@@ -609,7 +609,7 @@ function editStudent(id) {
   document.getElementById('f-pincode').value = s.pincode || '';
   document.getElementById('f-class').value = s.class || '';
   document.getElementById('f-section').value = s.section || '';
-  document.getElementById('f-acyear').value = s.academic_year || '2025-26';
+  document.getElementById('f-acyear').value = s.academic_year || '2026-27';
   document.getElementById('f-admdate').value = s.admission_date || '';
   document.getElementById('f-prevschool').value = s.prev_school || '';
   document.getElementById('f-tc').value = s.tc_number || '';
@@ -772,7 +772,7 @@ function clearForm() {
     if (el) el.value = el.tagName === 'SELECT' ? el.options[0]?.value || '' : '';
   });
   document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
-  document.getElementById('f-acyear').value = '2025-26';
+  document.getElementById('f-acyear').value = '2026-27';
   document.getElementById('f-status').value = 'active';
   editingId = null;
 }
