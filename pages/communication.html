@@ -470,11 +470,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('portal-link-display').textContent = portalUrl;
   document.getElementById('portal-wa-msg').textContent = buildPortalWAMsg(portalUrl);
 
+  // Only load stats on startup - other tabs load when clicked
   await loadStats();
-  await loadHistory();
-  await loadHomeworkList();
-  await loadConsentForms();
-  await loadEventsList();
+  // Lazy load compose tab history
+  // Other tabs load when user clicks them
 
   // Style type chips
   document.querySelectorAll('.type-chip').forEach(chip => {
@@ -639,14 +638,25 @@ function addHWSubjectRow() {
 
 async function loadHomeworkList() {
   const cls = document.getElementById('hw-filter-class').value;
-  const date = document.getElementById('hw-filter-date').value;
-
-  let query = supabase.from('communications').select('id,title,message,subject,target_class,due_date,created_at').eq('school_id',SCHOOL_ID).eq('type','homework').order('created_at',{ascending:false});
+  document.getElementById('hw-list-content').innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>';
+  
+  // Only load last 30 days to keep it fast
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const fromDate = thirtyDaysAgo.toISOString().split('T')[0];
+  
+  let query = supabase.from('communications')
+    .select('id,title,message,subject,target_class,due_date,created_at')
+    .eq('school_id', SCHOOL_ID)
+    .eq('type', 'homework')
+    .gte('created_at', fromDate)
+    .order('created_at', {ascending:false})
+    .limit(15);
   if (cls) query = query.eq('target_class', cls);
 
-  const { data, error: queryErr } = await query.limit(20);
+  const { data, error: queryErr } = await query;
   if (queryErr) {
-    document.getElementById('hw-list-content').innerHTML = '<div class="alert alert-danger">Error loading: ' + queryErr.message + '</div>';
+    document.getElementById('hw-list-content').innerHTML = '<div class="alert alert-danger" style="padding:10px">Error: ' + queryErr.message + '</div>';
     return;
   }
   if (!data||data.length===0) { document.getElementById('hw-list-content').innerHTML='<div class="empty-state"><div class="icon">📚</div><p>No homework posted yet.</p></div>'; return; }

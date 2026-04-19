@@ -10,6 +10,27 @@ const SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ark-global-0
 // Initialize Supabase client
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── Supabase Keepalive — prevents free plan from sleeping ──
+// Pings Supabase every 4 minutes to keep connection alive
+async function pingSupabase() {
+  try {
+    await supabase.from('schools').select('id').limit(1);
+  } catch(e) {}
+}
+// Ping immediately on load, then every 4 minutes
+pingSupabase();
+setInterval(pingSupabase, 4 * 60 * 1000);
+
+// ── Query with timeout helper ──
+// Wraps Supabase queries with a 10-second timeout
+async function queryWithTimeout(queryPromise, timeoutMs = 10000) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Query timed out — Supabase may be starting up. Please wait 30 seconds and try again.')), timeoutMs)
+  );
+  return Promise.race([queryPromise, timeout]);
+}
+
+
 // ── Helper: Show toast notification ──
 function showToast(message, type = 'success') {
   const existing = document.getElementById('toast');
