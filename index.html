@@ -249,9 +249,8 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
     <input type="password" id="login-pw" class="inp" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()">
     <div style="text-align:right;margin-top:-8px;margin-bottom:14px"><span class="alink" onclick="show('forgot')" style="font-size:12px">Forgot password?</span></div>
     <button class="btn-submit" id="login-btn" onclick="doLogin()">Sign In →</button>
-    <div class="divider">or use demo account</div>
-    <div class="demo-box"><b style="color:var(--maroon)">Demo Login:</b> demo@digismart.com / demo1234</div>
-    <div class="afoot" style="margin-top:8px"><span class="alink" onclick="show('landing')">← Back to Home</span></div>
+    <div class="afoot" style="margin-top:14px">Need access? <span class="alink" onclick="show('contact')">Contact us to purchase</span></div>
+    <div class="afoot" style="margin-top:6px"><span class="alink" onclick="show('landing')">← Back to Home</span></div>
   </div>
 </div>
 
@@ -636,11 +635,16 @@ async function addSchool() {
 
   const schoolId = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 20) + '-' + Date.now().toString(36);
 
-  // Create auth user via signUp
-  const { error: authErr } = await db.auth.signUp({ email, password: pw });
-  if (authErr && !authErr.message.includes('already registered')) {
+  // Create auth user via signUp (email confirmation must be OFF in Supabase)
+  const { error: authErr } = await db.auth.signUp({ 
+    email, 
+    password: pw,
+    options: { data: { school_name: name, admin_name: admin } }
+  });
+  // Continue even if user already exists
+  if (authErr && !authErr.message.toLowerCase().includes('already') && !authErr.message.toLowerCase().includes('registered')) {
     btn.textContent = 'Create School Account →'; btn.disabled = false;
-    setA('add-alert', '⚠️ Auth error: ' + authErr.message, 'err'); return;
+    setA('add-alert', '⚠️ Auth error: ' + authErr.message + ' — Make sure Confirm Email is OFF in Supabase Auth settings.', 'err'); return;
   }
 
   // Add to schools table
@@ -656,7 +660,7 @@ async function addSchool() {
 
   if (dbErr) { setA('add-alert', '⚠️ DB error: ' + dbErr.message, 'err'); return; }
 
-  setA('add-alert', '✅ School account created successfully!', 'ok');
+  setA('add-alert', '✅ School added! Note: Make sure "Confirm email" is OFF in Supabase Auth → Sign In/Providers for the school to login directly.', 'ok');
 
   const planNames = { basic: '₹2,499/month (Basic)', standard: '₹3,999/month (Standard)', premium: '₹5,999/month (Premium)' };
   const waMsg = `🏫 *DigiSmart ERP — Your Account is Ready!*
