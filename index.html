@@ -459,21 +459,71 @@ async function handleUser(user) {
 
 // ── LOGIN ──
 async function doLogin() {
-  const email = document.getElementById('login-email').value.trim();
-  const pw = document.getElementById('login-pw').value;
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const pw = document.getElementById('login-pw').value.trim();
   const btn = document.getElementById('login-btn');
   clearA('login-alert');
   if (!email || !pw) { setA('login-alert', '⚠️ Please enter email and password.', 'err'); return; }
-  if (email === 'demo@digismart.com' && pw === 'demo1234') {
-    toast('Demo mode — loading dashboard...');
-    setTimeout(() => { window.location.href = 'pages/admission.html'; }, 700);
+
+  btn.textContent = 'Signing in...'; btn.disabled = true;
+
+  // Super Admin check
+  if (email === SUPER_ADMIN.toLowerCase()) {
+    const { data, error } = await db.auth.signInWithPassword({ email, password: pw });
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+    if (error) { setA('login-alert', '⚠️ Incorrect password for admin account.', 'err'); return; }
+    document.getElementById('sa-email-display').textContent = email;
+    show('super-admin');
+    await loadSA();
     return;
   }
-  btn.textContent = 'Signing in...'; btn.disabled = true;
-  const { data, error } = await db.auth.signInWithPassword({ email, password: pw });
+
+  // School login — check schools table directly (no email confirmation needed)
+  const { data: school, error: schoolErr } = await db
+    .from('schools')
+    .select('*')
+    .eq('admin_email', email)
+    .single();
+
+  if (schoolErr || !school) {
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+    setA('login-alert', '⚠️ Email not found. Please check your email or contact DigiSmart ERP support.', 'err');
+    return;
+  }
+
+  // Check password against schools table
+  if (!school.admin_password) {
+    // No password set yet — try Supabase Auth as fallback
+    const { data: authData, error: authErr } = await db.auth.signInWithPassword({ email, password: pw });
+    if (authErr) {
+      btn.textContent = 'Sign In →'; btn.disabled = false;
+      setA('login-alert', '⚠️ Incorrect password. Please contact DigiSmart ERP to reset your password.', 'err');
+      return;
+    }
+  } else {
+    // Check password stored in schools table
+    if (school.admin_password !== pw) {
+      btn.textContent = 'Sign In →'; btn.disabled = false;
+      setA('login-alert', '⚠️ Incorrect password. Please try again or contact support.', 'err');
+      return;
+    }
+  }
+
+  // Check if school is active
+  if (school.status === 'suspended') {
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+    setA('login-alert', '⚠️ Your school account is suspended. Please contact DigiSmart ERP support.', 'err');
+    return;
+  }
+
   btn.textContent = 'Sign In →'; btn.disabled = false;
-  if (error) { setA('login-alert', '⚠️ Incorrect email or password. Please try again.', 'err'); return; }
-  await handleUser(data.user);
+
+  // Login successful
+  sessionStorage.setItem('digismart_school_id', school.school_id);
+  sessionStorage.setItem('school_name', school.name);
+  sessionStorage.setItem('school_email', email);
+  toast('Welcome! Loading ' + school.name + '...');
+  setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
 }
 
 // ── CONTACT FORM ──
@@ -647,11 +697,12 @@ async function addSchool() {
     setA('add-alert', '⚠️ Auth error: ' + authErr.message + ' — Make sure Confirm Email is OFF in Supabase Auth settings.', 'err'); return;
   }
 
-  // Add to schools table
+  // Add to schools table — store password so login works without email confirmation
   const { error: dbErr } = await db.from('schools').insert([{
     school_id: schoolId, name,
     type: document.getElementById('as-type').value,
     city, admin_name: admin, admin_email: email,
+    admin_password: pw,
     plan, status: 'active',
     registered_at: new Date().toISOString()
   }]);
