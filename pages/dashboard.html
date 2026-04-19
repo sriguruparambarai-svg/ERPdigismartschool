@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.dash-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:20px}
+.dash-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;display:flex;align-items:center;gap:14px;transition:box-shadow .15s;cursor:pointer;text-decoration:none}
+.dash-card:hover{box-shadow:0 4px 16px rgba(107,26,26,.1);border-color:var(--gold)}
+.dash-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.dash-label{font-size:12px;color:var(--text-muted);margin-bottom:3px}
+.dash-value{font-size:24px;font-weight:800;color:var(--maroon)}
+.dash-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+.section-header{font-size:15px;font-weight:700;color:var(--maroon);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.activity-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.activity-item:last-child{border-bottom:none}
+.act-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.act-title{font-size:13px;font-weight:500;color:var(--text)}
+.act-time{font-size:11px;color:var(--text-muted);margin-top:2px}
+.quick-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 10px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);cursor:pointer;text-decoration:none;transition:all .15s;font-size:11px;font-weight:600;color:var(--maroon);text-align:center}
+.quick-btn:hover{border-color:var(--gold);background:var(--sandal-light)}
+.quick-btn .qi{font-size:24px;margin-bottom:2px}
+.welcome-band{background:linear-gradient(135deg,var(--maroon),#8B2A2A);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.notice-item{padding:10px 12px;border-left:3px solid var(--gold);background:var(--sandal-light);border-radius:0 8px 8px 0;margin-bottom:8px}
+.notice-title{font-size:13px;font-weight:600;color:var(--maroon)}
+.notice-date{font-size:11px;color:var(--text-muted);margin-top:2px}
+.att-bar{height:8px;border-radius:4px;background:#F0EBE3;overflow:hidden;margin-top:4px}
+.att-fill{height:100%;border-radius:4px;background:#2D7A3A}
+@media(max-width:900px){.dash-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Dashboard</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">2026-27</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- Welcome Band -->
+      <div class="welcome-band">
+        <div>
+          <div style="font-size:20px;font-weight:800;color:var(--sandal)" id="welcome-msg">Good Morning!</div>
+          <div style="font-size:13px;color:rgba(245,230,200,.7);margin-top:4px" id="school-name-display">DigiSmart ERP</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:13px;color:rgba(245,230,200,.8)" id="date-display"></div>
+          <div style="font-size:11px;color:rgba(245,230,200,.55);margin-top:2px">Academic Year 2026-27</div>
+        </div>
+      </div>
+
+      <!-- Main Stats -->
+      <div class="dash-grid">
+        <a href="admission.html" class="dash-card">
+          <div class="dash-icon" style="background:#FFF0F0">👨‍🎓</div>
+          <div>
+            <div class="dash-label">Total Students</div>
+            <div class="dash-value" id="st-students">—</div>
+            <div class="dash-sub">Active enrolled</div>
+          </div>
+        </a>
+        <a href="face-attendance.html" class="dash-card">
+          <div class="dash-icon" style="background:#F0FFF4">✅</div>
+          <div>
+            <div class="dash-label">Today's Attendance</div>
+            <div class="dash-value" id="st-attendance" style="color:#2D7A3A">—</div>
+            <div class="dash-sub" id="st-att-sub">Students present today</div>
+          </div>
+        </a>
+        <a href="fee.html" class="dash-card">
+          <div class="dash-icon" style="background:#FFFBF0">💰</div>
+          <div>
+            <div class="dash-label">Fee Collected</div>
+            <div class="dash-value" id="st-fee" style="color:#8B5E00">—</div>
+            <div class="dash-sub">This month</div>
+          </div>
+        </a>
+        <a href="hrm.html" class="dash-card">
+          <div class="dash-icon" style="background:#F0F4FF">👥</div>
+          <div>
+            <div class="dash-label">Total Staff</div>
+            <div class="dash-value" id="st-staff">—</div>
+            <div class="dash-sub">Active staff members</div>
+          </div>
+        </a>
+      </div>
+
+      <!-- Second row stats -->
+      <div class="dash-grid" style="margin-bottom:20px">
+        <a href="exam.html" class="dash-card">
+          <div class="dash-icon" style="background:#F5F0FF">📄</div>
+          <div>
+            <div class="dash-label">Exams This Term</div>
+            <div class="dash-value" id="st-exams">—</div>
+            <div class="dash-sub">Scheduled exams</div>
+          </div>
+        </a>
+        <a href="transport.html" class="dash-card">
+          <div class="dash-icon" style="background:#F0FAFF">🚌</div>
+          <div>
+            <div class="dash-label">Buses Active</div>
+            <div class="dash-value" id="st-buses">—</div>
+            <div class="dash-sub">Transport routes</div>
+          </div>
+        </a>
+        <a href="fee.html" class="dash-card">
+          <div class="dash-icon" style="background:#FFF0F0">⚠️</div>
+          <div>
+            <div class="dash-label">Fee Defaulters</div>
+            <div class="dash-value" id="st-defaulters" style="color:#A32D2D">—</div>
+            <div class="dash-sub">Pending payments</div>
+          </div>
+        </a>
+        <a href="communication.html" class="dash-card">
+          <div class="dash-icon" style="background:#F0FFF4">📣</div>
+          <div>
+            <div class="dash-label">Notices Sent</div>
+            <div class="dash-value" id="st-notices">—</div>
+            <div class="dash-sub">This month</div>
+          </div>
+        </a>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px">
+
+        <!-- Quick Actions -->
+        <div class="card">
+          <div class="section-header">⚡ Quick Actions</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+            <a href="admission.html" class="quick-btn"><span class="qi">📝</span>Add Student</a>
+            <a href="face-attendance.html" class="quick-btn"><span class="qi">✅</span>Attendance</a>
+            <a href="fee.html" class="quick-btn"><span class="qi">💰</span>Collect Fee</a>
+            <a href="exam.html" class="quick-btn"><span class="qi">📄</span>Exam Marks</a>
+            <a href="communication.html" class="quick-btn"><span class="qi">📢</span>Send Notice</a>
+            <a href="hrm.html" class="quick-btn"><span class="qi">👥</span>Add Staff</a>
+          </div>
+        </div>
+
+        <!-- Attendance Overview -->
+        <div class="card">
+          <div class="section-header">📊 Today's Attendance by Class</div>
+          <div id="class-attendance-overview">
+            <div class="empty-state" style="padding:20px">
+              <div class="icon" style="font-size:24px">⏳</div>
+              <p style="font-size:12px">Loading...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Notices -->
+        <div class="card">
+          <div class="section-header">📢 Recent Communications</div>
+          <div id="recent-notices">
+            <div class="empty-state" style="padding:20px">
+              <div class="icon" style="font-size:24px">⏳</div>
+              <p style="font-size:12px">Loading...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Class-wise Students -->
+        <div class="card">
+          <div class="section-header">👨‍🎓 Students by Class</div>
+          <div id="class-student-count">
+            <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Loading...</p></div>
+          </div>
+        </div>
+
+        <!-- Fee Status -->
+        <div class="card">
+          <div class="section-header">💰 Fee Collection — This Month</div>
+          <div id="fee-overview">
+            <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Loading...</p></div>
+          </div>
+        </div>
+
+        <!-- Recent Admissions -->
+        <div class="card">
+          <div class="section-header">📝 Recent Admissions</div>
+          <div id="recent-admissions">
+            <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Loading...</p></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('dashboard');
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  document.getElementById('welcome-msg').textContent = greeting + '! 👋';
+  document.getElementById('today-date').textContent = now.toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('date-display').textContent = now.toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+
+  const schoolName = sessionStorage.getItem('school_name') || 'DigiSmart ERP';
+  document.getElementById('school-name-display').textContent = schoolName;
+
+  await Promise.all([
+    loadMainStats(),
+    loadClassAttendance(),
+    loadRecentNotices(),
+    loadClassStudentCount(),
+    loadFeeOverview(),
+    loadRecentAdmissions(),
+  ]);
+});
+
+async function loadMainStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const monthStart = today.slice(0,7) + '-01';
+
+  const [students, staff, exams, buses, notices, feeData, defaulters, attData] = await Promise.all([
+    supabase.from('students').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
+    supabase.from('staff').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
+    supabase.from('exams').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID),
+    supabase.from('buses').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
+    supabase.from('communications').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).gte('created_at',monthStart),
+    supabase.from('fee_payments').select('amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart),
+    supabase.from('students').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
+    supabase.from('student_attendance').select('status',{count:'exact'}).eq('school_id',SCHOOL_ID).eq('date',today).eq('status','present'),
+  ]);
+
+  document.getElementById('st-students').textContent = students.count || 0;
+  document.getElementById('st-staff').textContent = staff.count || 0;
+  document.getElementById('st-exams').textContent = exams.count || 0;
+  document.getElementById('st-buses').textContent = buses.count || 0;
+  document.getElementById('st-notices').textContent = notices.count || 0;
+  document.getElementById('st-defaulters').textContent = '—';
+
+  const totalFee = (feeData.data || []).reduce((s,r) => s + (r.amount_paid || 0), 0);
+  document.getElementById('st-fee').textContent = totalFee > 0 ? '₹' + (totalFee/1000).toFixed(0) + 'K' : '₹0';
+
+  const presentCount = attData.count || 0;
+  const totalStudents = students.count || 0;
+  const attPct = totalStudents > 0 ? Math.round((presentCount/totalStudents)*100) : 0;
+  document.getElementById('st-attendance').textContent = presentCount;
+  document.getElementById('st-att-sub').textContent = attPct + '% present today';
+}
+
+async function loadClassAttendance() {
+  const today = new Date().toISOString().split('T')[0];
+  const classes = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8'];
+
+  const { data: attData } = await supabase.from('student_attendance').select('class,status').eq('school_id',SCHOOL_ID).eq('date',today);
+  const { data: studData } = await supabase.from('students').select('class').eq('school_id',SCHOOL_ID).eq('status','active');
+
+  const classMap = {};
+  (studData||[]).forEach(s => { classMap[s.class] = (classMap[s.class]||{total:0,present:0}); classMap[s.class].total++; });
+  (attData||[]).forEach(a => { if (classMap[a.class] && a.status==='present') classMap[a.class].present++; });
+
+  const activeClasses = Object.entries(classMap).filter(([k,v]) => v.total > 0);
+  if (activeClasses.length === 0) {
+    document.getElementById('class-attendance-overview').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No attendance marked today. <a href="student-attendance.html" style="color:var(--maroon);font-weight:600">Mark now →</a></div>';
+    return;
+  }
+
+  document.getElementById('class-attendance-overview').innerHTML = activeClasses.slice(0,6).map(([cls,v]) => {
+    const pct = v.total > 0 ? Math.round((v.present/v.total)*100) : 0;
+    return `
+      <div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+          <span style="font-weight:500">${cls}</span>
+          <span style="color:${pct>=75?'#2D7A3A':'#A32D2D'};font-weight:600">${v.present}/${v.total} (${pct}%)</span>
+        </div>
+        <div class="att-bar"><div class="att-fill" style="width:${pct}%;background:${pct>=75?'#2D7A3A':'#A32D2D'}"></div></div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadRecentNotices() {
+  const { data } = await supabase.from('communications').select('title,type,created_at,priority').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(5);
+  if (!data||data.length===0) {
+    document.getElementById('recent-notices').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No notices yet. <a href="communication.html" style="color:var(--maroon);font-weight:600">Send one →</a></div>';
+    return;
+  }
+  const icons = {circular:'📢',homework:'📚',holiday:'🏖',event:'🎉',announcement:'📣',consent_form:'📋'};
+  document.getElementById('recent-notices').innerHTML = data.map(n => `
+    <div class="activity-item">
+      <div class="act-icon" style="background:var(--sandal-light)">${icons[n.type]||'📢'}</div>
+      <div style="flex:1;min-width:0">
+        <div class="act-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.title}</div>
+        <div class="act-time">${formatDate(n.created_at?.split('T')[0])} · ${n.type}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadClassStudentCount() {
+  const { data } = await supabase.from('students').select('class').eq('school_id',SCHOOL_ID).eq('status','active');
+  if (!data||data.length===0) {
+    document.getElementById('class-student-count').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No students yet. <a href="admission.html" style="color:var(--maroon);font-weight:600">Add students →</a></div>';
+    return;
+  }
+  const counts = {};
+  data.forEach(s => { counts[s.class] = (counts[s.class]||0) + 1; });
+  const sorted = Object.entries(counts).sort((a,b) => {
+    const order = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+    return order.indexOf(a[0]) - order.indexOf(b[0]);
+  });
+  document.getElementById('class-student-count').innerHTML = `
+    <table style="width:100%;font-size:12px;border-collapse:collapse">
+      ${sorted.map(([cls,cnt]) => `
+        <tr>
+          <td style="padding:5px 0;border-bottom:1px solid var(--border);font-weight:500">${cls}</td>
+          <td style="padding:5px 0;border-bottom:1px solid var(--border);text-align:right">
+            <span style="font-weight:700;color:var(--maroon)">${cnt}</span>
+            <span style="color:var(--text-muted);font-size:10px"> students</span>
+          </td>
+        </tr>
+      `).join('')}
+      <tr>
+        <td style="padding:6px 0;font-weight:700;color:var(--maroon)">Total</td>
+        <td style="padding:6px 0;text-align:right;font-weight:800;color:var(--maroon)">${data.length}</td>
+      </tr>
+    </table>
+  `;
+}
+
+async function loadFeeOverview() {
+  const today = new Date().toISOString().split('T')[0];
+  const monthStart = today.slice(0,7) + '-01';
+  const { data } = await supabase.from('fee_payments').select('amount_paid,payment_date,student_class').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart).order('payment_date',{ascending:false}).limit(5);
+  if (!data||data.length===0) {
+    document.getElementById('fee-overview').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No fee collected this month. <a href="fee.html" style="color:var(--maroon);font-weight:600">Collect fee →</a></div>';
+    return;
+  }
+  const total = data.reduce((s,r) => s+(r.amount_paid||0), 0);
+  document.getElementById('fee-overview').innerHTML = `
+    <div style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted)">Month Total</span>
+      <span style="font-size:18px;font-weight:800;color:var(--maroon)">₹${total.toLocaleString('en-IN')}</span>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Recent Payments</div>
+    ${data.slice(0,4).map(r => `
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span>Class ${r.student_class||'—'}</span>
+        <span style="font-weight:600;color:#2D7A3A">₹${(r.amount_paid||0).toLocaleString('en-IN')}</span>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function loadRecentAdmissions() {
+  const { data } = await supabase.from('students').select('full_name,class,admission_no,created_at').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(5);
+  if (!data||data.length===0) {
+    document.getElementById('recent-admissions').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No admissions yet. <a href="admission.html" style="color:var(--maroon);font-weight:600">Add student →</a></div>';
+    return;
+  }
+  document.getElementById('recent-admissions').innerHTML = data.map(s => `
+    <div class="activity-item">
+      <div class="act-icon" style="background:var(--sandal-light);font-size:14px;font-weight:700;color:var(--maroon)">${s.full_name?.charAt(0)||'?'}</div>
+      <div>
+        <div class="act-title">${s.full_name}</div>
+        <div class="act-time">${s.class} · ${s.admission_no||'—'}</div>
+      </div>
+    </div>
+  `).join('');
+}
+</script>
+</body>
+</html>

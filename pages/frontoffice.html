@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Front Office — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.status-in{background:#E8F5EB;color:#2D7A3A;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.status-out{background:#FCEBEB;color:#A32D2D;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.status-pending{background:#FFF8E6;color:#8B5E00;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.status-resolved{background:#E8F5EB;color:#2D7A3A;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Front Office</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Reception & Visitors</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Visitors Today</div>
+          <div class="stat-value" id="st-visitors">—</div>
+          <div class="stat-sub">Signed in today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Currently Inside</div>
+          <div class="stat-value" id="st-inside" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Not yet signed out</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Complaints Open</div>
+          <div class="stat-value" id="st-complaints" style="color:#A32D2D">—</div>
+          <div class="stat-sub">Pending resolution</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Lost & Found</div>
+          <div class="stat-value" id="st-lost">—</div>
+          <div class="stat-sub">Unclaimed items</div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('visitors',this)">👤 Visitor Register</div>
+        <div class="tab" onclick="switchTab('calls',this)">📞 Phone Calls</div>
+        <div class="tab" onclick="switchTab('complaints',this)">📋 Complaints</div>
+        <div class="tab" onclick="switchTab('lost',this)">🔍 Lost & Found</div>
+        <div class="tab" onclick="switchTab('outpass',this)">🚪 Student Out Pass</div>
+      </div>
+
+      <!-- ══ VISITORS ══ -->
+      <div id="tab-visitors">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:16px;align-items:start">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px" id="vis-form-title">Register Visitor</div>
+            <div id="vis-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Visitor Name <span class="req">*</span></label>
+              <input type="text" id="vis-name" class="form-control" placeholder="Full name">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Mobile Number</label>
+              <input type="tel" id="vis-mobile" class="form-control" placeholder="Phone number">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Purpose of Visit <span class="req">*</span></label>
+              <select id="vis-purpose" class="form-control">
+                <option value="">Select purpose</option>
+                <option>Meet Principal</option>
+                <option>Meet Teacher</option>
+                <option>Fee Payment</option>
+                <option>Admission Enquiry</option>
+                <option>Student Related</option>
+                <option>Official Visit</option>
+                <option>Delivery</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Whom to Meet</label>
+              <input type="text" id="vis-meet" class="form-control" placeholder="e.g. Class Teacher, Principal">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Student Name (if parent)</label>
+              <input type="text" id="vis-student" class="form-control" placeholder="Student name & class">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">ID Proof Type</label>
+              <select id="vis-id" class="form-control">
+                <option value="">None</option>
+                <option>Aadhaar Card</option>
+                <option>Voter ID</option>
+                <option>Driving Licence</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <button class="btn btn-gold w-full" onclick="addVisitor()">✓ Sign In Visitor</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Today's Visitor Log</div>
+              <div style="display:flex;gap:8px">
+                <input type="date" id="vis-date" class="form-control" style="width:160px;padding:6px 10px" onchange="loadVisitors()">
+                <button class="btn btn-secondary btn-sm" onclick="loadVisitors()">Refresh</button>
+              </div>
+            </div>
+            <div id="visitors-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PHONE CALLS ══ -->
+      <div id="tab-calls" class="hidden">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:16px;align-items:start">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Log Phone Call</div>
+            <div id="call-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Caller Name <span class="req">*</span></label>
+              <input type="text" id="call-name" class="form-control" placeholder="Caller name">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Phone Number</label>
+              <input type="tel" id="call-phone" class="form-control" placeholder="Phone number">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Call Type</label>
+              <select id="call-type" class="form-control">
+                <option value="incoming">📞 Incoming</option>
+                <option value="outgoing">📲 Outgoing</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Department / Person Called</label>
+              <input type="text" id="call-dept" class="form-control" placeholder="e.g. Principal, Class 5 Teacher">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Message / Notes <span class="req">*</span></label>
+              <textarea id="call-notes" class="form-control" rows="3" placeholder="What was the call about?"></textarea>
+            </div>
+            <button class="btn btn-gold w-full" onclick="addCall()">Log Call</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Call Log</div>
+              <input type="date" id="call-date" class="form-control" style="width:160px;padding:6px 10px" onchange="loadCalls()">
+            </div>
+            <div id="calls-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ COMPLAINTS ══ -->
+      <div id="tab-complaints" class="hidden">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:16px;align-items:start">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Register Complaint</div>
+            <div id="comp-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Complaint By <span class="req">*</span></label>
+              <input type="text" id="comp-by" class="form-control" placeholder="Parent / Staff name">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Mobile</label>
+              <input type="tel" id="comp-mobile" class="form-control" placeholder="Phone number">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Category</label>
+              <select id="comp-cat" class="form-control">
+                <option>Academic</option>
+                <option>Teacher Behaviour</option>
+                <option>Fee Related</option>
+                <option>Infrastructure</option>
+                <option>Transport</option>
+                <option>Food / Canteen</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Student Name (if applicable)</label>
+              <input type="text" id="comp-student" class="form-control" placeholder="Student name & class">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Complaint Details <span class="req">*</span></label>
+              <textarea id="comp-details" class="form-control" rows="4" placeholder="Describe the complaint in detail..."></textarea>
+            </div>
+            <button class="btn btn-gold w-full" onclick="addComplaint()">Register Complaint</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">All Complaints</div>
+              <select id="comp-filter" class="form-control" style="width:130px;padding:6px 10px" onchange="loadComplaints()">
+                <option value="">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="resolved">Resolved</option>
+              </select>
+            </div>
+            <div id="complaints-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ LOST & FOUND ══ -->
+      <div id="tab-lost" class="hidden">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:16px;align-items:start">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Log Lost/Found Item</div>
+            <div id="lost-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Item Description <span class="req">*</span></label>
+              <input type="text" id="lost-item" class="form-control" placeholder="e.g. Blue water bottle, School bag">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Type</label>
+              <select id="lost-type" class="form-control">
+                <option value="found">Found — Item found in school</option>
+                <option value="lost">Lost — Student lost an item</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Found Location / Class</label>
+              <input type="text" id="lost-location" class="form-control" placeholder="e.g. Class 5 classroom, Playground">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Student Name (if known)</label>
+              <input type="text" id="lost-student" class="form-control" placeholder="Owner if known">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Notes</label>
+              <textarea id="lost-notes" class="form-control" rows="2" placeholder="Any additional details..."></textarea>
+            </div>
+            <button class="btn btn-gold w-full" onclick="addLostFound()">Log Item</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Lost & Found Register</div>
+              <select id="lost-filter" class="form-control" style="width:130px;padding:6px 10px" onchange="loadLostFound()">
+                <option value="">All Items</option>
+                <option value="found">Found Items</option>
+                <option value="lost">Lost Items</option>
+                <option value="claimed">Claimed</option>
+              </select>
+            </div>
+            <div id="lost-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ OUT PASS ══ -->
+      <div id="tab-outpass" class="hidden">
+        <div style="display:grid;grid-template-columns:380px 1fr;gap:16px;align-items:start">
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Issue Out Pass</div>
+            <div id="pass-alert" class="hidden"></div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Student Name <span class="req">*</span></label>
+              <input type="text" id="pass-student" class="form-control" placeholder="Student name">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Class & Section</label>
+              <input type="text" id="pass-class" class="form-control" placeholder="e.g. Class 7 A">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Reason <span class="req">*</span></label>
+              <select id="pass-reason" class="form-control">
+                <option>Medical / Doctor</option>
+                <option>Family Emergency</option>
+                <option>Parent Request</option>
+                <option>Competition / Event</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Parent / Guardian Name</label>
+              <input type="text" id="pass-parent" class="form-control" placeholder="Who is taking the student">
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Parent Mobile</label>
+              <input type="tel" id="pass-mobile" class="form-control" placeholder="Contact number">
+            </div>
+            <div class="form-group" style="margin-bottom:14px">
+              <label class="form-label">Expected Return</label>
+              <select id="pass-return" class="form-control">
+                <option>Will not return today</option>
+                <option>Will return same day</option>
+                <option>Will return next day</option>
+              </select>
+            </div>
+            <button class="btn btn-gold w-full" onclick="issueOutPass()">Issue Out Pass</button>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Out Pass Register</div>
+              <input type="date" id="pass-date" class="form-control" style="width:160px;padding:6px 10px" onchange="loadOutPasses()">
+            </div>
+            <div id="outpass-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const TABLE = 'front_office';
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('frontoffice');
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('vis-date').value = today;
+  document.getElementById('call-date').value = today;
+  document.getElementById('pass-date').value = today;
+  await createTableIfNeeded();
+  await Promise.all([loadVisitors(), loadStats()]);
+});
+
+async function createTableIfNeeded() {
+  // Table is created via setup-db.sql - just proceed
+}
+
+// ── STATS ──
+async function loadStats() {
+  const today = new Date().toISOString().split('T')[0];
+  const { data: vis } = await supabase.from(TABLE).select('id,status').eq('school_id',SCHOOL_ID).eq('category','visitor').eq('date',today);
+  const { data: comp } = await supabase.from(TABLE).select('id').eq('school_id',SCHOOL_ID).eq('category','complaint').eq('status','pending');
+  const { data: lost } = await supabase.from(TABLE).select('id').eq('school_id',SCHOOL_ID).eq('category','lost_found').neq('status','claimed');
+
+  document.getElementById('st-visitors').textContent = vis?.length || 0;
+  document.getElementById('st-inside').textContent = vis?.filter(v=>v.status==='in').length || 0;
+  document.getElementById('st-complaints').textContent = comp?.length || 0;
+  document.getElementById('st-lost').textContent = lost?.length || 0;
+}
+
+// ── VISITORS ──
+async function addVisitor() {
+  const name = document.getElementById('vis-name').value.trim();
+  const purpose = document.getElementById('vis-purpose').value;
+  if (!name || !purpose) { showAlert('vis-alert','⚠️ Please fill visitor name and purpose.'); return; }
+  showLoading('Registering visitor...');
+  const { error } = await supabase.from(TABLE).insert([{
+    school_id: SCHOOL_ID, category: 'visitor',
+    name, mobile: document.getElementById('vis-mobile').value.trim(),
+    purpose, meet_whom: document.getElementById('vis-meet').value.trim(),
+    student_name: document.getElementById('vis-student').value.trim(),
+    id_proof: document.getElementById('vis-id').value,
+    status: 'in', date: new Date().toISOString().split('T')[0],
+    time_in: new Date().toTimeString().slice(0,5),
+    created_at: new Date().toISOString()
+  }]);
+  hideLoading();
+  if (error) { showAlert('vis-alert','⚠️ '+error.message); return; }
+  showToast(name + ' signed in!','success');
+  ['vis-name','vis-mobile','vis-meet','vis-student'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('vis-purpose').value = '';
+  await loadVisitors(); await loadStats();
+}
+
+async function loadVisitors() {
+  const date = document.getElementById('vis-date').value;
+  const { data } = await supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','visitor').eq('date',date).order('created_at',{ascending:false});
+  if (!data||data.length===0) { document.getElementById('visitors-list').innerHTML='<div class="empty-state"><div class="icon">👤</div><p>No visitors recorded for this date.</p></div>'; return; }
+  document.getElementById('visitors-list').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Name</th><th>Mobile</th><th>Purpose</th><th>Meet</th><th>Time In</th><th>Time Out</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(v=>`
+          <tr>
+            <td style="font-weight:500">${v.name}</td>
+            <td>${v.mobile||'—'}</td>
+            <td>${v.purpose||'—'}</td>
+            <td>${v.meet_whom||'—'}</td>
+            <td>${v.time_in||'—'}</td>
+            <td>${v.time_out||'—'}</td>
+            <td><span class="${v.status==='in'?'status-in':'status-out'}">${v.status==='in'?'Inside':'Out'}</span></td>
+            <td>${v.status==='in'?`<button onclick="signOutVisitor('${v.id}')" class="btn btn-secondary btn-sm">Sign Out</button>`:''}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+async function signOutVisitor(id) {
+  await supabase.from(TABLE).update({status:'out',time_out:new Date().toTimeString().slice(0,5)}).eq('id',id);
+  showToast('Visitor signed out.','success');
+  await loadVisitors(); await loadStats();
+}
+
+// ── PHONE CALLS ──
+async function addCall() {
+  const name = document.getElementById('call-name').value.trim();
+  const notes = document.getElementById('call-notes').value.trim();
+  if (!name||!notes) { showAlert('call-alert','⚠️ Please fill caller name and notes.'); return; }
+  showLoading('Saving...');
+  const { error } = await supabase.from(TABLE).insert([{
+    school_id: SCHOOL_ID, category: 'call',
+    name, mobile: document.getElementById('call-phone').value.trim(),
+    purpose: document.getElementById('call-type').value,
+    meet_whom: document.getElementById('call-dept').value.trim(),
+    notes, status: 'logged',
+    date: new Date().toISOString().split('T')[0],
+    time_in: new Date().toTimeString().slice(0,5),
+    created_at: new Date().toISOString()
+  }]);
+  hideLoading();
+  if (error) { showAlert('call-alert','⚠️ '+error.message); return; }
+  showToast('Call logged!','success');
+  ['call-name','call-phone','call-dept','call-notes'].forEach(id => document.getElementById(id).value='');
+  await loadCalls();
+}
+
+async function loadCalls() {
+  const date = document.getElementById('call-date').value;
+  const { data } = await supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','call').eq('date',date).order('created_at',{ascending:false});
+  if (!data||data.length===0) { document.getElementById('calls-list').innerHTML='<div class="empty-state"><div class="icon">📞</div><p>No calls logged today.</p></div>'; return; }
+  document.getElementById('calls-list').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Caller</th><th>Phone</th><th>Type</th><th>Dept/Person</th><th>Time</th><th>Notes</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(c=>`
+          <tr>
+            <td style="font-weight:500">${c.name}</td>
+            <td>${c.mobile||'—'}</td>
+            <td><span class="badge badge-${c.purpose==='incoming'?'blue':'maroon'}" style="font-size:10px">${c.purpose}</span></td>
+            <td>${c.meet_whom||'—'}</td>
+            <td>${c.time_in||'—'}</td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.notes||'—'}</td>
+            <td><button onclick="deleteEntry('${c.id}')" class="btn btn-danger btn-sm btn-icon">🗑</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ── COMPLAINTS ──
+async function addComplaint() {
+  const by = document.getElementById('comp-by').value.trim();
+  const details = document.getElementById('comp-details').value.trim();
+  if (!by||!details) { showAlert('comp-alert','⚠️ Please fill complainant name and details.'); return; }
+  showLoading('Registering...');
+  const { error } = await supabase.from(TABLE).insert([{
+    school_id: SCHOOL_ID, category: 'complaint',
+    name: by, mobile: document.getElementById('comp-mobile').value.trim(),
+    purpose: document.getElementById('comp-cat').value,
+    student_name: document.getElementById('comp-student').value.trim(),
+    notes: details, status: 'pending',
+    date: new Date().toISOString().split('T')[0],
+    created_at: new Date().toISOString()
+  }]);
+  hideLoading();
+  if (error) { showAlert('comp-alert','⚠️ '+error.message); return; }
+  showToast('Complaint registered.','success');
+  ['comp-by','comp-mobile','comp-student','comp-details'].forEach(id => document.getElementById(id).value='');
+  await loadComplaints(); await loadStats();
+}
+
+async function loadComplaints() {
+  const status = document.getElementById('comp-filter').value;
+  let q = supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','complaint').order('created_at',{ascending:false});
+  if (status) q = q.eq('status',status);
+  const { data } = await q.limit(30);
+  if (!data||data.length===0) { document.getElementById('complaints-list').innerHTML='<div class="empty-state"><div class="icon">📋</div><p>No complaints found.</p></div>'; return; }
+  document.getElementById('complaints-list').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Date</th><th>By</th><th>Category</th><th>Student</th><th>Details</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(c=>`
+          <tr>
+            <td style="white-space:nowrap">${formatDate(c.date)}</td>
+            <td style="font-weight:500">${c.name}<br><span style="font-size:10px;color:var(--text-muted)">${c.mobile||''}</span></td>
+            <td>${c.purpose||'—'}</td>
+            <td>${c.student_name||'—'}</td>
+            <td style="max-width:180px;font-size:11px">${c.notes||'—'}</td>
+            <td><span class="${c.status==='pending'?'status-pending':'status-resolved'}">${c.status}</span></td>
+            <td>
+              ${c.status==='pending'?`<button onclick="resolveComplaint('${c.id}')" class="btn btn-secondary btn-sm" style="font-size:10px">Resolve</button>`:''}
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+async function resolveComplaint(id) {
+  await supabase.from(TABLE).update({status:'resolved'}).eq('id',id);
+  showToast('Complaint resolved!','success');
+  await loadComplaints(); await loadStats();
+}
+
+// ── LOST & FOUND ──
+async function addLostFound() {
+  const item = document.getElementById('lost-item').value.trim();
+  if (!item) { showAlert('lost-alert','⚠️ Please describe the item.'); return; }
+  showLoading('Saving...');
+  const { error } = await supabase.from(TABLE).insert([{
+    school_id: SCHOOL_ID, category: 'lost_found',
+    name: item, purpose: document.getElementById('lost-type').value,
+    meet_whom: document.getElementById('lost-location').value.trim(),
+    student_name: document.getElementById('lost-student').value.trim(),
+    notes: document.getElementById('lost-notes').value.trim(),
+    status: 'unclaimed',
+    date: new Date().toISOString().split('T')[0],
+    created_at: new Date().toISOString()
+  }]);
+  hideLoading();
+  if (error) { showAlert('lost-alert','⚠️ '+error.message); return; }
+  showToast('Item logged!','success');
+  ['lost-item','lost-location','lost-student','lost-notes'].forEach(id => document.getElementById(id).value='');
+  await loadLostFound(); await loadStats();
+}
+
+async function loadLostFound() {
+  const filter = document.getElementById('lost-filter').value;
+  let q = supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','lost_found').order('created_at',{ascending:false});
+  if (filter === 'claimed') q = q.eq('status','claimed');
+  else if (filter) q = q.eq('purpose',filter).neq('status','claimed');
+  else q = q.neq('status','claimed');
+  const { data } = await q.limit(30);
+  if (!data||data.length===0) { document.getElementById('lost-list').innerHTML='<div class="empty-state"><div class="icon">🔍</div><p>No items in register.</p></div>'; return; }
+  document.getElementById('lost-list').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Date</th><th>Item</th><th>Type</th><th>Location</th><th>Owner</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${data.map(i=>`
+          <tr>
+            <td>${formatDate(i.date)}</td>
+            <td style="font-weight:500">${i.name}</td>
+            <td><span class="badge ${i.purpose==='found'?'badge-green':'badge-amber'}" style="font-size:10px">${i.purpose}</span></td>
+            <td>${i.meet_whom||'—'}</td>
+            <td>${i.student_name||'Unknown'}</td>
+            <td><span class="${i.status==='claimed'?'status-resolved':'status-pending'}">${i.status}</span></td>
+            <td>${i.status!=='claimed'?`<button onclick="claimItem('${i.id}')" class="btn btn-secondary btn-sm" style="font-size:10px">Claimed</button>`:''}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+async function claimItem(id) {
+  await supabase.from(TABLE).update({status:'claimed'}).eq('id',id);
+  showToast('Item marked as claimed!','success');
+  await loadLostFound(); await loadStats();
+}
+
+// ── OUT PASS ──
+async function issueOutPass() {
+  const student = document.getElementById('pass-student').value.trim();
+  const reason = document.getElementById('pass-reason').value;
+  if (!student) { showAlert('pass-alert','⚠️ Please enter student name.'); return; }
+  showLoading('Issuing pass...');
+  const { error } = await supabase.from(TABLE).insert([{
+    school_id: SCHOOL_ID, category: 'outpass',
+    name: student, purpose: reason,
+    meet_whom: document.getElementById('pass-parent').value.trim(),
+    mobile: document.getElementById('pass-mobile').value.trim(),
+    student_name: document.getElementById('pass-class').value.trim(),
+    notes: document.getElementById('pass-return').value,
+    status: 'out', date: new Date().toISOString().split('T')[0],
+    time_in: new Date().toTimeString().slice(0,5),
+    created_at: new Date().toISOString()
+  }]);
+  hideLoading();
+  if (error) { showAlert('pass-alert','⚠️ '+error.message); return; }
+  showToast('Out pass issued for '+student,'success');
+  ['pass-student','pass-class','pass-parent','pass-mobile'].forEach(id => document.getElementById(id).value='');
+  await loadOutPasses();
+}
+
+async function loadOutPasses() {
+  const date = document.getElementById('pass-date').value;
+  const { data } = await supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','outpass').eq('date',date).order('created_at',{ascending:false});
+  if (!data||data.length===0) { document.getElementById('outpass-list').innerHTML='<div class="empty-state"><div class="icon">🚪</div><p>No out passes issued today.</p></div>'; return; }
+  document.getElementById('outpass-list').innerHTML = `
+    <div class="table-wrap"><table style="font-size:12px">
+      <thead><tr><th>Student</th><th>Class</th><th>Reason</th><th>Parent</th><th>Mobile</th><th>Time Out</th><th>Return</th></tr></thead>
+      <tbody>
+        ${data.map(p=>`
+          <tr>
+            <td style="font-weight:500">${p.name}</td>
+            <td>${p.student_name||'—'}</td>
+            <td>${p.purpose||'—'}</td>
+            <td>${p.meet_whom||'—'}</td>
+            <td>${p.mobile||'—'}</td>
+            <td>${p.time_in||'—'}</td>
+            <td style="font-size:11px">${p.notes||'—'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table></div>
+  `;
+}
+
+// ── HELPERS ──
+async function deleteEntry(id) {
+  if (!confirm('Delete this entry?')) return;
+  await supabase.from(TABLE).delete().eq('id',id);
+  showToast('Deleted.','success');
+  await loadCalls();
+}
+
+function showAlert(id, msg) {
+  const el = document.getElementById(id);
+  el.className = 'alert alert-danger';
+  el.textContent = msg;
+}
+
+function switchTab(tab, el) {
+  ['visitors','calls','complaints','lost','outpass'].forEach(t => document.getElementById('tab-'+t).classList.add('hidden'));
+  document.getElementById('tab-'+tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-bar .tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab==='calls') loadCalls();
+  if (tab==='complaints') loadComplaints();
+  if (tab==='lost') loadLostFound();
+  if (tab==='outpass') loadOutPasses();
+}
+</script>
+</body>
+</html>
