@@ -453,6 +453,91 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
         </table>
       </div>
     </div>
+
+    <!-- Demo Requests -->
+    <div class="sa-card" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:15px;font-weight:700;color:var(--maroon)">📩 New Demo Requests</div>
+        <button onclick="loadDemoRequests()" style="padding:6px 14px;background:var(--sandal);color:var(--maroon);border:1px solid #E8D8B8;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Refresh</button>
+      </div>
+      <div id="demo-requests-list" style="font-size:13px;color:var(--text-muted)">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD SCHOOL MODAL -->
+<div id="add-school-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div style="font-size:17px;font-weight:800;color:var(--maroon)">Add New School</div>
+      <button onclick="closeAddSchoolModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9B928A">✕</button>
+    </div>
+    <div id="add-school-alert" style="padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="grid-column:1/-1">
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">School Name *</label>
+        <input type="text" id="as-name" class="form-inp" placeholder="e.g. Sri Vidya Matriculation School">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">School Type *</label>
+        <select id="as-type" class="form-inp">
+          <option value="">Select</option>
+          <option>Matriculation</option><option>CBSE</option>
+          <option>State Board</option><option>ICSE</option><option>Other</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">City *</label>
+        <input type="text" id="as-city" class="form-inp" placeholder="e.g. Chennai">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">District</label>
+        <input type="text" id="as-district" class="form-inp" placeholder="e.g. Nagapattinam">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">Phone</label>
+        <input type="text" id="as-phone" class="form-inp" placeholder="School phone">
+      </div>
+      <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+        <div style="font-size:12px;font-weight:700;color:var(--maroon);margin-bottom:10px">👤 Admin Login Details</div>
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">Admin Name *</label>
+        <input type="text" id="as-admin-name" class="form-inp" placeholder="Principal name">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">Admin Email *</label>
+        <input type="email" id="as-email" class="form-inp" placeholder="principal@school.com">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">Password *</label>
+        <input type="text" id="as-password" class="form-inp" placeholder="e.g. School@1234" value="School@1234">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#6B6560;display:block;margin-bottom:5px">Plan *</label>
+        <select id="as-plan" class="form-inp">
+          <option value="basic">Basic — ₹2,499/month (≤300 students)</option>
+          <option value="standard" selected>Standard — ₹3,999/month (≤600 students)</option>
+          <option value="premium">Premium — ₹5,999/month (≤1000 students)</option>
+          <option value="unlimited">Unlimited — ₹8,999/month</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="background:#E8F5EB;border-radius:8px;padding:10px 12px;font-size:12px;color:#2D7A3A;margin:14px 0;border:1px solid #b8dfc0">
+      ✓ School account will be created immediately<br>
+      ✓ Admin can login with the email and password above<br>
+      ✓ Share these details with the school via WhatsApp
+    </div>
+
+    <button onclick="addSchoolNow()" id="as-btn" style="width:100%;padding:13px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Create School Account →</button>
+
+    <div id="as-whatsapp-msg" style="display:none;margin-top:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--maroon);margin-bottom:6px">📱 Share this on WhatsApp:</div>
+      <div id="as-wa-text" style="background:#E8F5EB;border-radius:8px;padding:12px;font-size:12px;line-height:1.7;white-space:pre-wrap;border:1px solid #b8dfc0"></div>
+      <button onclick="copyWAText()" style="margin-top:8px;padding:8px 16px;background:#2D7A3A;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">📋 Copy WhatsApp Message</button>
+    </div>
   </div>
 </div>
 
@@ -697,6 +782,147 @@ async function submitContact() {
   }
   setAlert('contact-alert','✓ Request sent! We will contact you on WhatsApp within 24 hours. Thank you!','ok');
   setTimeout(() => { document.getElementById('ct-school').value=''; document.getElementById('ct-name').value=''; document.getElementById('ct-mobile').value=''; }, 2000);
+}
+
+function openAddSchoolModal() {
+  const modal = document.getElementById('add-school-modal');
+  modal.style.display = 'flex';
+  document.getElementById('as-whatsapp-msg').style.display = 'none';
+  document.getElementById('add-school-alert').style.display = 'none';
+}
+
+function closeAddSchoolModal() {
+  document.getElementById('add-school-modal').style.display = 'none';
+}
+
+async function addSchoolNow() {
+  const name = document.getElementById('as-name').value.trim();
+  const type = document.getElementById('as-type').value;
+  const city = document.getElementById('as-city').value.trim();
+  const adminName = document.getElementById('as-admin-name').value.trim();
+  const email = document.getElementById('as-email').value.trim();
+  const password = document.getElementById('as-password').value.trim();
+  const plan = document.getElementById('as-plan').value;
+  const btn = document.getElementById('as-btn');
+  const alertEl = document.getElementById('add-school-alert');
+
+  if (!name || !city || !adminName || !email || !password) {
+    alertEl.style.display = 'block';
+    alertEl.style.background = '#FCEBEB';
+    alertEl.style.color = '#A32D2D';
+    alertEl.textContent = '⚠️ Please fill all required fields.';
+    return;
+  }
+
+  btn.textContent = 'Creating...'; btn.disabled = true;
+  alertEl.style.display = 'none';
+
+  // Generate school ID
+  const schoolId = name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,20) + '-' + Date.now().toString(36);
+
+  // Step 1: Create Supabase auth user
+  const { data: authData, error: authError } = await db.auth.admin
+    ? db.auth.admin.createUser({ email, password, email_confirm: true })
+    : { data: null, error: { message: 'Admin API not available' } };
+
+  // Fallback: use signUp
+  if (authError) {
+    const { error: signUpError } = await db.auth.signUp({ email, password });
+    if (signUpError && !signUpError.message.includes('already registered')) {
+      btn.textContent = 'Create School Account →'; btn.disabled = false;
+      alertEl.style.display = 'block';
+      alertEl.style.background = '#FCEBEB';
+      alertEl.style.color = '#A32D2D';
+      alertEl.textContent = '⚠️ Auth error: ' + signUpError.message;
+      return;
+    }
+  }
+
+  // Step 2: Add school to schools table
+  const { error: dbError } = await db.from('schools').insert([{
+    school_id: schoolId,
+    name, type,
+    city,
+    district: document.getElementById('as-district').value.trim(),
+    phone: document.getElementById('as-phone').value.trim(),
+    admin_name: adminName,
+    admin_email: email,
+    plan,
+    status: 'active',
+    registered_at: new Date().toISOString()
+  }]);
+
+  btn.textContent = 'Create School Account →'; btn.disabled = false;
+
+  if (dbError) {
+    alertEl.style.display = 'block';
+    alertEl.style.background = '#FCEBEB';
+    alertEl.style.color = '#A32D2D';
+    alertEl.textContent = '⚠️ DB error: ' + dbError.message;
+    return;
+  }
+
+  // Success — show WhatsApp message
+  alertEl.style.display = 'block';
+  alertEl.style.background = '#E8F5EB';
+  alertEl.style.color = '#2D7A3A';
+  alertEl.textContent = '✅ School account created successfully!';
+
+  const planNames = { basic:'Basic (₹2,499/month)', standard:'Standard (₹3,999/month)', premium:'Premium (₹5,999/month)', unlimited:'Unlimited (₹8,999/month)' };
+  const waMsg = `🏫 *DigiSmart ERP — Your Account is Ready!*
+
+Dear ${adminName},
+
+Your school's DigiSmart ERP account has been activated.
+
+*Login Details:*
+🌐 Website: https://erp-digismart.vercel.app
+📧 Email: ${email}
+🔑 Password: ${password}
+
+*Your Plan:* ${planNames[plan] || plan}
+*School ID:* ${schoolId}
+
+*Steps to get started:*
+1. Open the website link above
+2. Click "School Login"
+3. Enter your email and password
+4. You will enter your school dashboard
+
+Please change your password after first login.
+
+For any help, contact us on WhatsApp.
+_Powered by DigiSmart ERP_`;
+
+  document.getElementById('as-wa-text').textContent = waMsg;
+  document.getElementById('as-whatsapp-msg').style.display = 'block';
+
+  // Reload school list
+  await loadSA();
+}
+
+function copyWAText() {
+  const text = document.getElementById('as-wa-text').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('WhatsApp message copied!'));
+}
+
+async function loadDemoRequests() {
+  const { data } = await db.from('demo_requests').select('*').order('requested_at',{ascending:false}).limit(10);
+  const el = document.getElementById('demo-requests-list');
+  if (!data || data.length === 0) { el.innerHTML = '<div style="color:#9B928A;padding:12px 0">No demo requests yet.</div>'; return; }
+  el.innerHTML = data.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-weight:600;font-size:13px">${r.school_name}</div>
+        <div style="font-size:12px;color:#6B6560">${r.contact_name} · 📱 ${r.mobile} · ${r.city||''}</div>
+        <div style="font-size:11px;color:#9B928A">${r.students||''} · ${r.plan||''}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:10px;color:#9B928A">${r.requested_at ? new Date(r.requested_at).toLocaleDateString('en-IN') : ''}</span>
+        <button onclick="openAddSchoolModal();document.getElementById('as-admin-name').value='${(r.contact_name||'').replace(/'/g,"\'")}';document.getElementById('as-name').value='${(r.school_name||'').replace(/'/g,"\'")}';document.getElementById('as-city').value='${(r.city||'').replace(/'/g,"\'")}'" style="padding:4px 10px;background:var(--maroon);color:var(--sandal);border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">Add School</button>
+      </div>
+    </div>
+  `).join('');
 }
 
 function toast(msg) {
