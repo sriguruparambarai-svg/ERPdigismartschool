@@ -433,6 +433,14 @@ const SUPER_ADMIN = 'sriguruparambarai@gmail.com';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let allSchools = [];
 
+// ── PASSWORD HASHING (SHA-256, built into browser — no library needed) ──
+async function hashPassword(pw) {
+  const msgBuffer = new TextEncoder().encode(pw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ── SHOW PAGE ──
 function show(name) {
   document.querySelectorAll('.pg').forEach(el => {
@@ -461,7 +469,7 @@ async function handleUser(user) {
     show('super-admin');
     await loadSA();
   } else {
-    const { data: school } = await db.from('schools').select('*').eq('admin_email', user.email).single();
+    const { data: school } = await db.from('schools').select('*').eq('email', user.email).single();
     if (school) {
       sessionStorage.setItem('digismart_school_id', school.school_id);
       sessionStorage.setItem('digismart_school_code', school.school_code); // ← NEW: for RLS security
@@ -500,7 +508,7 @@ async function doLogin() {
   const { data: school, error: schoolErr } = await db
     .from('schools')
     .select('*')
-    .eq('admin_email', email)
+    .eq('email', email)
     .single();
 
   if (schoolErr || !school) {
@@ -509,37 +517,39 @@ async function doLogin() {
     return;
   }
 
-  // Check password against schools table
-  if (!school.admin_password) {
-    // No password set yet — try Supabase Auth as fallback
-    const { data: authData, error: authErr } = await db.auth.signInWithPassword({ email, password: pw });
+  // Check password — use Supabase Auth (primary) or password_hash column
+  if (!school.password_hash) {
+    // No password set in schools table yet — use Supabase Auth
+    const { error: authErr } = await db.auth.signInWithPassword({ email, password: pw });
     if (authErr) {
       btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Incorrect password. Please contact DigiSmart ERP to reset your password.', 'err');
+      setA('login-alert', '⚠️ Incorrect password. Please contact DigiSmart ERP support.', 'err');
       return;
     }
   } else {
-    // Check password stored in schools table
-    if (school.admin_password !== pw) {
+    // Hash what user typed and compare with stored hash
+    const enteredHash = await hashPassword(pw);
+    if (school.password_hash !== enteredHash) {
       btn.textContent = 'Sign In →'; btn.disabled = false;
       setA('login-alert', '⚠️ Incorrect password. Please try again or contact support.', 'err');
       return;
     }
   }
 
-  // Check if school is active
-  if (school.status === 'suspended') {
+  // Check if school is active (use subscription_status — actual column name)
+  const schoolStatus = school.subscription_status || school.status;
+  if (schoolStatus === 'suspended') {
     btn.textContent = 'Sign In →'; btn.disabled = false;
     setA('login-alert', '⚠️ Your school account is suspended. Please contact DigiSmart ERP support.', 'err');
     return;
   }
 
   // Check if demo has expired
-  if (school.status === 'demo' && school.demo_expires) {
+  if (schoolStatus === 'demo' && school.demo_expires) {
     const today = new Date().toISOString().split('T')[0];
     if (school.demo_expires < today) {
       // Auto-suspend expired demo
-      await db.from('schools').update({status:'suspended'}).eq('school_id', school.school_id);
+      await db.from('schools').update({subscription_status:'suspended'}).eq('school_code', school.school_code);
       btn.textContent = 'Sign In →'; btn.disabled = false;
       setA('login-alert', '⚠️ Your demo period has ended. Please contact DigiSmart ERP to purchase a plan.', 'err');
       return;
@@ -549,8 +559,8 @@ async function doLogin() {
   btn.textContent = 'Sign In →'; btn.disabled = false;
 
   // Login successful
-  sessionStorage.setItem('digismart_school_id', school.school_id);
-  sessionStorage.setItem('digismart_school_code', school.school_code); // ← NEW: for RLS security
+  sessionStorage.setItem('digismart_school_id', school.school_code || school.school_id);
+  sessionStorage.setItem('digismart_school_code', school.school_code);
   sessionStorage.setItem('school_name', school.name);
   sessionStorage.setItem('school_email', email);
   toast('Welcome! Loading ' + school.name + '...');
@@ -597,11 +607,11 @@ async function doLogout() { await db.auth.signOut(); sessionStorage.clear(); sho
 
 // ── SUPER ADMIN ──
 async function loadSA() {
-  const { data: schools } = await db.from('schools').select('*').order('registered_at', { ascending: false });
+  const { data: schools } = await db.from('schools').select('*').order('created_at', { ascending: false });
   allSchools = schools || [];
   const { count: demoCount } = await db.from('demo_requests').select('id', { count: 'exact', head: true });
-  const active = allSchools.filter(s => s.status === 'active').length;
-  const rev = allSchools.filter(s => s.status === 'active').reduce((sum, s) => {
+  const active = allSchools.filter(s => (s.subscription_status||s.status) === 'active').length;
+  const rev = allSchools.filter(s => (s.subscription_status||s.status) === 'active').reduce((sum, s) => {
     return sum + ({ basic: 2499, standard: 3999, premium: 5999 }[s.plan] || 3999);
   }, 0);
   document.getElementById('sa-n-total').textContent = allSchools.length;
@@ -610,9 +620,9 @@ async function loadSA() {
   document.getElementById('sa-n-rev').textContent = '₹' + rev.toLocaleString('en-IN');
   // Auto-suspend expired demo accounts
   const today = new Date().toISOString().split('T')[0];
-  const expiredDemos = allSchools.filter(s => s.status === 'demo' && s.demo_expires && s.demo_expires < today);
+  const expiredDemos = allSchools.filter(s => (s.subscription_status||s.status) === 'demo' && s.demo_expires && s.demo_expires < today);
   for (const s of expiredDemos) {
-    await db.from('schools').update({status:'suspended'}).eq('school_id', s.school_id);
+    await db.from('schools').update({subscription_status:'suspended'}).eq('school_code', s.school_code);
   }
   if (expiredDemos.length > 0) {
     toast(expiredDemos.length + ' expired demo account(s) suspended automatically.');
@@ -633,20 +643,20 @@ function renderSA(list) {
   }
   tbody.innerHTML = list.map(s => `
     <tr>
-      <td><div style="font-weight:600">${s.name}</div><div style="font-size:10px;color:#9B928A">${s.school_id}</div></td>
+      <td><div style="font-weight:600">${s.name}</div><div style="font-size:10px;color:#9B928A">${s.school_code}</div></td>
       <td>${s.city || '—'}</td>
-      <td style="color:#185FA5;font-size:11px">${s.admin_email}</td>
+      <td style="color:#185FA5;font-size:11px">${s.email}</td>
       <td><span class="plan-b">${s.plan || 'standard'}</span></td>
       <td>
-        <span class="sbadge ${s.status === 'active' ? 's-active' : s.status === 'demo' ? 's-trial' : 's-suspended'}">${s.status}</span>
+        <span class="sbadge ${(s.subscription_status||s.status) === 'active' ? 's-active' : (s.subscription_status||s.status) === 'demo' ? 's-trial' : 's-suspended'}">${s.subscription_status||s.status||'active'}</span>
         ${s.demo_expires ? `<div style="font-size:10px;color:#8B5E00;margin-top:2px">Expires: ${s.demo_expires}</div>` : ''}
       </td>
-      <td style="font-size:11px;color:#9B928A">${s.registered_at ? new Date(s.registered_at).toLocaleDateString('en-IN') : '—'}</td>
+      <td style="font-size:11px;color:#9B928A">${s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN') : '—'}</td>
       <td>
         <div style="display:flex;gap:4px">
-          ${s.status !== 'active' ? `<button onclick="changeStatus('${s.school_id}','active')" style="padding:3px 8px;background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600">Activate</button>` : ''}
-          ${s.status !== 'suspended' ? `<button onclick="changeStatus('${s.school_id}','suspended')" style="padding:3px 8px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Suspend</button>` : ''}
-          <button onclick="delSchool('${s.school_id}')" style="padding:3px 7px;background:#F1EFE8;color:#888;border:1px solid #ddd;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Del</button>
+          ${(s.subscription_status||s.status) !== 'active' ? `<button onclick="changeStatus('${s.school_code}','active')" style="padding:3px 8px;background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600">Activate</button>` : ''}
+          ${(s.subscription_status||s.status) !== 'suspended' ? `<button onclick="changeStatus('${s.school_code}','suspended')" style="padding:3px 8px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Suspend</button>` : ''}
+          <button onclick="delSchool('${s.school_code}')" style="padding:3px 7px;background:#F1EFE8;color:#888;border:1px solid #ddd;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Del</button>
         </div>
       </td>
     </tr>
@@ -663,7 +673,7 @@ function filterSA() {
 }
 
 async function changeStatus(id, status) {
-  await db.from('schools').update({ status }).eq('school_id', id);
+  await db.from('schools').update({ subscription_status: status }).eq('school_code', id);
   toast(status === 'active' ? '✅ School activated!' : 'School suspended.');
   await loadSA();
 }
@@ -737,6 +747,9 @@ async function addSchool() {
 
   const schoolId = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 20) + '-' + Date.now().toString(36);
 
+  // Hash the password before saving — never store plain text
+  const hashedPw = await hashPassword(pw);
+
   // Create auth user via signUp (email confirmation must be OFF in Supabase)
   const { error: authErr } = await db.auth.signUp({ 
     email, 
@@ -749,17 +762,22 @@ async function addSchool() {
     setA('add-alert', '⚠️ Auth error: ' + authErr.message + ' — Make sure Confirm Email is OFF in Supabase Auth settings.', 'err'); return;
   }
 
-  // Add to schools table — store password so login works without email confirmation
+  // Add to schools table — store HASHED password (never plain text)
   const { error: dbErr } = await db.from('schools').insert([{
-    school_id: schoolId, name,
+    school_code: schoolId,
+    school_id: schoolId,
+    name,
     type: document.getElementById('as-type').value,
-    city, admin_name: admin, admin_email: email,
-    admin_password: pw,
+    city,
+    admin_name: admin,
+    email: email,
+    password_hash: hashedPw,
     plan,
+    subscription_status: document.getElementById('as-is-demo')?.checked ? 'demo' : 'active',
     status: document.getElementById('as-is-demo')?.checked ? 'demo' : 'active',
     demo_expires: document.getElementById('as-is-demo')?.checked ? 
       new Date(Date.now() + (parseInt(document.getElementById('as-demo-days')?.value||7)) * 24*60*60*1000).toISOString().split('T')[0] : null,
-    registered_at: new Date().toISOString()
+    created_at: new Date().toISOString()
   }]);
 
   btn.textContent = 'Create School Account →'; btn.disabled = false;
