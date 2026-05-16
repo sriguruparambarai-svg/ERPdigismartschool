@@ -464,6 +464,7 @@ async function handleUser(user) {
     const { data: school } = await db.from('schools').select('*').eq('admin_email', user.email).single();
     if (school) {
       sessionStorage.setItem('digismart_school_id', school.school_id);
+      sessionStorage.setItem('digismart_school_code', school.school_code); // ← NEW: for RLS security
       sessionStorage.setItem('school_name', school.name);
       toast('Welcome! Loading ' + school.name + '...');
       setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
@@ -549,6 +550,7 @@ async function doLogin() {
 
   // Login successful
   sessionStorage.setItem('digismart_school_id', school.school_id);
+  sessionStorage.setItem('digismart_school_code', school.school_code); // ← NEW: for RLS security
   sessionStorage.setItem('school_name', school.name);
   sessionStorage.setItem('school_email', email);
   toast('Welcome! Loading ' + school.name + '...');
