@@ -4,8 +4,8 @@
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
 
-// For now, one school ID. When we add multi-school login, this will come from the logged-in school.
-const SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ark-global-001';
+// School ID comes from login session. Fallback = ARK Global School.
+const SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ARK2024';
 
 // Initialize Supabase client
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
