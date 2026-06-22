@@ -92,7 +92,7 @@
             <!-- FACE RECOGNITION MODE -->
             <div id="panel-face">
               <div id="models-status" style="text-align:center;padding:8px;background:#FFF8F0;border-radius:8px;font-size:12px;color:#8B5E00;margin-bottom:10px">
-                ⏳ Loading AI face models... please wait
+                ⏳ Loading AI face models... please wait (first time takes ~15 seconds)
               </div>
               <div class="camera-box" id="camera-box">
                 <video id="video" autoplay playsinline muted></video>
@@ -210,7 +210,10 @@
 const CHECKIN_CUTOFF = '08:30';
 const CHECKOUT_EARLY = '16:00';
 const MATCH_THRESHOLD = 0.45; // Lower = stricter matching
-const MODELS_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights';
+const MODELS_URLS = [
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights',
+  'https://justadudewhohacks.github.io/face-api.js/weights'
+];
 
 let videoStream = null;
 let enrollStream = null;
@@ -236,19 +239,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── Load face-api.js models in background ──
 async function loadFaceModels() {
-  try {
-    await Promise.all([
-      faceapi.nets.ssdMobilenetv1.loadFromUri(MODELS_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODELS_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODELS_URL),
-    ]);
-    modelsLoaded = true;
-    document.getElementById('models-status').style.display = 'none';
-    await buildFaceMatchers();
-  } catch(e) {
-    document.getElementById('models-status').textContent = '⚠️ Could not load AI models. Check internet connection.';
-    document.getElementById('models-status').style.background = '#FCEBEB';
-    document.getElementById('models-status').style.color = '#A32D2D';
+  const statusEl = document.getElementById('models-status');
+  for (let i = 0; i < MODELS_URLS.length; i++) {
+    const url = MODELS_URLS[i];
+    try {
+      statusEl.textContent = '⏳ Loading AI face models... (' + (i===0?'primary':'backup') + ' server)';
+      await Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(url),
+        faceapi.nets.faceLandmark68Net.loadFromUri(url),
+        faceapi.nets.faceRecognitionNet.loadFromUri(url),
+      ]);
+      modelsLoaded = true;
+      statusEl.style.display = 'none';
+      await buildFaceMatchers();
+      return; // success
+    } catch(e) {
+      if (i < MODELS_URLS.length - 1) continue; // try next URL
+      // All failed
+      statusEl.innerHTML = '⚠️ Could not load AI models. <button onclick="loadFaceModels()" style="background:#6B1A1A;color:#fff;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px;margin-left:8px">Retry</button>';
+      statusEl.style.background = '#FCEBEB';
+      statusEl.style.color = '#A32D2D';
+    }
   }
 }
 
@@ -306,7 +317,10 @@ function setMode(mode) {
 
 // ── START REAL FACE RECOGNITION ──
 async function startRecognition() {
-  if (!modelsLoaded) { showToast('AI models still loading, please wait...','error'); return; }
+  if (!modelsLoaded) { 
+    showToast('AI models still loading. Wait 15 seconds then try again, or check your internet connection.','error'); 
+    return; 
+  }
   if (faceMatchers.length === 0) {
     showToast('No faces enrolled yet! Go to "Enroll Face" tab first.','error');
     return;
