@@ -1,8 +1,8 @@
 // DigiSmart ERP — Supabase Configuration
 // This file connects the app to your Supabase database
 
-const SUPABASE_URL = 'https://pzxosqukijwpjdlfdfst.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_AeMrzyinAl4n2AifhC-j3A_wRh_nda3';
+const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
 
 // For now, one school ID. When we add multi-school login, this will come from the logged-in school.
 const SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ark-global-001';
