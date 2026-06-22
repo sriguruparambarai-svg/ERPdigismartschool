@@ -2,837 +2,240 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DigiSmart ERP — School Management System</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#6B1A1A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DigiSmart ERP">
+<link rel="manifest" href="../manifest.json">
+<link rel="apple-touch-icon" href="../assets/icons/icon-192.png">
+<title>Parent Portal — DigiSmart ERP</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:100vh}
-:root{--maroon:#6B1A1A;--md:#4A1010;--gold:#C9A84C;--sandal:#F5E6C8;--sl:#FDF8F0;--white:#fff;--border:#E8E0D5;--muted:#6B6560}
-/* SCREENS */
-.pg{display:none}.pg.on{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:20px}
-#pg-landing.on{display:flex;flex-direction:column}
-#pg-super-admin.on{display:flex;flex-direction:column;min-height:100vh}
-/* NAV */
-.land-nav{background:#fff;border-bottom:1px solid var(--border);padding:0 40px;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
-.logo-box{width:38px;height:38px;background:var(--maroon);border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:14px;font-weight:700}
-.logo-name{font-size:18px;font-weight:800;color:var(--maroon)}
-.logo-sub{font-size:10px;color:var(--muted)}
-/* HERO */
-.hero{flex:1;display:flex;align-items:center;justify-content:center;padding:60px 40px;background:linear-gradient(135deg,#fff,#FDF8F0,#F5E6C8)}
-.hero-inner{max-width:1000px;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
-.badge-pill{display:inline-flex;gap:6px;background:var(--sandal);color:var(--maroon);font-size:11px;font-weight:700;padding:5px 14px;border-radius:20px;margin-bottom:18px;border:1px solid #E8D8B8}
-.hero-h1{font-size:44px;font-weight:800;color:var(--maroon);line-height:1.12;margin-bottom:16px}
-.hero-h1 em{color:var(--gold);font-style:normal}
-.hero-p{font-size:15px;color:var(--muted);line-height:1.75;margin-bottom:28px}
-.btn-p{padding:13px 28px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:all .2s}
-.btn-p:hover{background:var(--md);transform:translateY(-1px)}
-.btn-s{padding:13px 28px;background:#fff;color:var(--maroon);border:2px solid var(--maroon);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer}
-.btn-s:hover{background:var(--sl)}
-.hstat-n{font-size:26px;font-weight:800;color:var(--maroon)}
-.hstat-l{font-size:11px;color:var(--muted);margin-top:1px}
-.mods-card{background:#fff;border-radius:16px;border:1px solid var(--border);padding:20px;box-shadow:0 8px 40px rgba(107,26,26,.08)}
-.mods-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.mod-tile{background:var(--sl);border-radius:8px;padding:9px 10px;display:flex;align-items:center;gap:7px;font-size:11px;font-weight:500;color:var(--maroon);border:1px solid #E8D8B8}
-/* SECTIONS */
-.section{padding:70px 40px}.section.alt{background:#fff}
-.section-inner{max-width:1000px;margin:0 auto}
-.sec-eyebrow{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
-.sec-h2{font-size:30px;font-weight:800;color:var(--maroon);margin-bottom:40px}
-.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-.feat-card{border:1px solid var(--border);border-radius:14px;padding:22px;background:#fff}
-.feat-card:hover{border-color:var(--gold)}
-/* PRICING */
-.p-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:40px}
-.p-card{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:24px;position:relative}
-.p-card.pop{border-color:var(--gold);border-width:2px}
-.p-tag{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--gold);color:var(--maroon);font-size:10px;font-weight:700;padding:3px 14px;border-radius:20px;white-space:nowrap}
-.p-name{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
-.p-price{font-size:34px;font-weight:800;color:var(--maroon)}
-.p-period{font-size:12px;color:var(--muted);margin-bottom:18px}
-.p-feat{font-size:12px;color:var(--muted);padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px}
-.p-feat:last-child{border-bottom:none}
-.btn-plan{width:100%;padding:10px;background:var(--maroon);color:var(--sandal);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-top:18px;font-family:inherit}
-.btn-plan:hover{background:var(--md)}
-/* FOOTER */
-.land-footer{background:var(--maroon);padding:32px 40px;text-align:center;color:rgba(245,230,200,.6);font-size:12px}
-.land-footer a{color:var(--gold);text-decoration:none}
-/* AUTH */
-.auth-wrap{background:#fff;border-radius:16px;border:1px solid var(--border);padding:32px;width:100%;max-width:460px;box-shadow:0 8px 40px rgba(107,26,26,.08)}
-.auth-wrap.wide{max-width:560px}
-.auth-head{display:flex;align-items:center;gap:10px;margin-bottom:24px}
-.auth-h{font-size:22px;font-weight:800;color:var(--maroon);margin-bottom:6px}
-.auth-sub{font-size:13px;color:var(--muted);margin-bottom:22px}
-.lbl{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;display:block}
-.inp{width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;color:#1A1A1A;background:#fff;margin-bottom:13px;font-family:inherit}
-.inp:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.12)}
-.inp-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.btn-submit{width:100%;padding:12px;background:var(--maroon);color:var(--sandal);border:none;border-radius:9px;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;font-family:inherit}
-.btn-submit:hover{background:var(--md)}
-.btn-submit:disabled{opacity:.55;cursor:not-allowed}
-.aalert{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;display:none}
-.aalert.err{background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;display:block}
-.aalert.ok{background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;display:block}
-.afoot{text-align:center;font-size:12px;color:var(--muted);margin-top:12px}
-.alink{color:var(--maroon);font-weight:700;cursor:pointer}
-.alink:hover{text-decoration:underline}
-.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;margin:12px 0}
-.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
-.demo-box{background:var(--sl);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);border:1px solid #E8D8B8;margin-bottom:12px}
-/* SUPER ADMIN */
-.sa-top{background:var(--maroon);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.sa-top-title{font-size:15px;font-weight:700;color:var(--sandal)}
-.sa-body{padding:24px;flex:1;overflow-y:auto}
-.sa-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}
-.sa-stat{background:#fff;border:1px solid var(--border);border-radius:14px;padding:16px}
-.sa-stat-l{font-size:11px;color:var(--muted);margin-bottom:6px}
-.sa-stat-v{font-size:26px;font-weight:800;color:var(--maroon)}
-.sa-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px}
-.sa-table{width:100%;border-collapse:collapse;font-size:12px}
-.sa-table th{text-align:left;padding:9px 12px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;background:#F7F4F0;border-bottom:1px solid var(--border)}
-.sa-table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
-.sa-table tr:last-child td{border-bottom:none}
-.sa-table tr:hover td{background:#FDF8F0}
-.sbadge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 9px;border-radius:12px}
-.s-active{background:#E8F5EB;color:#2D7A3A}
-.s-suspended{background:#FCEBEB;color:#A32D2D}
-.s-trial{background:#FFF8E6;color:#8B5E00}
-.s-demo{background:#FFF8E6;color:#8B5E00}
-.s-trial{background:#FFF8E6;color:#8B5E00}
-.plan-b{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;background:var(--sandal);color:var(--maroon)}
-/* MODAL */
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:center;justify-content:center;padding:20px}
-.modal-bg.on{display:flex}
-.modal-box{background:#fff;border-radius:16px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto}
-.modal-title{font-size:17px;font-weight:800;color:var(--maroon);margin-bottom:18px}
-/* LOADER */
-#loader{position:fixed;inset:0;background:#F7F4F0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:14px}
-.loader-box{width:52px;height:52px;background:var(--maroon);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:20px;font-weight:800}
-.loader-bar{width:40px;height:3px;background:#E8E0D5;border-radius:2px;overflow:hidden}
-.loader-fill{width:100%;height:100%;background:var(--maroon);border-radius:2px;animation:slide 1s ease-in-out infinite}
-@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F7F4F0;min-height:100vh;display:flex;flex-direction:column}
+:root{--maroon:#6B1A1A;--gold:#C9A84C;--sandal:#F5E6C8;--border:#E8E0D5;--white:#fff}
+
+.top-bar{background:var(--maroon);padding:env(safe-area-inset-top,0) 0 0;position:sticky;top:0;z-index:100}
+.top-inner{height:56px;display:flex;align-items:center;justify-content:center;padding:0 16px}
+.top-title{font-size:16px;font-weight:700;color:var(--sandal)}
+
+.hero-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px}
+
+.school-badge{width:80px;height:80px;border-radius:20px;background:var(--maroon);display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:28px;font-weight:800;margin:0 auto 16px;box-shadow:0 8px 24px rgba(107,26,26,.2)}
+.welcome-title{font-size:22px;font-weight:800;color:var(--maroon);text-align:center;margin-bottom:6px}
+.welcome-sub{font-size:13px;color:#6B6560;text-align:center;margin-bottom:32px;line-height:1.6}
+
+.login-card{background:var(--white);border-radius:20px;padding:24px;width:100%;max-width:400px;box-shadow:0 4px 24px rgba(107,26,26,.1);border:1px solid var(--border)}
+.login-card h2{font-size:16px;font-weight:700;color:var(--maroon);margin-bottom:18px;text-align:center}
+
+.input-group{margin-bottom:16px}
+.input-label{font-size:12px;font-weight:600;color:#6B6560;margin-bottom:6px;display:block}
+.input-wrap{position:relative;display:flex;align-items:center}
+.input-icon{position:absolute;left:12px;font-size:16px;color:#9B928A;pointer-events:none}
+.inp{width:100%;padding:12px 12px 12px 40px;border:1.5px solid var(--border);border-radius:12px;font-size:14px;color:#1A1A1A;background:var(--white);-webkit-appearance:none;font-family:inherit}
+.inp:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(201,168,76,.15)}
+.inp.pw{padding-right:44px}
+.pw-toggle{position:absolute;right:12px;font-size:16px;cursor:pointer;color:#9B928A;padding:4px;background:none;border:none}
+
+.btn-login{width:100%;padding:14px;background:var(--maroon);color:var(--sandal);border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s;margin-top:4px}
+.btn-login:active{transform:scale(.98);background:#4A1010}
+.btn-login:disabled{opacity:.6;cursor:not-allowed}
+
+.alert-box{padding:11px 14px;border-radius:10px;font-size:13px;margin-bottom:14px;display:none;align-items:flex-start;gap:8px}
+.alert-box.err{background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;display:flex}
+.alert-box.ok{background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;display:flex}
+
+.help-text{font-size:12px;color:#9B928A;text-align:center;margin-top:16px;line-height:1.6}
+.help-text b{color:var(--maroon)}
+
+.install-banner{background:var(--sandal);border:1px solid #E8D8B8;border-radius:12px;padding:12px 14px;margin-top:16px;display:none;align-items:center;gap:10px;max-width:400px;width:100%}
+.install-banner.show{display:flex}
+.install-icon{font-size:24px;flex-shrink:0}
+.install-text{font-size:12px;color:var(--maroon);line-height:1.5;flex:1}
+.btn-install{padding:7px 14px;background:var(--maroon);color:var(--sandal);border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;font-family:inherit}
+
+.school-name-display{font-size:13px;font-weight:600;color:var(--maroon);text-align:center;margin-bottom:20px;background:var(--sandal);padding:6px 16px;border-radius:20px;display:inline-block}
+
+.forgot-link{text-align:center;margin-top:12px;font-size:12px;color:#6B6560}
+.forgot-link span{color:var(--maroon);font-weight:600;cursor:pointer}
 </style>
 </head>
 <body>
 
-<!-- LOADER -->
-<div id="loader">
-  <div class="loader-box">DS</div>
-  <div style="font-size:16px;font-weight:700;color:var(--maroon)">DigiSmart ERP</div>
-  <div class="loader-bar"><div class="loader-fill"></div></div>
-</div>
-
-<!-- ══ LANDING ══ -->
-<div id="pg-landing" class="pg">
-  <nav class="land-nav">
-    <div style="display:flex;align-items:center;gap:10px;cursor:pointer" onclick="show('landing')">
-      <div class="logo-box">DS</div>
-      <div><div class="logo-name">DigiSmart ERP</div><div class="logo-sub">School Management System</div></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:13px;color:var(--muted);cursor:pointer;padding:6px 12px" onclick="document.getElementById('features').scrollIntoView({behavior:'smooth'})">Features</span>
-      <span style="font-size:13px;color:var(--muted);cursor:pointer;padding:6px 12px" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})">Pricing</span>
-      <button onclick="show('login')" style="padding:8px 18px;background:#fff;border:1.5px solid var(--maroon);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--maroon);font-family:inherit">Login</button>
-      <button onclick="show('contact')" style="padding:8px 18px;background:var(--maroon);border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:var(--sandal);font-family:inherit">Get Demo →</button>
-    </div>
-  </nav>
-
-  <div class="hero">
-    <div class="hero-inner">
-      <div>
-        <div class="badge-pill">🏆 Built for Tamil Nadu Schools</div>
-        <h1 class="hero-h1">Complete School ERP<br>for <em>Every School</em></h1>
-        <p class="hero-p">Manage admissions, attendance, fees, exams, salary, transport and more — all in one place. Built for Tamil Nadu schools, LKG to Class 12.</p>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:32px">
-          <button class="btn-p" onclick="show('contact')">Get a Demo →</button>
-          <button class="btn-s" onclick="show('login')">School Login →</button>
-        </div>
-        <div style="display:flex;gap:28px;flex-wrap:wrap">
-          <div><div class="hstat-n">13+</div><div class="hstat-l">Modules</div></div>
-          <div><div class="hstat-n">LKG–12</div><div class="hstat-l">All Classes</div></div>
-          <div><div class="hstat-n">Tamil</div><div class="hstat-l">& English</div></div>
-          <div><div class="hstat-n">Cloud</div><div class="hstat-l">Based</div></div>
-        </div>
-      </div>
-      <div class="mods-card">
-        <div style="font-size:12px;font-weight:700;color:var(--maroon);margin-bottom:12px">All 13 Modules Included</div>
-        <div class="mods-grid">
-          <div class="mod-tile">📝 Admission</div><div class="mod-tile">✅ Attendance</div><div class="mod-tile">📷 Face Recog.</div>
-          <div class="mod-tile">💰 Fee Mgmt</div><div class="mod-tile">👥 HRM & Salary</div><div class="mod-tile">📄 Exam Results</div>
-          <div class="mod-tile">🚌 Transport</div><div class="mod-tile">📍 GPS Track</div><div class="mod-tile">🪪 I-Card</div>
-          <div class="mod-tile">🗓 Timetable</div><div class="mod-tile">🧾 Billing</div><div class="mod-tile">📣 Communication</div>
-        </div>
-        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:10px;color:var(--muted)">
-          <span>✓ No installation</span><span>✓ Any device</span><span>✓ Secure cloud</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <section class="section alt" id="features">
-    <div class="section-inner">
-      <div class="sec-eyebrow">Why DigiSmart ERP</div>
-      <div class="sec-h2">Everything your school needs</div>
-      <div class="feat-grid">
-        <div class="feat-card"><div style="font-size:30px;margin-bottom:12px">🇮🇳</div><div style="font-size:14px;font-weight:700;color:var(--maroon);margin-bottom:6px">Built for Tamil Nadu</div><div style="font-size:12px;color:var(--muted);line-height:1.65">Designed for CBSE and State Board schools. Supports Tamil names, local fee patterns, TN curriculum structure.</div></div>
-        <div class="feat-card"><div style="font-size:30px;margin-bottom:12px">📱</div><div style="font-size:14px;font-weight:700;color:var(--maroon);margin-bottom:6px">Works on Any Device</div><div style="font-size:12px;color:var(--muted);line-height:1.65">Open the browser and log in — from computer, tablet or phone. No installation needed.</div></div>
-        <div class="feat-card"><div style="font-size:30px;margin-bottom:12px">🔒</div><div style="font-size:14px;font-weight:700;color:var(--maroon);margin-bottom:6px">Secure & Private</div><div style="font-size:12px;color:var(--muted);line-height:1.65">Each school's data is completely separate. Bank-level security. Your data belongs only to you.</div></div>
-        <div class="feat-card"><div style="font-size:30px;margin-bottom:12px">🤖</div><div style="font-size:14px;font-weight:700;color:var(--maroon);margin-bottom:6px">AI-Powered Reports</div><div style="font-size:12px;color:var(--muted);line-height:1.65">Auto-generate student remarks on report cards using AI. Save hours of work every term.</div></div>
-        <div class="feat-card"><div style="font-size:30px;margin-bottom:12px">⚙️</div><div style="font-size:14px;font-weight:700;color:var(--maroon);margin-bottom:6px">Fully Customizable</div><div style="font-size:12px;color:var(--muted);line-height:1.65">Set your own fee structure, grading scale, salary components and timetable for your school.</div></div>
-        <div class="feat-card"><div style="font-size:30px;margin-bottom:12px">💬</div><div style="font-size:14px;font-weight:700;color:var(--maroon);margin-bottom:6px">Parent Communication</div><div style="font-size:12px;color:var(--muted);line-height:1.65">Send homework, circulars, holiday alerts and consent forms to parents instantly via WhatsApp.</div></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="section" id="pricing">
-    <div class="section-inner" style="text-align:center">
-      <div class="sec-eyebrow">Simple Pricing</div>
-      <div class="sec-h2">One price. All modules. No hidden fees.</div>
-      <div class="p-grid">
-        <div class="p-card">
-          <div class="p-name">Basic Plan</div>
-          <div class="p-price">₹2,499</div>
-          <div class="p-period">per month · up to 300 students</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>All 13 modules</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Up to 300 students</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Up to 20 staff</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Email & WhatsApp support</div>
-          <div class="p-feat"><span style="color:#ccc">✗</span>Custom domain</div>
-          <button class="btn-plan" onclick="show('contact')">Contact to Purchase</button>
-        </div>
-        <div class="p-card pop">
-          <div class="p-tag">Most Popular</div>
-          <div class="p-name">Standard Plan</div>
-          <div class="p-price">₹3,999</div>
-          <div class="p-period">per month · up to 600 students</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>All 13 modules</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Up to 600 students</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Unlimited staff</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Priority support</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Custom domain setup</div>
-          <button class="btn-plan" onclick="show('contact')">Contact to Purchase</button>
-        </div>
-        <div class="p-card">
-          <div class="p-name">Premium Plan</div>
-          <div class="p-price">₹5,999</div>
-          <div class="p-period">per month · up to 1000 students</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>All 13 modules</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Up to 1000 students</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Unlimited staff</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Dedicated support</div>
-          <div class="p-feat"><span style="color:#2D7A3A;font-weight:700">✓</span>Custom domain + branding</div>
-          <button class="btn-plan" onclick="show('contact')">Contact to Purchase</button>
-        </div>
-      </div>
-      <div style="font-size:13px;color:var(--muted);margin-top:20px">Contact us to get started. We will set up your school account within 24 hours.</div>
-    </div>
-  </section>
-
-  <footer class="land-footer">
-    <div>© 2025 <b style="color:var(--gold)">DigiSmart ERP</b> — School Management System · Mayiladuthurai, Tamil Nadu</div>
-    <div style="margin-top:6px">Built with ❤️ for Tamil Nadu schools · <a href="mailto:info@digismartschool.com">info@digismartschool.com</a></div>
-  </footer>
-</div>
-
-<!-- ══ LOGIN ══ -->
-<div id="pg-login" class="pg">
-  <div class="auth-wrap">
-    <div class="auth-head">
-      <div class="logo-box">DS</div>
-      <div><div style="font-size:15px;font-weight:800;color:var(--maroon)">DigiSmart ERP</div><div style="font-size:11px;color:var(--muted)">School Management System</div></div>
-    </div>
-    <div class="auth-h">Welcome back</div>
-    <div class="auth-sub">Sign in to your school dashboard</div>
-    <div id="login-alert" class="aalert"></div>
-    <label class="lbl">Email Address</label>
-    <input type="email" id="login-email" class="inp" placeholder="principal@yourschool.com">
-    <label class="lbl">Password</label>
-    <input type="password" id="login-pw" class="inp" placeholder="Your password" onkeydown="if(event.key==='Enter')doLogin()">
-    <div style="text-align:right;margin-top:-8px;margin-bottom:14px"><span class="alink" onclick="show('forgot')" style="font-size:12px">Forgot password?</span></div>
-    <button class="btn-submit" id="login-btn" onclick="doLogin()">Sign In →</button>
-    <div class="afoot" style="margin-top:14px">Need access? <span class="alink" onclick="show('contact')">Contact us to purchase</span></div>
-    <div class="afoot" style="margin-top:6px"><span class="alink" onclick="show('landing')">← Back to Home</span></div>
+<div class="top-bar">
+  <div class="top-inner">
+    <div class="top-title">Parent Portal</div>
   </div>
 </div>
 
-<!-- ══ CONTACT / GET DEMO ══ -->
-<div id="pg-contact" class="pg">
-  <div class="auth-wrap" style="max-width:480px">
-    <div class="auth-head">
-      <div class="logo-box">DS</div>
-      <div><div style="font-size:15px;font-weight:800;color:var(--maroon)">DigiSmart ERP</div><div style="font-size:11px;color:var(--muted)">Request Demo & Purchase</div></div>
+<div class="hero-wrap">
+  <div class="school-badge" id="school-initials">DS</div>
+  <div class="welcome-title">Parent Portal</div>
+  <div id="school-name-badge" class="school-name-display" style="display:none"></div>
+  <div class="welcome-sub">Sign in to view your child's homework,<br>circulars and school updates</div>
+
+  <div class="login-card">
+    <h2>🔐 Parent Login</h2>
+    <div id="login-alert" class="alert-box"></div>
+
+    <div class="input-group">
+      <label class="input-label">Admission Number</label>
+      <div class="input-wrap">
+        <span class="input-icon">🎫</span>
+        <input type="text" id="adm-no" class="inp" placeholder="e.g. 2025-0042" autocomplete="username" autocapitalize="characters">
+      </div>
     </div>
-    <div class="auth-h">Get Started</div>
-    <div class="auth-sub">Fill this form — we will contact you within 24 hours to set up your school</div>
-    <div id="contact-alert" class="aalert"></div>
-    <label class="lbl">School Name *</label>
-    <input type="text" id="ct-school" class="inp" placeholder="e.g. ARK Global Matriculation School">
-    <label class="lbl">Your Name *</label>
-    <input type="text" id="ct-name" class="inp" placeholder="Principal / Admin name">
-    <label class="lbl">Mobile Number *</label>
-    <input type="tel" id="ct-mobile" class="inp" placeholder="WhatsApp number preferred">
-    <label class="lbl">Email</label>
-    <input type="email" id="ct-email" class="inp" placeholder="your@email.com">
-    <label class="lbl">City / District</label>
-    <input type="text" id="ct-city" class="inp" placeholder="e.g. Mayiladuthurai, Nagapattinam">
-    <label class="lbl">Number of Students</label>
-    <select id="ct-students" class="inp">
-      <option value="">Select range</option>
-      <option>Below 300 students</option>
-      <option>300 to 600 students</option>
-      <option>600 to 1000 students</option>
-      <option>Above 1000 students</option>
-    </select>
-    <label class="lbl">Plan Interested In</label>
-    <select id="ct-plan" class="inp">
-      <option value="">Select plan</option>
-      <option>Basic — ₹2,499/month</option>
-      <option>Standard — ₹3,999/month</option>
-      <option>Premium — ₹5,999/month</option>
-      <option>Not sure — need guidance</option>
-    </select>
-    <button class="btn-submit" id="ct-btn" onclick="submitContact()">Send Request →</button>
-    <div class="afoot" style="margin-top:12px">Already a customer? <span class="alink" onclick="show('login')">Login here</span></div>
-    <div class="afoot" style="margin-top:6px"><span class="alink" onclick="show('landing')">← Back to Home</span></div>
+
+    <div class="input-group">
+      <label class="input-label">Password</label>
+      <div class="input-wrap">
+        <span class="input-icon">🔑</span>
+        <input type="password" id="parent-pw" class="inp pw" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doParentLogin()">
+        <button class="pw-toggle" onclick="togglePw()" id="pw-eye">👁</button>
+      </div>
+    </div>
+
+    <button class="btn-login" id="login-btn" onclick="doParentLogin()">Sign In →</button>
+
+    <div class="forgot-link">
+      Forgot password? <span onclick="showForgot()">Contact your school office</span>
+    </div>
+  </div>
+
+  <div class="help-text">
+    <b>First time login?</b><br>
+    Admission No: Found on your child's I-Card<br>
+    Default Password: Child's date of birth (DDMMYYYY)<br>
+    Example: 15042012 for 15 April 2012
+  </div>
+
+  <!-- PWA Install Banner -->
+  <div class="install-banner" id="install-banner">
+    <div class="install-icon">📱</div>
+    <div class="install-text"><b>Install as App</b><br>Add to home screen for quick access — works like a real app!</div>
+    <button class="btn-install" id="install-btn" onclick="installPWA()">Install</button>
   </div>
 </div>
 
-<!-- ══ FORGOT ══ -->
-<div id="pg-forgot" class="pg">
-  <div class="auth-wrap" style="max-width:400px">
-    <div class="auth-head"><div class="logo-box">DS</div><div><div style="font-size:15px;font-weight:800;color:var(--maroon)">DigiSmart ERP</div></div></div>
-    <div class="auth-h">Reset Password</div>
-    <div class="auth-sub">Enter your email — we'll send a reset link</div>
-    <div id="forgot-alert" class="aalert"></div>
-    <label class="lbl">Email Address</label>
-    <input type="email" id="forgot-email" class="inp" placeholder="your@email.com">
-    <button class="btn-submit" onclick="doForgot()">Send Reset Link</button>
-    <div class="afoot" style="margin-top:16px"><span class="alink" onclick="show('login')">← Back to Login</span></div>
-  </div>
-</div>
-
-<!-- ══ SUPER ADMIN ══ -->
-<div id="pg-super-admin" class="pg">
-  <div class="sa-top">
-    <div class="sa-top-title">DigiSmart ERP — Super Admin</div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <span style="font-size:12px;color:rgba(245,230,200,.6)" id="sa-email-display"></span>
-      <button onclick="doLogout()" style="padding:6px 14px;background:rgba(201,168,76,.15);border:1px solid rgba(201,168,76,.3);border-radius:7px;font-size:12px;color:var(--sandal);cursor:pointer;font-family:inherit">Logout</button>
-    </div>
-  </div>
-  <div class="sa-body">
-    <div class="sa-grid">
-      <div class="sa-stat"><div class="sa-stat-l">Total Schools</div><div class="sa-stat-v" id="sa-n-total">—</div></div>
-      <div class="sa-stat"><div class="sa-stat-l">Active (Paid)</div><div class="sa-stat-v" id="sa-n-active" style="color:#2D7A3A">—</div></div>
-      <div class="sa-stat"><div class="sa-stat-l">Demo Requests</div><div class="sa-stat-v" id="sa-n-demo" style="color:#8B5E00">—</div></div>
-      <div class="sa-stat"><div class="sa-stat-l">Monthly Revenue</div><div class="sa-stat-v" id="sa-n-rev">—</div></div>
-    </div>
-
-    <!-- Schools Table -->
-    <div class="sa-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
-        <div style="font-size:15px;font-weight:700;color:var(--maroon)">All Schools</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="sa-q" class="inp" placeholder="Search..." style="width:180px;padding:7px 10px;font-size:12px;margin-bottom:0" oninput="filterSA()">
-          <select id="sa-sf" class="inp" style="width:120px;padding:7px 10px;font-size:12px;margin-bottom:0" onchange="filterSA()">
-            <option value="">All Status</option><option value="active">Active</option><option value="suspended">Suspended</option>
-          </select>
-          <button onclick="openAddModal()" style="padding:8px 18px;background:var(--maroon);color:var(--sandal);border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Add School</button>
-        </div>
-      </div>
-      <div style="overflow-x:auto">
-        <table class="sa-table">
-          <thead><tr><th>School Name</th><th>City</th><th>Admin Email</th><th>Plan</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead>
-          <tbody id="sa-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Demo Requests -->
-    <div class="sa-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div style="font-size:15px;font-weight:700;color:var(--maroon)">📩 Demo Requests</div>
-        <button onclick="loadSA()" style="padding:6px 14px;background:var(--sl);color:var(--maroon);border:1px solid #E8D8B8;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">Refresh</button>
-      </div>
-      <div id="demo-list">Loading...</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══ ADD SCHOOL MODAL ══ -->
-<div id="add-modal" class="modal-bg">
-  <div class="modal-box">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-      <div class="modal-title">+ Add New School</div>
-      <button onclick="closeAddModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#9B928A;line-height:1">✕</button>
-    </div>
-    <div id="add-alert" class="aalert"></div>
-    <div class="inp-row">
-      <div style="grid-column:1/-1">
-        <label class="lbl">School Name *</label>
-        <input type="text" id="as-name" class="inp" placeholder="e.g. Sri Vidya Matriculation School">
-      </div>
-      <div>
-        <label class="lbl">School Type</label>
-        <select id="as-type" class="inp"><option value="">Select</option><option>Matriculation</option><option>CBSE</option><option>State Board</option><option>ICSE</option><option>Other</option></select>
-      </div>
-      <div>
-        <label class="lbl">City *</label>
-        <input type="text" id="as-city" class="inp" placeholder="e.g. Chennai">
-      </div>
-      <div>
-        <label class="lbl">Admin Name *</label>
-        <input type="text" id="as-admin" class="inp" placeholder="Principal name">
-      </div>
-      <div>
-        <label class="lbl">Admin Email *</label>
-        <input type="email" id="as-email" class="inp" placeholder="principal@school.com">
-      </div>
-      <div>
-        <label class="lbl">Password *</label>
-        <input type="text" id="as-pw" class="inp" placeholder="School@1234" value="School@1234">
-      </div>
-      <div style="grid-column:1/-1">
-        <label class="lbl">Plan *</label>
-        <select id="as-plan" class="inp">
-          <option value="basic">Basic — ₹2,499/month (up to 300 students)</option>
-          <option value="standard" selected>Standard — ₹3,999/month (up to 600 students)</option>
-          <option value="premium">Premium — ₹5,999/month (up to 1000 students)</option>
-        </select>
-      </div>
-      <div style="grid-column:1/-1;background:#FFF8E6;border:1px solid #E8D8B8;border-radius:8px;padding:12px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:#8B5E00">
-          <input type="checkbox" id="as-is-demo" onchange="toggleDemoFields()"> 🎯 This is a Demo Account
-        </label>
-        <div id="demo-fields" style="display:none;margin-top:10px;display:none">
-          <label class="lbl">Demo period (days)</label>
-          <select id="as-demo-days" class="inp" style="margin-top:4px">
-            <option value="3">3 days</option>
-            <option value="7" selected>7 days</option>
-            <option value="14">14 days</option>
-            <option value="30">30 days</option>
-          </select>
-          <div style="font-size:11px;color:#8B5E00;margin-top:6px">After this period, the account will be automatically suspended. You can extend anytime from the schools table.</div>
-        </div>
-      </div>
-    </div>
-    <button id="as-btn" onclick="addSchool()" style="width:100%;padding:13px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:8px">Create School Account →</button>
-    <div id="as-wa" style="display:none;margin-top:16px">
-      <div style="font-size:12px;font-weight:700;color:var(--maroon);margin-bottom:6px">📱 WhatsApp message — copy and send to school:</div>
-      <div id="as-wa-text" style="background:#E8F5EB;border-radius:8px;padding:12px;font-size:12px;line-height:1.7;white-space:pre-wrap;border:1px solid #b8dfc0"></div>
-      <button onclick="copyWA()" style="margin-top:8px;padding:8px 16px;background:#2D7A3A;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">📋 Copy Message</button>
-    </div>
-  </div>
-</div>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
-const SUPER_ADMIN = 'sriguruparambarai@gmail.com';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let allSchools = [];
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── PASSWORD HASHING (SHA-256, built into browser — no library needed) ──
-async function hashPassword(pw) {
-  const msgBuffer = new TextEncoder().encode(pw);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-// ── SHOW PAGE ──
-function show(name) {
-  document.querySelectorAll('.pg').forEach(el => {
-    el.classList.remove('on');
-    el.style.display = 'none';
-  });
-  const t = document.getElementById('pg-' + name);
-  if (!t) return;
-  t.style.display = 'flex';
-  setTimeout(() => t.classList.add('on'), 10);
-}
+let deferredPrompt = null;
+let schoolId = null;
 
 // ── INIT ──
-window.addEventListener('DOMContentLoaded', async () => {
-  show('landing');
-  document.getElementById('loader').style.display = 'none';
-  try {
-    const { data: { session } } = await db.auth.getSession();
-    if (session?.user) await handleUser(session.user);
-  } catch(e) { console.log('Session error:', e); }
+document.addEventListener('DOMContentLoaded', async () => {
+  // Get school from URL param or session
+  const params = new URLSearchParams(window.location.search);
+  schoolId = params.get('school') || sessionStorage.getItem('parent_school_id');
+
+  if (schoolId) {
+    sessionStorage.setItem('parent_school_id', schoolId);
+    await loadSchoolInfo(schoolId);
+  }
+
+  // Check if already logged in
+  const saved = sessionStorage.getItem('parent_session');
+  if (saved) {
+    const sess = JSON.parse(saved);
+    if (sess.school_id === schoolId || !schoolId) {
+      window.location.href = 'dashboard.html';
+      return;
+    }
+  }
+
+  // PWA Install
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); deferredPrompt = e;
+    document.getElementById('install-banner').classList.add('show');
+  });
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('../sw.js').catch(() => {});
+  }
 });
 
-async function handleUser(user) {
-  if (user.email === SUPER_ADMIN) {
-    document.getElementById('sa-email-display').textContent = user.email;
-    show('super-admin');
-    await loadSA();
-  } else {
-    const { data: school } = await db.from('schools').select('*').eq('email', user.email).single();
-    if (school) {
-      sessionStorage.setItem('digismart_school_id', school.school_id);
-      sessionStorage.setItem('digismart_school_code', school.school_code); // ← NEW: for RLS security
-      sessionStorage.setItem('school_name', school.name);
-      toast('Welcome! Loading ' + school.name + '...');
-      setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
-    } else {
-      show('login');
-      setA('login-alert', '⚠️ No school linked to this account.', 'err');
-    }
+async function loadSchoolInfo(sid) {
+  const { data } = await supabase.from('schools').select('name').eq('school_id', sid).single();
+  if (data) {
+    document.getElementById('school-name-badge').textContent = data.name;
+    document.getElementById('school-name-badge').style.display = 'inline-block';
+    document.getElementById('school-initials').textContent = data.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   }
 }
 
-// ── LOGIN ──
-async function doLogin() {
-  const email = document.getElementById('login-email').value.trim().toLowerCase();
-  const pw = document.getElementById('login-pw').value.trim();
+async function doParentLogin() {
+  const admNo = document.getElementById('adm-no').value.trim().toUpperCase();
+  const pw = document.getElementById('parent-pw').value;
   const btn = document.getElementById('login-btn');
-  clearA('login-alert');
-  if (!email || !pw) { setA('login-alert', '⚠️ Please enter email and password.', 'err'); return; }
+  const alertEl = document.getElementById('login-alert');
+  alertEl.className = 'alert-box';
+
+  if (!admNo || !pw) { showAlert('⚠️ Please enter admission number and password.'); return; }
 
   btn.textContent = 'Signing in...'; btn.disabled = true;
 
-  // Super Admin check
-  if (email === SUPER_ADMIN.toLowerCase()) {
-    const { data, error } = await db.auth.signInWithPassword({ email, password: pw });
-    btn.textContent = 'Sign In →'; btn.disabled = false;
-    if (error) { setA('login-alert', '⚠️ Incorrect password for admin account.', 'err'); return; }
-    document.getElementById('sa-email-display').textContent = email;
-    show('super-admin');
-    await loadSA();
-    return;
-  }
+  // Find student by admission number
+  let query = supabase.from('students').select('id,full_name,class,section,school_id,parent_password,dob').eq('admission_no', admNo);
+  if (schoolId) query = query.eq('school_id', schoolId);
 
-  // School login — check schools table directly (no email confirmation needed)
-  const { data: school, error: schoolErr } = await db
-    .from('schools')
-    .select('*')
-    .eq('email', email)
-    .single();
-
-  if (schoolErr || !school) {
-    btn.textContent = 'Sign In →'; btn.disabled = false;
-    setA('login-alert', '⚠️ Email not found. Please check your email or contact DigiSmart ERP support.', 'err');
-    return;
-  }
-
-  // Check password — use Supabase Auth (primary) or password_hash column
-  if (!school.password_hash) {
-    // No password set in schools table yet — use Supabase Auth
-    const { error: authErr } = await db.auth.signInWithPassword({ email, password: pw });
-    if (authErr) {
-      btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Incorrect password. Please contact DigiSmart ERP support.', 'err');
-      return;
-    }
-  } else {
-    // Hash what user typed and compare with stored hash
-    const enteredHash = await hashPassword(pw);
-    if (school.password_hash !== enteredHash) {
-      btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Incorrect password. Please try again or contact support.', 'err');
-      return;
-    }
-  }
-
-  // Check if school is active (use subscription_status — actual column name)
-  const schoolStatus = school.subscription_status || school.status;
-  if (schoolStatus === 'suspended') {
-    btn.textContent = 'Sign In →'; btn.disabled = false;
-    setA('login-alert', '⚠️ Your school account is suspended. Please contact DigiSmart ERP support.', 'err');
-    return;
-  }
-
-  // Check if demo has expired
-  if (schoolStatus === 'demo' && school.demo_expires) {
-    const today = new Date().toISOString().split('T')[0];
-    if (school.demo_expires < today) {
-      // Auto-suspend expired demo
-      await db.from('schools').update({subscription_status:'suspended'}).eq('school_code', school.school_code);
-      btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Your demo period has ended. Please contact DigiSmart ERP to purchase a plan.', 'err');
-      return;
-    }
-  }
-
+  const { data: student, error } = await query.single();
   btn.textContent = 'Sign In →'; btn.disabled = false;
 
-  // Login successful
-  sessionStorage.setItem('digismart_school_id', school.school_code || school.school_id);
-  sessionStorage.setItem('digismart_school_code', school.school_code);
-  sessionStorage.setItem('school_name', school.name);
-  sessionStorage.setItem('school_email', email);
-  toast('Welcome! Loading ' + school.name + '...');
-  setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
+  if (error || !student) { showAlert('⚠️ Admission number not found. Please check and try again.'); return; }
+
+  // Check password — stored hash or default (DOB as DDMMYYYY)
+  const defaultPw = student.dob ? student.dob.replace(/-/g,'').split('').reverse().join('').slice(0,4) + student.dob.replace(/-/g,'').slice(0,4) : '';
+  const dobPw = student.dob ? student.dob.replace(/-/g,'').split('').slice(6,8).join('') + student.dob.replace(/-/g,'').slice(4,6) + student.dob.replace(/-/g,'').slice(0,4) : '';
+
+  // Simple check: stored password OR dob-based default
+  const storedPw = student.parent_password;
+  const isValid = storedPw ? pw === storedPw : (pw === dobPw || pw === student.dob?.replace(/-/g,''));
+
+  if (!isValid) { showAlert('⚠️ Incorrect password. Default password is child\'s date of birth (DDMMYYYY). E.g. 15042012'); return; }
+
+  // Save session
+  sessionStorage.setItem('parent_session', JSON.stringify({
+    student_id: student.id,
+    student_name: student.full_name,
+    class: student.class,
+    section: student.section,
+    admission_no: admNo,
+    school_id: student.school_id,
+  }));
+  sessionStorage.setItem('parent_school_id', student.school_id);
+
+  window.location.href = 'dashboard.html';
 }
 
-// ── CONTACT FORM ──
-async function submitContact() {
-  const school = document.getElementById('ct-school').value.trim();
-  const name = document.getElementById('ct-name').value.trim();
-  const mobile = document.getElementById('ct-mobile').value.trim();
-  const btn = document.getElementById('ct-btn');
-  clearA('contact-alert');
-  if (!school || !name || !mobile) { setA('contact-alert', '⚠️ Please fill school name, your name and mobile number.', 'err'); return; }
-  btn.textContent = 'Sending...'; btn.disabled = true;
-  const { error } = await db.from('demo_requests').insert([{
-    school_name: school, contact_name: name, mobile,
-    email: document.getElementById('ct-email').value.trim(),
-    city: document.getElementById('ct-city').value.trim(),
-    students: document.getElementById('ct-students').value,
-    plan: document.getElementById('ct-plan').value,
-    requested_at: new Date().toISOString()
-  }]);
-  btn.textContent = 'Send Request →'; btn.disabled = false;
-  if (error) { setA('contact-alert', '⚠️ Could not submit. Please call us directly on WhatsApp.', 'err'); return; }
-  setA('contact-alert', '✅ Request sent! We will contact you on WhatsApp within 24 hours. Thank you!', 'ok');
-  document.getElementById('ct-school').value = '';
-  document.getElementById('ct-name').value = '';
-  document.getElementById('ct-mobile').value = '';
+function showAlert(msg) {
+  const el = document.getElementById('login-alert');
+  el.className = 'alert-box err';
+  el.textContent = msg;
 }
 
-// ── FORGOT PASSWORD ──
-async function doForgot() {
-  const email = document.getElementById('forgot-email').value.trim();
-  clearA('forgot-alert');
-  if (!email) { setA('forgot-alert', '⚠️ Please enter your email.', 'err'); return; }
-  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo: 'https://erp-digismart.vercel.app' });
-  if (error) { setA('forgot-alert', '⚠️ ' + error.message, 'err'); return; }
-  setA('forgot-alert', '✅ Reset link sent to ' + email + '. Check your inbox.', 'ok');
+function showForgot() {
+  alert('Please contact your school office to reset your parent portal password.\n\nDefault password is your child\'s date of birth in format: DDMMYYYY\nExample: 15042012 for 15 April 2012');
 }
 
-// ── LOGOUT ──
-async function doLogout() { await db.auth.signOut(); sessionStorage.clear(); show('landing'); }
+function togglePw() {
+  const inp = document.getElementById('parent-pw');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+  document.getElementById('pw-eye').textContent = inp.type === 'password' ? '👁' : '🙈';
+}
 
-// ── SUPER ADMIN ──
-async function loadSA() {
-  const { data: schools } = await db.from('schools').select('*').order('created_at', { ascending: false });
-  allSchools = schools || [];
-  const { count: demoCount } = await db.from('demo_requests').select('id', { count: 'exact', head: true });
-  const active = allSchools.filter(s => (s.subscription_status||s.status) === 'active').length;
-  const rev = allSchools.filter(s => (s.subscription_status||s.status) === 'active').reduce((sum, s) => {
-    return sum + ({ basic: 2499, standard: 3999, premium: 5999 }[s.plan] || 3999);
-  }, 0);
-  document.getElementById('sa-n-total').textContent = allSchools.length;
-  document.getElementById('sa-n-active').textContent = active;
-  document.getElementById('sa-n-demo').textContent = demoCount || 0;
-  document.getElementById('sa-n-rev').textContent = '₹' + rev.toLocaleString('en-IN');
-  // Auto-suspend expired demo accounts
-  const today = new Date().toISOString().split('T')[0];
-  const expiredDemos = allSchools.filter(s => (s.subscription_status||s.status) === 'demo' && s.demo_expires && s.demo_expires < today);
-  for (const s of expiredDemos) {
-    await db.from('schools').update({subscription_status:'suspended'}).eq('school_code', s.school_code);
+async function installPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') document.getElementById('install-banner').style.display = 'none';
+    deferredPrompt = null;
   }
-  if (expiredDemos.length > 0) {
-    toast(expiredDemos.length + ' expired demo account(s) suspended automatically.');
-    // Reload
-    const { data: refreshed } = await db.from('schools').select('*').order('registered_at',{ascending:false});
-    allSchools = refreshed || [];
-  }
-
-  renderSA(allSchools);
-  loadDemoRequests();
 }
-
-function renderSA(list) {
-  const tbody = document.getElementById('sa-tbody');
-  if (!list || list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#9B928A;padding:24px">No schools yet. Click "+ Add School" to add your first school.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = list.map(s => `
-    <tr>
-      <td><div style="font-weight:600">${s.name}</div><div style="font-size:10px;color:#9B928A">${s.school_code}</div></td>
-      <td>${s.city || '—'}</td>
-      <td style="color:#185FA5;font-size:11px">${s.email}</td>
-      <td><span class="plan-b">${s.plan || 'standard'}</span></td>
-      <td>
-        <span class="sbadge ${(s.subscription_status||s.status) === 'active' ? 's-active' : (s.subscription_status||s.status) === 'demo' ? 's-trial' : 's-suspended'}">${s.subscription_status||s.status||'active'}</span>
-        ${s.demo_expires ? `<div style="font-size:10px;color:#8B5E00;margin-top:2px">Expires: ${s.demo_expires}</div>` : ''}
-      </td>
-      <td style="font-size:11px;color:#9B928A">${s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN') : '—'}</td>
-      <td>
-        <div style="display:flex;gap:4px">
-          ${(s.subscription_status||s.status) !== 'active' ? `<button onclick="changeStatus('${s.school_code}','active')" style="padding:3px 8px;background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600">Activate</button>` : ''}
-          ${(s.subscription_status||s.status) !== 'suspended' ? `<button onclick="changeStatus('${s.school_code}','suspended')" style="padding:3px 8px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Suspend</button>` : ''}
-          <button onclick="delSchool('${s.school_code}')" style="padding:3px 7px;background:#F1EFE8;color:#888;border:1px solid #ddd;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Del</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-}
-
-function filterSA() {
-  const q = document.getElementById('sa-q').value.toLowerCase();
-  const sf = document.getElementById('sa-sf').value;
-  renderSA(allSchools.filter(s =>
-    (!q || (s.name||'').toLowerCase().includes(q) || (s.admin_email||'').toLowerCase().includes(q) || (s.city||'').toLowerCase().includes(q)) &&
-    (!sf || s.status === sf)
-  ));
-}
-
-async function changeStatus(id, status) {
-  await db.from('schools').update({ subscription_status: status }).eq('school_code', id);
-  toast(status === 'active' ? '✅ School activated!' : 'School suspended.');
-  await loadSA();
-}
-
-async function delSchool(id) {
-  if (!confirm('Delete this school? This cannot be undone.')) return;
-  await db.from('schools').delete().eq('school_id', id);
-  toast('Deleted.'); await loadSA();
-}
-
-async function loadDemoRequests() {
-  const { data } = await db.from('demo_requests').select('*').order('requested_at', { ascending: false }).limit(20);
-  const el = document.getElementById('demo-list');
-  if (!data || data.length === 0) {
-    el.innerHTML = '<div style="color:#9B928A;padding:12px 0;font-size:13px">No demo requests yet. When schools fill the contact form on your website, they appear here.</div>';
-    return;
-  }
-  el.innerHTML = data.map(r => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
-      <div>
-        <div style="font-weight:600;font-size:13px">${r.school_name || '—'}</div>
-        <div style="font-size:12px;color:#6B6560">${r.contact_name || ''} · 📱 ${r.mobile || ''} · ${r.city || ''}</div>
-        <div style="font-size:11px;color:#9B928A">${r.students || ''} · ${r.plan || ''}</div>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center">
-        <span style="font-size:10px;color:#9B928A">${r.requested_at ? new Date(r.requested_at).toLocaleDateString('en-IN') : ''}</span>
-        <button onclick="prefillAddModal('${(r.school_name||'').replace(/'/g,"\\'")}','${(r.contact_name||'').replace(/'/g,"\\'")}','${(r.city||'').replace(/'/g,"\\'")}','${r.mobile||''}')" style="padding:4px 10px;background:var(--maroon);color:var(--sandal);border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">Add School</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-// ── ADD SCHOOL MODAL ──
-function openAddModal() {
-  document.getElementById('add-modal').classList.add('on');
-  document.getElementById('as-wa').style.display = 'none';
-  clearA('add-alert');
-}
-
-function closeAddModal() {
-  document.getElementById('add-modal').classList.remove('on');
-}
-
-function toggleDemoFields() {
-  const isDemo = document.getElementById('as-is-demo').checked;
-  document.getElementById('demo-fields').style.display = isDemo ? 'block' : 'none';
-}
-
-function prefillAddModal(school, admin, city, mobile) {
-  document.getElementById('as-name').value = school;
-  document.getElementById('as-admin').value = admin;
-  document.getElementById('as-city').value = city;
-  openAddModal();
-}
-
-async function addSchool() {
-  const name = document.getElementById('as-name').value.trim();
-  const city = document.getElementById('as-city').value.trim();
-  const admin = document.getElementById('as-admin').value.trim();
-  const email = document.getElementById('as-email').value.trim();
-  const pw = document.getElementById('as-pw').value.trim();
-  const plan = document.getElementById('as-plan').value;
-  const btn = document.getElementById('as-btn');
-  clearA('add-alert');
-
-  if (!name || !city || !admin || !email || !pw) {
-    setA('add-alert', '⚠️ Please fill all required fields.', 'err'); return;
-  }
-
-  btn.textContent = 'Creating account...'; btn.disabled = true;
-
-  const schoolId = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 20) + '-' + Date.now().toString(36);
-
-  // Hash the password before saving — never store plain text
-  const hashedPw = await hashPassword(pw);
-
-  // Create auth user via signUp (email confirmation must be OFF in Supabase)
-  const { error: authErr } = await db.auth.signUp({ 
-    email, 
-    password: pw,
-    options: { data: { school_name: name, admin_name: admin } }
-  });
-  // Continue even if user already exists
-  if (authErr && !authErr.message.toLowerCase().includes('already') && !authErr.message.toLowerCase().includes('registered')) {
-    btn.textContent = 'Create School Account →'; btn.disabled = false;
-    setA('add-alert', '⚠️ Auth error: ' + authErr.message + ' — Make sure Confirm Email is OFF in Supabase Auth settings.', 'err'); return;
-  }
-
-  // Add to schools table — store HASHED password (never plain text)
-  const { error: dbErr } = await db.from('schools').insert([{
-    school_code: schoolId,
-    school_id: schoolId,
-    name,
-    type: document.getElementById('as-type').value,
-    city,
-    admin_name: admin,
-    email: email,
-    password_hash: hashedPw,
-    plan,
-    subscription_status: document.getElementById('as-is-demo')?.checked ? 'demo' : 'active',
-    status: document.getElementById('as-is-demo')?.checked ? 'demo' : 'active',
-    demo_expires: document.getElementById('as-is-demo')?.checked ? 
-      new Date(Date.now() + (parseInt(document.getElementById('as-demo-days')?.value||7)) * 24*60*60*1000).toISOString().split('T')[0] : null,
-    created_at: new Date().toISOString()
-  }]);
-
-  btn.textContent = 'Create School Account →'; btn.disabled = false;
-
-  if (dbErr) { setA('add-alert', '⚠️ DB error: ' + dbErr.message, 'err'); return; }
-
-  setA('add-alert', '✅ School added! Note: Make sure "Confirm email" is OFF in Supabase Auth → Sign In/Providers for the school to login directly.', 'ok');
-
-  const planNames = { basic: '₹2,499/month (Basic)', standard: '₹3,999/month (Standard)', premium: '₹5,999/month (Premium)' };
-  const waMsg = `🏫 *DigiSmart ERP — Your Account is Ready!*
-
-Dear ${admin},
-
-Your school's DigiSmart ERP account has been activated.
-
-*Login Details:*
-🌐 Website: https://erp-digismart.vercel.app
-📧 Email: ${email}
-🔑 Password: ${pw}
-
-*Plan:* ${planNames[plan] || plan}
-
-*Steps to get started:*
-1. Open the website link
-2. Click "School Login"
-3. Enter your email and password
-4. Change your password after first login
-
-For any help, WhatsApp us anytime.
-_Powered by DigiSmart ERP_`;
-
-  document.getElementById('as-wa-text').textContent = waMsg;
-  document.getElementById('as-wa').style.display = 'block';
-  await loadSA();
-}
-
-function copyWA() {
-  navigator.clipboard.writeText(document.getElementById('as-wa-text').textContent)
-    .then(() => toast('WhatsApp message copied!'));
-}
-
-// ── UTILS ──
-function setA(id, msg, cls) { const el = document.getElementById(id); if (el) { el.textContent = msg; el.className = 'aalert ' + cls; } }
-function clearA(id) { const el = document.getElementById(id); if (el) { el.textContent = ''; el.className = 'aalert'; } }
-
-function toast(msg) {
-  const t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#6B1A1A;color:#F5E6C8;padding:12px 20px;border-radius:9px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.15);font-family:Inter,sans-serif';
-  t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3000);
-}
-
-// Close modal on background click
-document.getElementById('add-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeAddModal();
-});
 </script>
 </body>
 </html>
