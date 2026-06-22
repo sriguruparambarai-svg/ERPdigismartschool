@@ -6,19 +6,15 @@
 <title>Staff Attendance — DigiSmart ERP</title>
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <style>
 .camera-box { background:#1a1a1a; border-radius:12px; overflow:hidden; position:relative; width:100%; max-width:380px; margin:0 auto; aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; }
-#video { width:100%; height:100%; object-fit:cover; display:block; }
-#canvas { display:none; }
-.camera-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
-.face-frame { width:160px; height:180px; border:2px solid rgba(201,168,76,0.8); border-radius:50% 50% 50% 50% / 60% 60% 40% 40%; }
-.scanning { animation: scanPulse 1.5s ease-in-out infinite; }
-@keyframes scanPulse { 0%,100%{border-color:rgba(201,168,76,0.6)} 50%{border-color:rgba(201,168,76,1)} }
-.match-success { border-color:rgba(45,122,58,1)!important; animation:none; }
+#video { width:100%; height:100%; object-fit:cover; display:block; transform:scaleX(-1); }
+#overlay-canvas { position:absolute; top:0; left:0; width:100%; height:100%; transform:scaleX(-1); }
 .camera-status { position:absolute; bottom:10px; left:0; right:0; text-align:center; }
 .cam-badge { display:inline-block; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; }
-.staff-punch-card { background:var(--white); border:1px solid var(--border); border-radius:12px; padding:14px; display:flex; align-items:center; gap:12px; }
-.punch-time { font-size:20px; font-weight:700; color:var(--maroon); }
+.scanning { animation: scanPulse 1.5s ease-in-out infinite; }
+@keyframes scanPulse { 0%,100%{opacity:.7} 50%{opacity:1} }
 .live-clock { font-size:28px; font-weight:700; color:var(--maroon); text-align:center; margin-bottom:4px; }
 .att-mode-toggle { display:flex; background:var(--bg); border-radius:8px; padding:3px; gap:3px; margin-bottom:16px; }
 .mode-btn { flex:1; padding:7px; text-align:center; border-radius:6px; font-size:12px; font-weight:500; cursor:pointer; color:var(--text-muted); transition:all .15s; border:none; background:transparent; }
@@ -29,6 +25,10 @@
 .in-chip { background:#E8F5EB; color:#2D7A3A; }
 .out-chip { background:#FCEBEB; color:#A32D2D; }
 .hours-chip { background:var(--sandal); color:var(--maroon); }
+.enroll-card { background:#FFF8F0; border:1.5px dashed var(--gold); border-radius:10px; padding:12px; margin-top:12px; }
+.match-banner { position:absolute; top:10px; left:0; right:0; text-align:center; z-index:10; }
+.match-pill { display:inline-block; padding:6px 18px; border-radius:20px; font-size:13px; font-weight:700; background:rgba(45,122,58,0.92); color:#fff; }
+.no-match-pill { background:rgba(163,45,45,0.88); }
 </style>
 </head>
 <body>
@@ -72,7 +72,7 @@
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start">
+      <div style="display:grid;grid-template-columns:400px 1fr;gap:20px;align-items:start">
 
         <!-- LEFT: PUNCH PANEL -->
         <div>
@@ -85,34 +85,49 @@
             <!-- MODE TOGGLE -->
             <div class="att-mode-toggle">
               <button class="mode-btn active" id="mode-face" onclick="setMode('face')">📷 Face Recognition</button>
-              <button class="mode-btn" id="mode-manual" onclick="setMode('manual')">✋ Manual Punch</button>
+              <button class="mode-btn" id="mode-enroll" onclick="setMode('enroll')">➕ Enroll Face</button>
+              <button class="mode-btn" id="mode-manual" onclick="setMode('manual')">✋ Manual</button>
             </div>
 
-            <!-- FACE MODE -->
+            <!-- FACE RECOGNITION MODE -->
             <div id="panel-face">
+              <div id="models-status" style="text-align:center;padding:8px;background:#FFF8F0;border-radius:8px;font-size:12px;color:#8B5E00;margin-bottom:10px">
+                ⏳ Loading AI face models... please wait
+              </div>
               <div class="camera-box" id="camera-box">
                 <video id="video" autoplay playsinline muted></video>
-                <canvas id="canvas"></canvas>
-                <div class="camera-overlay">
-                  <div class="face-frame" id="face-frame"></div>
-                </div>
+                <canvas id="overlay-canvas"></canvas>
+                <div class="match-banner" id="match-banner" style="display:none"></div>
                 <div class="camera-status">
                   <span class="cam-badge" id="cam-badge" style="background:rgba(0,0,0,0.6);color:white">Camera Off</span>
                 </div>
               </div>
               <div style="margin-top:12px;display:flex;gap:8px">
-                <button class="btn btn-primary w-full" id="btn-start-cam" onclick="startCamera()">📷 Start Camera</button>
+                <button class="btn btn-primary w-full" id="btn-start-cam" onclick="startRecognition()">📷 Start Camera</button>
                 <button class="btn btn-secondary w-full hidden" id="btn-stop-cam" onclick="stopCamera()">Stop Camera</button>
               </div>
-              <div style="margin-top:10px">
-                <label class="form-label">Select Staff (for camera punch)</label>
-                <select class="form-control" id="face-staff-select" style="margin-top:4px"></select>
-              </div>
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <button class="btn btn-gold w-full" onclick="facePunch('in')" id="btn-face-in">✓ Check In</button>
-                <button class="btn btn-secondary w-full" onclick="facePunch('out')" id="btn-face-out">← Check Out</button>
-              </div>
               <div id="face-result" style="margin-top:10px"></div>
+              <div style="margin-top:8px;font-size:11px;color:var(--text-muted);text-align:center">
+                Staff will be automatically identified and checked in/out
+              </div>
+            </div>
+
+            <!-- ENROLL FACE MODE -->
+            <div id="panel-enroll" class="hidden">
+              <div class="enroll-card">
+                <div style="font-size:13px;font-weight:600;color:var(--maroon);margin-bottom:8px">📸 Register Staff Face</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Select a staff member, look at the camera, and click Capture Face.</div>
+                <select class="form-control" id="enroll-staff-select" style="margin-bottom:10px"></select>
+                <div class="camera-box" id="enroll-camera-box" style="max-width:100%;margin-bottom:10px">
+                  <video id="enroll-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;transform:scaleX(-1)"></video>
+                  <canvas id="enroll-canvas" style="display:none"></canvas>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-primary w-full" id="btn-enroll-cam" onclick="startEnrollCamera()">📷 Start Camera</button>
+                  <button class="btn btn-gold w-full hidden" id="btn-capture" onclick="captureFace()">✓ Capture Face</button>
+                </div>
+                <div id="enroll-result" style="margin-top:10px"></div>
+              </div>
             </div>
 
             <!-- MANUAL MODE -->
@@ -129,7 +144,7 @@
                 </select>
               </div>
               <div class="form-group" style="margin-bottom:14px">
-                <label class="form-label">Time (auto-filled, change if needed)</label>
+                <label class="form-label">Time</label>
                 <input type="time" class="form-control" id="manual-time" style="margin-top:4px">
               </div>
               <button class="btn btn-gold w-full" onclick="manualPunch()">✓ Record Attendance</button>
@@ -137,7 +152,7 @@
             </div>
           </div>
 
-          <!-- ADD STAFF QUICK CARD -->
+          <!-- ADD STAFF -->
           <div class="card">
             <div class="card-header" style="margin-bottom:12px">
               <div class="card-title">Add New Staff</div>
@@ -192,11 +207,20 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
-let videoStream = null;
-let staffList = [];
-const CHECKIN_CUTOFF = '08:30'; // Late if after this time
-const CHECKOUT_EARLY = '16:00'; // Early if before this time
+const CHECKIN_CUTOFF = '08:30';
+const CHECKOUT_EARLY = '16:00';
+const MATCH_THRESHOLD = 0.45; // Lower = stricter matching
+const MODELS_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights';
 
+let videoStream = null;
+let enrollStream = null;
+let staffList = [];
+let faceMatchers = []; // loaded from DB
+let recognitionLoop = null;
+let lastPunchTime = {}; // prevent double punch {staffId: timestamp}
+let modelsLoaded = false;
+
+// ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('face');
   const today = new Date().toISOString().split('T')[0];
@@ -207,9 +231,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadStaff();
   await loadTodayLog();
   await loadTodayStats();
+  loadFaceModels(); // load in background
 });
 
-// ── Live Clock ──
+// ── Load face-api.js models in background ──
+async function loadFaceModels() {
+  try {
+    await Promise.all([
+      faceapi.nets.ssdMobilenetv1.loadFromUri(MODELS_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODELS_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODELS_URL),
+    ]);
+    modelsLoaded = true;
+    document.getElementById('models-status').style.display = 'none';
+    await buildFaceMatchers();
+  } catch(e) {
+    document.getElementById('models-status').textContent = '⚠️ Could not load AI models. Check internet connection.';
+    document.getElementById('models-status').style.background = '#FCEBEB';
+    document.getElementById('models-status').style.color = '#A32D2D';
+  }
+}
+
+// ── Build face matchers from stored descriptors ──
+async function buildFaceMatchers() {
+  faceMatchers = [];
+  const staffWithFaces = staffList.filter(s => s.face_descriptor);
+  for (const s of staffWithFaces) {
+    try {
+      const descriptor = new Float32Array(Object.values(s.face_descriptor));
+      const labeledDescriptors = new faceapi.LabeledFaceDescriptors(
+        s.id + '|' + s.name, [descriptor]
+      );
+      faceMatchers.push(new faceapi.FaceMatcher(labeledDescriptors, MATCH_THRESHOLD));
+    } catch(e) {}
+  }
+}
+
+// ── Clock ──
 function startClock() {
   function tick() {
     const now = new Date();
@@ -223,7 +281,7 @@ function startClock() {
 
 // ── Load Staff ──
 async function loadStaff() {
-  const { data } = await supabase.from('staff').select('id,name,role,employee_id').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
+  const { data } = await supabase.from('staff').select('id,name,role,employee_id,face_descriptor').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
   staffList = data || [];
   populateSelects();
 }
@@ -231,9 +289,241 @@ async function loadStaff() {
 function populateSelects() {
   const opts = staffList.length === 0
     ? '<option value="">No staff added yet</option>'
-    : staffList.map(s=>`<option value="${s.id}">${s.name} — ${s.role}</option>`).join('');
-  document.getElementById('face-staff-select').innerHTML = opts;
+    : staffList.map(s=>`<option value="${s.id}">${s.name} — ${s.role}${s.face_descriptor ? ' ✓' : ' (no face)'}</option>`).join('');
   document.getElementById('manual-staff-select').innerHTML = opts;
+  document.getElementById('enroll-staff-select').innerHTML = opts;
+}
+
+// ── Mode Toggle ──
+function setMode(mode) {
+  ['face','enroll','manual'].forEach(m => {
+    document.getElementById('panel-'+m).classList.toggle('hidden', m !== mode);
+    document.getElementById('mode-'+m).classList.toggle('active', m === mode);
+  });
+  if (mode !== 'face') stopCamera();
+  if (mode !== 'enroll') stopEnrollCamera();
+}
+
+// ── START REAL FACE RECOGNITION ──
+async function startRecognition() {
+  if (!modelsLoaded) { showToast('AI models still loading, please wait...','error'); return; }
+  if (faceMatchers.length === 0) {
+    showToast('No faces enrolled yet! Go to "Enroll Face" tab first.','error');
+    return;
+  }
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'user', width:640, height:480 } });
+    const video = document.getElementById('video');
+    video.srcObject = videoStream;
+    await new Promise(r => video.onloadedmetadata = r);
+
+    document.getElementById('btn-start-cam').classList.add('hidden');
+    document.getElementById('btn-stop-cam').classList.remove('hidden');
+    document.getElementById('cam-badge').textContent = '● Scanning...';
+    document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.85)';
+    document.getElementById('cam-badge').style.color = '#fff';
+
+    // Size the overlay canvas to match video
+    const canvas = document.getElementById('overlay-canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    runRecognitionLoop();
+  } catch(e) {
+    showToast('Camera not accessible. Use Manual mode instead.','error');
+  }
+}
+
+async function runRecognitionLoop() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('overlay-canvas');
+  const ctx = canvas.getContext('2d');
+
+  async function detect() {
+    if (!videoStream) return;
+
+    const detections = await faceapi
+      .detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+      .withFaceLandmarks()
+      .withFaceDescriptors();
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (detections.length === 0) {
+      hideBanner();
+      recognitionLoop = setTimeout(detect, 800);
+      return;
+    }
+
+    for (const detection of detections) {
+      // Try to match against all enrolled faces
+      let bestMatch = null;
+      let bestDistance = 1;
+
+      for (const matcher of faceMatchers) {
+        const match = matcher.findBestMatch(detection.descriptor);
+        if (match.distance < bestDistance) {
+          bestDistance = match.distance;
+          bestMatch = match;
+        }
+      }
+
+      if (bestMatch && bestMatch.label !== 'unknown' && bestDistance < MATCH_THRESHOLD) {
+        const [staffId, staffName] = bestMatch.label.split('|');
+        const staff = staffList.find(s => s.id === staffId);
+        if (staff) {
+          // Draw green box around face
+          const box = detection.detection.box;
+          ctx.strokeStyle = '#2D7A3A';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+          ctx.fillStyle = 'rgba(45,122,58,0.8)';
+          ctx.fillRect(box.x, box.y - 22, box.width, 22);
+          ctx.fillStyle = '#fff';
+          ctx.font = '13px sans-serif';
+          ctx.fillText(staff.name, box.x + 4, box.y - 6);
+
+          showBanner(staff.name, true);
+
+          // Auto punch — prevent duplicate within 10 seconds
+          const now = Date.now();
+          if (!lastPunchTime[staffId] || (now - lastPunchTime[staffId]) > 10000) {
+            lastPunchTime[staffId] = now;
+            await autoPunch(staffId, staff.name, staff.role);
+          }
+        }
+      } else {
+        // Draw red box for unknown face
+        const box = detection.detection.box;
+        ctx.strokeStyle = '#A32D2D';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x, box.y, box.width, box.height);
+        showBanner('Unknown face', false);
+      }
+    }
+
+    recognitionLoop = setTimeout(detect, 1000);
+  }
+
+  detect();
+}
+
+function showBanner(name, matched) {
+  const banner = document.getElementById('match-banner');
+  banner.style.display = 'block';
+  banner.innerHTML = `<span class="match-pill ${matched ? '' : 'no-match-pill'}">${matched ? '✓ ' + name : '❓ ' + name}</span>`;
+  setTimeout(() => { banner.style.display = 'none'; }, 3000);
+}
+
+function hideBanner() {
+  document.getElementById('match-banner').style.display = 'none';
+}
+
+async function autoPunch(staffId, staffName, staffRole) {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const timeStr = now.toTimeString().slice(0,5);
+
+  // Check existing record
+  const { data: existing } = await supabase.from('staff_attendance')
+    .select('id,check_in,check_out').eq('staff_id',staffId).eq('date',today).single();
+
+  let type = 'in';
+  // If already checked in and it's been > 1 hour, do check out
+  if (existing && existing.check_in && !existing.check_out) {
+    const [ih,im] = existing.check_in.split(':').map(Number);
+    const [ch,cm] = timeStr.split(':').map(Number);
+    const minsSinceIn = (ch*60+cm) - (ih*60+im);
+    if (minsSinceIn > 60) type = 'out';
+    else {
+      // Already checked in recently — skip
+      return;
+    }
+  } else if (existing && existing.check_out) {
+    // Already fully done for today
+    return;
+  }
+
+  await recordPunch(staffId, staffName, staffRole, type, 'face');
+
+  const resultEl = document.getElementById('face-result');
+  const msg = type === 'in' ? `✓ ${staffName} checked IN` : `✓ ${staffName} checked OUT`;
+  resultEl.innerHTML = `<div class="alert alert-success" style="font-size:13px;font-weight:600">${msg}</div>`;
+  setTimeout(() => { resultEl.innerHTML = ''; }, 4000);
+}
+
+function stopCamera() {
+  if (recognitionLoop) { clearTimeout(recognitionLoop); recognitionLoop = null; }
+  if (videoStream) { videoStream.getTracks().forEach(t=>t.stop()); videoStream = null; }
+  document.getElementById('video').srcObject = null;
+  const canvas = document.getElementById('overlay-canvas');
+  canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+  document.getElementById('btn-start-cam').classList.remove('hidden');
+  document.getElementById('btn-stop-cam').classList.add('hidden');
+  document.getElementById('cam-badge').textContent = 'Camera Off';
+  document.getElementById('cam-badge').style.background = 'rgba(0,0,0,0.6)';
+  hideBanner();
+}
+
+// ── ENROLL FACE ──
+async function startEnrollCamera() {
+  try {
+    enrollStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'user', width:640, height:480 } });
+    document.getElementById('enroll-video').srcObject = enrollStream;
+    document.getElementById('btn-enroll-cam').classList.add('hidden');
+    document.getElementById('btn-capture').classList.remove('hidden');
+    document.getElementById('enroll-result').innerHTML = '<div style="font-size:12px;color:#8B5E00">📸 Look straight at the camera, then click Capture Face</div>';
+  } catch(e) {
+    showToast('Camera not accessible.','error');
+  }
+}
+
+function stopEnrollCamera() {
+  if (enrollStream) { enrollStream.getTracks().forEach(t=>t.stop()); enrollStream = null; }
+  const v = document.getElementById('enroll-video');
+  if (v) v.srcObject = null;
+  document.getElementById('btn-enroll-cam').classList.remove('hidden');
+  document.getElementById('btn-capture').classList.add('hidden');
+}
+
+async function captureFace() {
+  if (!modelsLoaded) { showToast('AI models not loaded yet.','error'); return; }
+  const staffId = document.getElementById('enroll-staff-select').value;
+  if (!staffId) { showToast('Please select a staff member first.','error'); return; }
+
+  const staff = staffList.find(s => s.id === staffId);
+  const video = document.getElementById('enroll-video');
+  const resultEl = document.getElementById('enroll-result');
+
+  resultEl.innerHTML = '<div style="font-size:12px;color:#8B5E00">🔍 Detecting face...</div>';
+
+  const detection = await faceapi
+    .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (!detection) {
+    resultEl.innerHTML = '<div style="font-size:12px;color:#A32D2D">❌ No face detected. Make sure your face is clearly visible and well-lit.</div>';
+    return;
+  }
+
+  // Save descriptor to Supabase
+  const descriptor = Array.from(detection.descriptor);
+  showLoading('Saving face data...');
+  const { error } = await supabase.from('staff').update({ face_descriptor: descriptor }).eq('id', staffId);
+  hideLoading();
+
+  if (error) {
+    resultEl.innerHTML = `<div style="font-size:12px;color:#A32D2D">❌ Error saving: ${error.message}</div>`;
+    return;
+  }
+
+  resultEl.innerHTML = `<div style="font-size:12px;color:#2D7A3A;font-weight:600">✅ Face enrolled for ${staff.name}! They can now use face recognition.</div>`;
+
+  // Reload and rebuild matchers
+  await loadStaff();
+  await buildFaceMatchers();
+  stopEnrollCamera();
 }
 
 // ── Add Staff ──
@@ -241,75 +531,30 @@ async function addStaff() {
   const name = document.getElementById('new-staff-name').value.trim();
   const role = document.getElementById('new-staff-role').value.trim();
   const empId = document.getElementById('new-staff-id').value.trim();
-  if (!name || !role) { showToast('Please enter staff name and role.','error'); return; }
+  if (!name) { showToast('Please enter staff name.','error'); return; }
+  if (!role) { showToast('Please enter staff role.','error'); return; }
 
-  const { error } = await supabase.from('staff').insert([{ school_id: SCHOOL_ID, name, role, employee_id: empId, status: 'active' }]);
-  if (error) { showToast('Error adding staff: ' + error.message,'error'); return; }
+  const btn = document.querySelector('button[onclick="addStaff()"]');
+  if (btn) { btn.textContent = 'Adding...'; btn.disabled = true; }
+
+  const { error } = await supabase.from('staff').insert([{
+    school_id: SCHOOL_ID, name, role,
+    employee_id: empId || name.replace(/\s+/g,'').toUpperCase().slice(0,6),
+    status: 'active'
+  }]);
+
+  if (btn) { btn.textContent = '+ Add Staff'; btn.disabled = false; }
+  if (error) { showToast('Error: ' + error.message,'error'); return; }
+
   document.getElementById('new-staff-name').value = '';
   document.getElementById('new-staff-role').value = '';
   document.getElementById('new-staff-id').value = '';
-  showToast(`${name} added successfully!`,'success');
+  showToast(name + ' added! Now go to Enroll Face to register their face.','success');
   await loadStaff();
   await loadTodayStats();
 }
 
-// ── Mode Toggle ──
-function setMode(mode) {
-  document.getElementById('panel-face').classList.toggle('hidden', mode !== 'face');
-  document.getElementById('panel-manual').classList.toggle('hidden', mode !== 'manual');
-  document.getElementById('mode-face').classList.toggle('active', mode === 'face');
-  document.getElementById('mode-manual').classList.toggle('active', mode === 'manual');
-  if (mode !== 'face' && videoStream) stopCamera();
-}
-
-// ── Camera ──
-async function startCamera() {
-  try {
-    videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width:640, height:480 } });
-    document.getElementById('video').srcObject = videoStream;
-    document.getElementById('btn-start-cam').classList.add('hidden');
-    document.getElementById('btn-stop-cam').classList.remove('hidden');
-    document.getElementById('face-frame').classList.add('scanning');
-    document.getElementById('cam-badge').textContent = '● Scanning...';
-    document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.85)';
-  } catch(e) {
-    showToast('Camera not accessible. Please use Manual Punch instead.','error');
-    setMode('manual');
-  }
-}
-
-function stopCamera() {
-  if (videoStream) { videoStream.getTracks().forEach(t=>t.stop()); videoStream = null; }
-  document.getElementById('video').srcObject = null;
-  document.getElementById('btn-start-cam').classList.remove('hidden');
-  document.getElementById('btn-stop-cam').classList.add('hidden');
-  document.getElementById('face-frame').classList.remove('scanning','match-success');
-  document.getElementById('cam-badge').textContent = 'Camera Off';
-  document.getElementById('cam-badge').style.background = 'rgba(0,0,0,0.6)';
-}
-
-async function facePunch(type) {
-  const staffId = document.getElementById('face-staff-select').value;
-  if (!staffId) { showToast('Please select a staff member.','error'); return; }
-  const staff = staffList.find(s=>s.id===staffId);
-  if (!staff) return;
-
-  // Visual feedback
-  document.getElementById('face-frame').classList.remove('scanning');
-  document.getElementById('face-frame').classList.add('match-success');
-  document.getElementById('cam-badge').textContent = '✓ Match Found';
-  document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.9)';
-
-  setTimeout(() => {
-    document.getElementById('face-frame').classList.remove('match-success');
-    document.getElementById('face-frame').classList.add('scanning');
-    document.getElementById('cam-badge').textContent = '● Scanning...';
-    document.getElementById('cam-badge').style.background = 'rgba(45,122,58,0.85)';
-  }, 2000);
-
-  await recordPunch(staffId, staff.name, staff.role, type, 'face');
-}
-
+// ── Manual Punch ──
 async function manualPunch() {
   const staffId = document.getElementById('manual-staff-select').value;
   const type = document.getElementById('manual-punch-type').value;
@@ -319,16 +564,16 @@ async function manualPunch() {
   await recordPunch(staffId, staff.name, staff.role, type, 'manual', time);
 }
 
+// ── Record Punch ──
 async function recordPunch(staffId, staffName, staffRole, type, method, customTime = null) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
   const timeStr = customTime || now.toTimeString().slice(0,5);
 
-  // Check if record already exists for today
-  const { data: existing } = await supabase.from('staff_attendance').select('id,check_in,check_out').eq('staff_id',staffId).eq('date',today).single();
+  const { data: existing } = await supabase.from('staff_attendance')
+    .select('id,check_in,check_out').eq('staff_id',staffId).eq('date',today).single();
 
-  let error;
-  let msg = '';
+  let error, msg = '';
 
   if (type === 'in') {
     const isLate = timeStr > CHECKIN_CUTOFF;
@@ -342,24 +587,24 @@ async function recordPunch(staffId, staffName, staffRole, type, method, customTi
   } else {
     if (!existing) { showToast(`${staffName} has no check-in record today.`,'error'); return; }
     const isEarlyExit = timeStr < CHECKOUT_EARLY;
-    // Calculate working hours
     let workHours = '—';
     if (existing.check_in) {
       const [ih,im] = existing.check_in.split(':').map(Number);
       const [oh,om] = timeStr.split(':').map(Number);
       const mins = (oh*60+om) - (ih*60+im);
-      if (mins > 0) { const h = Math.floor(mins/60); const m = mins%60; workHours = `${h}h ${m}m`; }
+      if (mins > 0) { workHours = `${Math.floor(mins/60)}h ${mins%60}m`; }
     }
     ({ error } = await supabase.from('staff_attendance').update({ check_out: timeStr, working_hours: workHours, early_exit: isEarlyExit }).eq('id', existing.id));
-    msg = `${staffName} checked OUT at ${timeStr}. Working hours: ${workHours}${isEarlyExit ? ' (Early exit)':''}.`;
+    msg = `${staffName} checked OUT at ${timeStr}. Hours: ${workHours}`;
   }
 
-  if (error) { showToast('Error recording: ' + error.message,'error'); return; }
-  showToast(msg, 'success');
+  if (error) { showToast('Error: ' + error.message,'error'); return; }
+  showToast(msg,'success');
 
-  const resultEl = document.getElementById(method==='face' ? 'face-result' : 'manual-result');
-  resultEl.innerHTML = `<div class="alert alert-success" style="font-size:12px">${msg}</div>`;
-  setTimeout(()=>{ resultEl.innerHTML=''; }, 4000);
+  if (method === 'manual') {
+    document.getElementById('manual-result').innerHTML = `<div class="alert alert-success" style="font-size:12px">${msg}</div>`;
+    setTimeout(() => { document.getElementById('manual-result').innerHTML = ''; }, 4000);
+  }
 
   await loadTodayLog();
   await loadTodayStats();
@@ -369,12 +614,10 @@ async function recordPunch(staffId, staffName, staffRole, type, method, customTi
 async function loadTodayLog() {
   const date = document.getElementById('log-date').value;
   const { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).eq('date',date).order('check_in',{ascending:true});
-
   if (!data || data.length===0) {
-    document.getElementById('today-log').innerHTML = '<div class="empty-state"><div class="icon">👤</div><p>No attendance recorded yet for this date.</p></div>';
+    document.getElementById('today-log').innerHTML = '<div class="empty-state"><div class="icon">👤</div><p>No attendance recorded yet.</p></div>';
     return;
   }
-
   document.getElementById('today-log').innerHTML = data.map(r => `
     <div class="staff-card">
       <div class="avatar">${getInitials(r.staff_name)}</div>
@@ -384,7 +627,7 @@ async function loadTodayLog() {
       </div>
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
         <div style="display:flex;gap:6px">
-          ${r.check_in ? `<span class="time-chip in-chip">IN ${r.check_in}</span>` : '<span style="font-size:11px;color:var(--text-muted)">Not in</span>'}
+          ${r.check_in ? `<span class="time-chip in-chip">IN ${r.check_in}</span>` : ''}
           ${r.check_out ? `<span class="time-chip out-chip">OUT ${r.check_out}</span>` : ''}
         </div>
         <div style="display:flex;gap:6px">
@@ -398,89 +641,55 @@ async function loadTodayLog() {
   `).join('');
 }
 
-// ── Today's Stats ──
+// ── Stats ──
 async function loadTodayStats() {
   const today = new Date().toISOString().split('T')[0];
   const { data } = await supabase.from('staff_attendance').select('status,check_out').eq('school_id',SCHOOL_ID).eq('date',today);
   if (!data) return;
-  const present = data.filter(r=>r.status==='present').length;
-  const late = data.filter(r=>r.status==='late').length;
-  const checkedOut = data.filter(r=>r.check_out).length;
-  const totalStaff = staffList.length;
-  const absent = Math.max(0, totalStaff - data.length);
-
-  document.getElementById('st-present').textContent = present + late;
-  document.getElementById('st-absent').textContent = absent;
-  document.getElementById('st-late').textContent = late;
-  document.getElementById('st-out').textContent = checkedOut;
+  document.getElementById('st-present').textContent = data.filter(r=>r.status==='present').length + data.filter(r=>r.status==='late').length;
+  document.getElementById('st-absent').textContent = Math.max(0, staffList.length - data.length);
+  document.getElementById('st-late').textContent = data.filter(r=>r.status==='late').length;
+  document.getElementById('st-out').textContent = data.filter(r=>r.check_out).length;
 }
 
-// ── Monthly Staff Report ──
+// ── Monthly Report ──
 async function loadStaffMonthReport() {
   const month = document.getElementById('staff-month').value;
   if (!month) { showToast('Please select a month.','error'); return; }
-
-  const from = month + '-01';
-  const to = month + '-31';
-  const { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).gte('date',from).lte('date',to).order('staff_name').order('date');
-
+  const { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).gte('date',month+'-01').lte('date',month+'-31').order('staff_name').order('date');
   if (!data || data.length===0) {
-    document.getElementById('staff-month-report').innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>No records found for this month.</p></div>';
+    document.getElementById('staff-month-report').innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>No records found.</p></div>';
     return;
   }
-
-  // Group by staff
   const byStaff = {};
   data.forEach(r => {
     if (!byStaff[r.staff_id]) byStaff[r.staff_id] = { name: r.staff_name, role: r.staff_role, records: [] };
     byStaff[r.staff_id].records.push(r);
   });
-
   document.getElementById('staff-month-report').innerHTML = `
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Staff Name</th>
-          <th>Role</th>
-          <th>Days Present</th>
-          <th>Late Days</th>
-          <th>Avg. Working Hrs</th>
-          <th>Attendance %</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${Object.values(byStaff).map(s => {
-          const total = s.records.length;
-          const present = s.records.filter(r=>r.status==='present').length;
-          const late = s.records.filter(r=>r.status==='late').length;
-          const withHours = s.records.filter(r=>r.working_hours && r.working_hours!=='—');
-          let avgHrs = '—';
-          if (withHours.length > 0) {
-            const totalMins = withHours.reduce((sum,r) => {
-              const match = r.working_hours.match(/(\d+)h\s+(\d+)m/);
-              return sum + (match ? parseInt(match[1])*60+parseInt(match[2]) : 0);
-            },0);
-            const avg = Math.round(totalMins/withHours.length);
-            avgHrs = `${Math.floor(avg/60)}h ${avg%60}m`;
-          }
-          const workDaysInMonth = 26;
-          const pct = Math.round(((present+late)/workDaysInMonth)*100);
-          return `
-            <tr>
-              <td style="font-weight:600">${s.name}</td>
-              <td style="color:var(--text-muted)">${s.role}</td>
-              <td><span style="color:#2D7A3A;font-weight:600">${present+late}</span></td>
-              <td><span style="color:#8B5E00">${late}</span></td>
-              <td>${avgHrs}</td>
-              <td><span class="badge ${pct>=90?'badge-green':pct>=75?'badge-amber':'badge-red'}">${pct}%</span></td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-    </div>
-  `;
+    <div class="table-wrap"><table>
+      <thead><tr><th>Staff</th><th>Role</th><th>Days Present</th><th>Late</th><th>Avg Hrs</th><th>%</th></tr></thead>
+      <tbody>${Object.values(byStaff).map(s => {
+        const present = s.records.filter(r=>r.status==='present').length;
+        const late = s.records.filter(r=>r.status==='late').length;
+        const withHrs = s.records.filter(r=>r.working_hours&&r.working_hours!=='—');
+        let avgHrs = '—';
+        if (withHrs.length > 0) {
+          const totalMins = withHrs.reduce((sum,r) => { const m=r.working_hours.match(/(\d+)h\s+(\d+)m/); return sum+(m?parseInt(m[1])*60+parseInt(m[2]):0); },0);
+          const avg = Math.round(totalMins/withHrs.length);
+          avgHrs = `${Math.floor(avg/60)}h ${avg%60}m`;
+        }
+        const pct = Math.round(((present+late)/26)*100);
+        return `<tr>
+          <td style="font-weight:600">${s.name}</td>
+          <td style="color:var(--text-muted)">${s.role}</td>
+          <td><span style="color:#2D7A3A;font-weight:600">${present+late}</span></td>
+          <td><span style="color:#8B5E00">${late}</span></td>
+          <td>${avgHrs}</td>
+          <td><span class="badge ${pct>=90?'badge-green':pct>=75?'badge-amber':'badge-red'}">${pct}%</span></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
 }
 </script>
 </body>
