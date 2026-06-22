@@ -1,41 +1,33 @@
 // DigiSmart ERP — Supabase Configuration
-// This file connects the app to your Supabase database
+var SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
 
-const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
-
-// School ID comes from login session. Fallback = ARK Global School.
-const SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ARK2024';
+// School ID from login session — fallback to ARK2024
+var SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ARK2024';
+var SCHOOL_CODE = sessionStorage.getItem('digismart_school_code') || 'ARK2024';
 
 // Initialize Supabase client
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ── Supabase Keepalive — prevents free plan from sleeping ──
-// Pings Supabase every 4 minutes to keep connection alive
+// ── Supabase Keepalive ──
 async function pingSupabase() {
-  try {
-    await supabase.from('schools').select('id').limit(1);
-  } catch(e) {}
+  try { await supabase.from('schools').select('id').limit(1); } catch(e) {}
 }
-// Ping immediately on load, then every 4 minutes
 pingSupabase();
 setInterval(pingSupabase, 4 * 60 * 1000);
 
 // ── Query with timeout helper ──
-// Wraps Supabase queries with a 10-second timeout
 async function queryWithTimeout(queryPromise, timeoutMs = 10000) {
   const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Query timed out — Supabase may be starting up. Please wait 30 seconds and try again.')), timeoutMs)
+    setTimeout(() => reject(new Error('Query timed out — please wait 30 seconds and try again.')), timeoutMs)
   );
   return Promise.race([queryPromise, timeout]);
 }
 
-
-// ── Helper: Show toast notification ──
+// ── Show toast notification ──
 function showToast(message, type = 'success') {
   const existing = document.getElementById('toast');
   if (existing) existing.remove();
-
   const toast = document.createElement('div');
   toast.id = 'toast';
   toast.style.cssText = `
@@ -44,57 +36,46 @@ function showToast(message, type = 'success') {
     color: white; padding: 12px 20px; border-radius: 8px;
     font-size: 13px; font-weight: 500; z-index: 9999;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    animation: slideIn 0.2s ease;
-    max-width: 320px;
+    animation: slideIn 0.2s ease; max-width: 340px;
   `;
   toast.textContent = message;
-
   const style = document.createElement('style');
   style.textContent = '@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }';
   document.head.appendChild(style);
-
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3500);
+  setTimeout(() => toast.remove(), 4000);
 }
 
-// ── Helper: Format date DD/MM/YYYY ──
+// ── Format date DD/MM/YYYY ──
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-// ── Helper: Get initials from name ──
+// ── Get initials from name ──
 function getInitials(name) {
   if (!name) return '?';
   return name.trim().split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 }
 
-// ── Helper: Generate Admission Number ──
-// Format: YYYY-XXXX  e.g. 2025-0042
+// ── Generate Admission Number ──
 async function generateAdmissionNo() {
   const year = new Date().getFullYear();
   const { data, error } = await supabase
-    .from('students')
-    .select('admission_no')
+    .from('students').select('admission_no')
     .eq('school_id', SCHOOL_ID)
     .like('admission_no', `${year}-%`)
-    .order('admission_no', { ascending: false })
-    .limit(1);
-
-  if (error || !data || data.length === 0) {
-    return `${year}-0001`;
-  }
+    .order('admission_no', { ascending: false }).limit(1);
+  if (error || !data || data.length === 0) return `${year}-0001`;
   const last = parseInt(data[0].admission_no.split('-')[1]) || 0;
   return `${year}-${String(last + 1).padStart(4, '0')}`;
 }
 
-// ── Helper: Confirm dialog ──
-function confirmAction(message) {
-  return window.confirm(message);
-}
+// ── Confirm dialog ──
+function confirmAction(message) { return window.confirm(message); }
 
-// ── Performance: Add loading overlay ──
+// ── Loading overlay ──
 function showLoading(msg = 'Saving...') {
   let el = document.getElementById('global-loader');
   if (!el) {
@@ -114,17 +95,12 @@ function showLoading(msg = 'Saving...') {
     el.style.display = 'flex';
   }
 }
-
 function hideLoading() {
   const el = document.getElementById('global-loader');
   if (el) el.style.display = 'none';
 }
 
-// ── Academic Year ──
-const ACADEMIC_YEAR = '2026-27';
-
-// ── Classes list ──
-const ALL_CLASSES = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
-
-// ── Subjects list ──
-const ALL_SUBJECTS = ['Tamil','English','Mathematics','Science','Social Science','Computer Science','Hindi','Drawing','Physical Education','Other'];
+// ── Academic Year & Lists ──
+var ACADEMIC_YEAR = '2026-27';
+var ALL_CLASSES = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+var ALL_SUBJECTS = ['Tamil','English','Mathematics','Science','Social Science','Computer Science','Hindi','Drawing','Physical Education','Other'];
