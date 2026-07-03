@@ -418,6 +418,8 @@ input:checked + .toggle-slider:before{transform:translateX(20px)}
       <div class="form-group"><label class="form-label">Date of Joining</label><input type="date" id="sf-doj" class="form-control"></div>
       <div class="form-group"><label class="form-label">Employment Type</label><select id="sf-emptype" class="form-control"><option value="permanent">Permanent</option><option value="contract">Contract</option><option value="part_time">Part-time</option></select></div>
       <div class="form-group"><label class="form-label">Status</label><select id="sf-status" class="form-control"><option value="active">Active</option><option value="inactive">Inactive</option><option value="on_leave">On Leave</option></select></div>
+      <div class="form-group"><label class="form-label">Expected Check-in Time</label><input type="time" id="sf-checkin" class="form-control" value="08:30"></div>
+      <div class="form-group"><label class="form-label">Expected Check-out Time</label><input type="time" id="sf-checkout" class="form-control" value="16:00"></div>
 
       <div style="grid-column:1/-1;font-size:12px;font-weight:600;color:var(--maroon);border-bottom:2px solid var(--sandal);padding-bottom:6px;margin-top:6px">🏦 Bank Details</div>
       <div class="form-group"><label class="form-label">Bank Name</label><input type="text" id="sf-bank" class="form-control" placeholder="e.g. SBI, Indian Bank"></div>
@@ -720,7 +722,7 @@ function editStaff(id) {
   editingStaffId = id;
   document.getElementById('staff-modal-title').textContent = 'Edit Staff Record';
   document.getElementById('staff-save-btn').textContent = 'Update Staff';
-  const fields = { 'sf-name':'name','sf-empid':'employee_id','sf-dob':'dob','sf-gender':'gender','sf-mobile':'mobile','sf-email':'email','sf-aadhar':'aadhar','sf-qual':'qualification','sf-address':'address','sf-role':'role','sf-dept':'department','sf-doj':'date_of_joining','sf-emptype':'employment_type','sf-status':'status','sf-bank':'bank_name','sf-accno':'account_number','sf-ifsc':'ifsc_code' };
+  const fields = { 'sf-name':'name','sf-empid':'employee_id','sf-dob':'dob','sf-gender':'gender','sf-mobile':'mobile','sf-email':'email','sf-aadhar':'aadhar','sf-qual':'qualification','sf-address':'address','sf-role':'role','sf-dept':'department','sf-doj':'date_of_joining','sf-emptype':'employment_type','sf-status':'status','sf-bank':'bank_name','sf-accno':'account_number','sf-ifsc':'ifsc_code','sf-checkin':'expected_check_in','sf-checkout':'expected_check_out' };
   Object.entries(fields).forEach(([fieldId, key]) => {
     const el = document.getElementById(fieldId);
     if (el) el.value = s[key] || '';
@@ -758,6 +760,8 @@ async function saveStaff() {
     bank_name: document.getElementById('sf-bank').value.trim(),
     account_number: document.getElementById('sf-accno').value.trim(),
     ifsc_code: document.getElementById('sf-ifsc').value.trim(),
+    expected_check_in: document.getElementById('sf-checkin').value || '08:30',
+    expected_check_out: document.getElementById('sf-checkout').value || '16:00',
   };
 
   let error;
