@@ -325,7 +325,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <script>
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let session = null;
 let allHomework = [];
@@ -358,7 +358,7 @@ function setupUI() {
 
 // ── LOAD DATA ──
 async function loadNotices() {
-  const { data } = await supabase.from('communications')
+  const { data } = await sbClient.from('communications')
     .select('*').eq('school_id', session.school_id)
     .in('type', ['circular','announcement','holiday','event_notice'])
     .or(`target_class.eq.all,target_class.eq.${session.class}`)
@@ -378,7 +378,7 @@ async function loadNotices() {
 
 async function loadHomework() {
   const today = new Date().toISOString().split('T')[0];
-  const { data } = await supabase.from('communications')
+  const { data } = await sbClient.from('communications')
     .select('*').eq('school_id', session.school_id)
     .eq('type', 'homework')
     .or(`target_class.eq.all,target_class.eq.${session.class}`)
@@ -398,7 +398,7 @@ async function loadHomework() {
 
 async function loadEvents() {
   const today = new Date().toISOString().split('T')[0];
-  const { data } = await supabase.from('communications')
+  const { data } = await sbClient.from('communications')
     .select('*').eq('school_id', session.school_id)
     .eq('type', 'event')
     .gte('event_date', today)
@@ -413,7 +413,7 @@ async function loadEvents() {
 }
 
 async function loadConsent() {
-  const { data } = await supabase.from('communications')
+  const { data } = await sbClient.from('communications')
     .select('*').eq('school_id', session.school_id)
     .eq('type', 'consent_form')
     .or(`target_class.eq.all,target_class.eq.${session.class}`)
@@ -427,7 +427,7 @@ async function loadConsent() {
 
   // Load existing responses for this student
   const ids = forms.map(f => f.id);
-  const { data: responses } = await supabase.from('consent_responses').select('*').eq('student_id', session.student_id).in('comm_id', ids);
+  const { data: responses } = await sbClient.from('consent_responses').select('*').eq('student_id', session.student_id).in('comm_id', ids);
   const respMap = {};
   if (responses) responses.forEach(r => { respMap[r.comm_id] = r; });
 
@@ -581,7 +581,7 @@ async function submitConsent(formId) {
   const selected = document.querySelector(`[name="consent-${formId}"]:checked`);
   if (!selected) { alert('Please select an option before submitting.'); return; }
 
-  const { error } = await supabase.from('consent_responses').insert([{
+  const { error } = await sbClient.from('consent_responses').insert([{
     school_id: session.school_id,
     comm_id: formId,
     student_id: session.student_id,
@@ -605,7 +605,7 @@ async function markHWDone(id, btn) {
   btn.className = 'btn-done submitted';
   btn.disabled = true;
   // Record completion
-  await supabase.from('hw_completions').insert([{
+  await sbClient.from('hw_completions').insert([{
     school_id: session.school_id,
     comm_id: id,
     student_id: session.student_id,
@@ -629,14 +629,14 @@ async function changePassword() {
   if (newPw !== confirm) { showPwAlert('⚠️ Passwords do not match.','#FCEBEB','#A32D2D'); return; }
 
   // Verify current password matches
-  const { data: student } = await supabase.from('students').select('parent_password,dob').eq('id', session.student_id).single();
+  const { data: student } = await sbClient.from('students').select('parent_password,dob').eq('id', session.student_id).single();
   const storedPw = student?.parent_password;
   const dobPw = student?.dob ? student.dob.replace(/-/g,'') : '';
   const isValid = storedPw ? current === storedPw : (current === dobPw);
 
   if (!isValid) { showPwAlert('⚠️ Current password is incorrect.','#FCEBEB','#A32D2D'); return; }
 
-  const { error } = await supabase.from('students').update({ parent_password: newPw }).eq('id', session.student_id);
+  const { error } = await sbClient.from('students').update({ parent_password: newPw }).eq('id', session.student_id);
   if (error) { showPwAlert('⚠️ Error updating password.','#FCEBEB','#A32D2D'); return; }
 
   showPwAlert('✓ Password changed successfully!','#E8F5EB','#2D7A3A');

@@ -121,7 +121,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <script>
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let deferredPrompt = null;
 let schoolId = null;
@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadSchoolInfo(sid) {
-  const { data } = await supabase.from('schools').select('name').eq('school_id', sid).single();
+  const { data } = await sbClient.from('schools').select('name').eq('school_id', sid).single();
   if (data) {
     document.getElementById('school-name-badge').textContent = data.name;
     document.getElementById('school-name-badge').style.display = 'inline-block';
@@ -180,7 +180,7 @@ async function doParentLogin() {
   btn.textContent = 'Signing in...'; btn.disabled = true;
 
   // Find student by admission number
-  let query = supabase.from('students').select('id,full_name,class,section,school_id,parent_password,dob').eq('admission_no', admNo);
+  let query = sbClient.from('students').select('id,full_name,class,section,school_id,parent_password,dob').eq('admission_no', admNo);
   if (schoolId) query = query.eq('school_id', schoolId);
 
   const { data: student, error } = await query.single();
