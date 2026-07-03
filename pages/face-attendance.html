@@ -290,6 +290,15 @@ async function scanFace() {
     document.getElementById('scanning-overlay').classList.add('hidden');
     document.getElementById('btn-scan').disabled = false;
 
+    if (!response.ok) {
+      document.getElementById('face-result').innerHTML = `
+        <div class="match-result match-fail">
+          ⚠️ Scan failed (server error).<br>
+          <span style="font-size:12px;font-weight:400">${result.error || 'Please try again or contact support.'}</span>
+        </div>`;
+      return;
+    }
+
     if (result.matched) {
       document.getElementById('face-result').innerHTML = `
         <div class="match-result match-success">
