@@ -60,7 +60,7 @@
         <div class="stat-card">
           <div class="stat-label">Late Arrivals</div>
           <div class="stat-value" id="st-late" style="color:#8B5E00">—</div>
-          <div class="stat-sub">After 8:30 AM</div>
+          <div class="stat-sub">Past their expected time</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">Checked Out</div>
@@ -156,6 +156,16 @@
             <input type="text" class="form-control" id="new-staff-name" placeholder="Staff full name" style="margin-bottom:8px">
             <input type="text" class="form-control" id="new-staff-role" placeholder="Role (e.g. Maths Teacher)" style="margin-bottom:8px">
             <input type="text" class="form-control" id="new-staff-id" placeholder="Employee ID (optional)" style="margin-bottom:10px">
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <div style="flex:1">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Check-in Time</div>
+                <input type="time" class="form-control" id="new-staff-checkin" value="08:30">
+              </div>
+              <div style="flex:1">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Check-out Time</div>
+                <input type="time" class="form-control" id="new-staff-checkout" value="16:00">
+              </div>
+            </div>
             <button class="btn btn-primary w-full" onclick="addStaff()">+ Add Staff</button>
           </div>
         </div>
@@ -221,7 +231,7 @@ function startClock() {
 }
 
 async function loadStaff() {
-  const { data } = await supabase.from('staff').select('id,name,role,employee_id,face_photo').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
+  const { data } = await supabase.from('staff').select('id,name,role,employee_id,face_photo,expected_check_in,expected_check_out').eq('school_id',SCHOOL_ID).eq('status','active').order('name');
   staffList = data || [];
   const opts = staffList.length === 0
     ? '<option value="">No staff added yet</option>'
@@ -403,6 +413,8 @@ async function addStaff() {
   const { error } = await supabase.from('staff').insert([{
     school_id: SCHOOL_ID, name, role,
     employee_id: empId || name.replace(/\s+/g,'').toUpperCase().slice(0,6),
+    expected_check_in: document.getElementById('new-staff-checkin').value || '08:30',
+    expected_check_out: document.getElementById('new-staff-checkout').value || '16:00',
     status: 'active'
   }]);
   if (btn) { btn.textContent = '+ Add Staff'; btn.disabled = false; }
@@ -426,15 +438,21 @@ async function manualPunch() {
 }
 
 // ── Record Punch ──
+const GRACE_MINUTES = 10;
+function toMins(t){ const [h,m]=t.split(':').map(Number); return h*60+m; }
+
 async function recordPunch(staffId, staffName, staffRole, type, method, customTime=null) {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
   const timeStr = customTime || now.toTimeString().slice(0,5);
+  const staffRec = staffList.find(s=>s.id===staffId);
+  const expectedIn = (staffRec && staffRec.expected_check_in) ? staffRec.expected_check_in.slice(0,5) : CHECKIN_CUTOFF;
+  const expectedOut = (staffRec && staffRec.expected_check_out) ? staffRec.expected_check_out.slice(0,5) : CHECKOUT_EARLY;
   const { data: existing } = await supabase.from('staff_attendance')
     .select('id,check_in,check_out').eq('staff_id',staffId).eq('date',today).single();
   let error, msg='';
   if (type==='in') {
-    const isLate = timeStr > CHECKIN_CUTOFF;
+    const isLate = toMins(timeStr) > (toMins(expectedIn) + GRACE_MINUTES);
     const status = isLate ? 'late' : 'present';
     if (existing) {
       ({error} = await supabase.from('staff_attendance').update({check_in:timeStr,status,method}).eq('id',existing.id));
@@ -444,7 +462,7 @@ async function recordPunch(staffId, staffName, staffRole, type, method, customTi
     msg = `${staffName} checked IN at ${timeStr}${isLate?' (Late)':''}`;
   } else {
     if (!existing) { showToast(`${staffName} has no check-in record today.`,'error'); return; }
-    const isEarlyExit = timeStr < CHECKOUT_EARLY;
+    const isEarlyExit = toMins(timeStr) < toMins(expectedOut);
     let workHours = '—';
     if (existing.check_in) {
       const [ih,im]=existing.check_in.split(':').map(Number);
