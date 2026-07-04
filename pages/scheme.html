@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5-Year Scheme — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.scheme-card{border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:#fff}
+.scheme-card-top{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.scheme-badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.scheme-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
+.scheme-badge.free{background:#E3F5E8;color:#1F7A3D}
+.scheme-badge.year{background:var(--sandal-light);color:var(--maroon)}
+.scheme-badge.status-active{background:#E3F0FA;color:#1a3a6b}
+.scheme-badge.status-completed{background:#F0EAF7;color:#4A1070}
+.scheme-badge.status-cancelled{background:#FBE8E8;color:#A32D2D}
+.installment-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px}
+.installment-row.paid{background:#F3FBF5;border-color:#B7E0C2}
+.progress-bar{height:8px;background:var(--sandal-light);border-radius:5px;overflow:hidden}
+.progress-fill{height:100%;background:var(--maroon);border-radius:5px;transition:width .3s}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">🎓 5-Year Scheme</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Finance → 5-Year Scheme</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <div class="alert alert-info" style="margin-bottom:16px">This section is unique to your school's own 5-year fee scheme and is only visible here — it does not appear for other schools using DigiSmart ERP.</div>
+
+      <!-- STATS -->
+      <div class="stats-row" style="margin-bottom:16px">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Active Enrollments</div>
+          <div class="stat-value" id="stat-active">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Completed</div>
+          <div class="stat-value" id="stat-completed">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Scheme Fee Collected</div>
+          <div class="stat-value" id="stat-collected">₹0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Outstanding</div>
+          <div class="stat-value" id="stat-outstanding">₹0</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Enrolled Students</div>
+            <div class="card-subtitle">Students enrolled in the 5-year fee scheme</div>
+          </div>
+          <button class="btn btn-gold" onclick="openEnrollModal()">+ Enroll Student</button>
+        </div>
+        <div class="filter-row" style="margin-bottom:14px">
+          <input type="text" id="scheme-search" class="form-control" placeholder="Search by name or admission no..." style="max-width:300px" oninput="renderSchemeList()">
+          <select id="scheme-status-filter" class="form-control" style="width:150px" onchange="renderSchemeList()">
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="">All</option>
+          </select>
+        </div>
+        <div id="scheme-list"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ ENROLL MODAL ══ -->
+<div class="modal-overlay" id="enroll-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">Enroll Student in 5-Year Scheme</div>
+      <button class="modal-close" onclick="closeEnrollModal()">✕</button>
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Search Student <span class="req">*</span></label>
+      <input type="text" id="es-search" class="form-control" placeholder="Type student name or admission no..." oninput="searchEnrollStudent()">
+      <div id="es-search-results" style="max-height:160px;overflow-y:auto;margin-top:6px"></div>
+      <div id="es-selected-student" style="margin-top:8px"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="form-group">
+        <label class="form-label">Scheme Start Year <span class="req">*</span></label>
+        <select id="es-start-year" class="form-control" onchange="updateCompletionYear()"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Completion Year <span style="font-weight:400;color:var(--text-muted)">(auto, editable)</span></label>
+        <select id="es-completion-year" class="form-control"></select>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Free Fee Waivers</label>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="es-free-van" style="width:16px;height:16px"> Free Van Fees
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="es-free-uniform" style="width:16px;height:16px"> Free Uniform Fees
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="es-free-books" style="width:16px;height:16px"> Free Book Fees
+        </label>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Whichever is left unchecked, that student pays that fee as usual in regular Fee Management.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="form-group">
+        <label class="form-label">Scheme Fee Amount (₹) <span class="req">*</span></label>
+        <input type="number" id="es-fee-amount" class="form-control" placeholder="e.g. 50000" oninput="buildInstallmentPreview()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Installments</label>
+        <select id="es-installments" class="form-control" onchange="buildInstallmentPreview()">
+          <option value="1">Pay Once (Full)</option>
+          <option value="2">2 Installments</option>
+          <option value="3">3 Installments</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="es-installment-preview" style="margin-bottom:12px"></div>
+
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Notes (optional)</label>
+      <input type="text" id="es-notes" class="form-control" placeholder="Any additional notes">
+    </div>
+
+    <div id="enroll-alert" class="hidden"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeEnrollModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveEnrollment()" id="enroll-save-btn">✓ Enroll Student</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ COLLECT INSTALLMENT MODAL ══ -->
+<div class="modal-overlay" id="collect-scheme-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">Collect Scheme Installment</div>
+      <button class="modal-close" onclick="closeCollectSchemeModal()">✕</button>
+    </div>
+    <div id="cs-student-info" style="background:var(--sandal-light);border-radius:8px;padding:12px;margin-bottom:14px"></div>
+    <div id="cs-installments" style="margin-bottom:14px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="form-group">
+        <label class="form-label">Payment Mode</label>
+        <select id="cs-pay-mode" class="form-control">
+          <option value="cash">Cash</option>
+          <option value="upi">UPI</option>
+          <option value="bank_transfer">Bank Transfer</option>
+          <option value="cheque">Cheque</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Payment Date</label>
+        <input type="date" id="cs-pay-date" class="form-control">
+      </div>
+    </div>
+    <div id="cs-alert" class="hidden"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCollectSchemeModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="processSchemePayment()" id="cs-process-btn">✓ Collect Payment</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let allSchemes = [];
+let selectedEnrollStudent = null;
+let currentSchemeEnrollment = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('scheme');
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('cs-pay-date').value = new Date().toISOString().split('T')[0];
+  populateYearDropdowns();
+  await loadSchemes();
+});
+
+function populateYearDropdowns() {
+  const nowYear = new Date().getFullYear();
+  const startSel = document.getElementById('es-start-year');
+  const compSel = document.getElementById('es-completion-year');
+  startSel.innerHTML = ''; compSel.innerHTML = '';
+  for (let y = nowYear - 6; y <= nowYear + 2; y++) {
+    startSel.innerHTML += `<option value="${y}">${y}-${y+1}</option>`;
+    compSel.innerHTML += `<option value="${y}">${y}-${y+1}</option>`;
+  }
+  startSel.value = nowYear;
+  updateCompletionYear();
+}
+
+function updateCompletionYear() {
+  const start = parseInt(document.getElementById('es-start-year').value);
+  document.getElementById('es-completion-year').value = start + 4;
+}
+
+// ── LOAD & RENDER ──
+async function loadSchemes() {
+  const { data } = await supabase.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).order('created_at', {ascending:false});
+  allSchemes = data || [];
+
+  // Load payment totals for each
+  const { data: payments } = await supabase.from('scheme_payments').select('*').eq('school_id', SCHOOL_ID);
+  allSchemes.forEach(s => {
+    s.payments = (payments || []).filter(p => p.scheme_enrollment_id === s.id);
+    s.totalPaid = s.payments.reduce((sum,p) => sum + (p.amount_paid||0), 0);
+  });
+
+  renderStats();
+  renderSchemeList();
+}
+
+function renderStats() {
+  const active = allSchemes.filter(s => s.status === 'active').length;
+  const completed = allSchemes.filter(s => s.status === 'completed').length;
+  const collected = allSchemes.reduce((sum,s) => sum + s.totalPaid, 0);
+  const outstanding = allSchemes.filter(s=>s.status==='active').reduce((sum,s) => sum + Math.max(0,(s.scheme_fee_amount||0) - s.totalPaid), 0);
+  document.getElementById('stat-active').textContent = active;
+  document.getElementById('stat-completed').textContent = completed;
+  document.getElementById('stat-collected').textContent = '₹' + collected.toLocaleString('en-IN');
+  document.getElementById('stat-outstanding').textContent = '₹' + outstanding.toLocaleString('en-IN');
+}
+
+function renderSchemeList() {
+  const q = document.getElementById('scheme-search').value.trim().toLowerCase();
+  const statusFilter = document.getElementById('scheme-status-filter').value;
+  let list = allSchemes;
+  if (statusFilter) list = list.filter(s => s.status === statusFilter);
+  if (q) list = list.filter(s => (s.student_name||'').toLowerCase().includes(q) || (s.admission_no||'').toLowerCase().includes(q));
+
+  const el = document.getElementById('scheme-list');
+  if (list.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">🎓</div><p>No students found for this filter.</p></div>';
+    return;
+  }
+
+  el.innerHTML = list.map(s => {
+    const balance = Math.max(0, (s.scheme_fee_amount||0) - s.totalPaid);
+    const pct = s.scheme_fee_amount > 0 ? Math.round((s.totalPaid/s.scheme_fee_amount)*100) : 100;
+    const freeItems = [s.free_van&&'Van',s.free_uniform&&'Uniform',s.free_books&&'Books'].filter(Boolean);
+    return `
+      <div class="scheme-card">
+        <div class="scheme-card-top">
+          <div class="avatar" style="width:40px;height:40px;font-size:14px">${getInitials(s.student_name)}</div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:14px">${s.student_name}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${s.admission_no||''}</div>
+            <div class="scheme-badges">
+              <span class="scheme-badge year">${s.start_year}-${s.start_year+1} → ${s.completion_year}-${s.completion_year+1}</span>
+              <span class="scheme-badge status-${s.status}">${s.status}</span>
+              ${freeItems.map(f=>`<span class="scheme-badge free">🎓 Free ${f}</span>`).join('')}
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--text-muted)">Scheme Fee</div>
+            <div style="font-weight:700;color:var(--maroon)">₹${(s.scheme_fee_amount||0).toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div class="progress-bar" style="flex:1"><div class="progress-fill" style="width:${pct}%"></div></div>
+          <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">₹${s.totalPaid.toLocaleString('en-IN')} paid · ₹${balance.toLocaleString('en-IN')} due</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${balance > 0 && s.status === 'active' ? `<button class="btn btn-gold btn-sm" onclick="openCollectSchemeModal('${s.id}')">+ Collect Installment</button>` : ''}
+          ${s.status === 'active' ? `<button class="btn btn-secondary btn-sm" onclick="updateSchemeStatus('${s.id}','completed')">Mark Completed</button>
+          <button class="btn btn-danger btn-sm" onclick="updateSchemeStatus('${s.id}','cancelled')">Cancel Scheme</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function updateSchemeStatus(id, status) {
+  if (!confirm(`Mark this scheme as ${status}?`)) return;
+  await supabase.from('scheme_enrollments').update({ status }).eq('id', id);
+  showToast('Scheme status updated.','success');
+  await loadSchemes();
+}
+
+// ── ENROLL MODAL ──
+function openEnrollModal() {
+  selectedEnrollStudent = null;
+  document.getElementById('es-search').value = '';
+  document.getElementById('es-search-results').innerHTML = '';
+  document.getElementById('es-selected-student').innerHTML = '';
+  document.getElementById('es-fee-amount').value = '';
+  document.getElementById('es-notes').value = '';
+  document.getElementById('es-free-van').checked = false;
+  document.getElementById('es-free-uniform').checked = false;
+  document.getElementById('es-free-books').checked = false;
+  document.getElementById('es-installment-preview').innerHTML = '';
+  document.getElementById('enroll-alert').className = 'hidden';
+  populateYearDropdowns();
+  document.getElementById('enroll-modal').classList.add('open');
+}
+function closeEnrollModal() { document.getElementById('enroll-modal').classList.remove('open'); }
+
+async function searchEnrollStudent() {
+  const q = document.getElementById('es-search').value.trim();
+  if (q.length < 2) { document.getElementById('es-search-results').innerHTML = ''; return; }
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,class,section').eq('school_id',SCHOOL_ID).eq('status','active')
+    .or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(8);
+  const el = document.getElementById('es-search-results');
+  if (!data || data.length === 0) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:6px">No students found.</div>'; return; }
+  el.innerHTML = data.map(s => `
+    <div style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;font-size:12px" onclick='selectEnrollStudent(${JSON.stringify(s).replace(/'/g,"&apos;")})'>
+      <b>${s.full_name}</b> — ${s.admission_no} · ${s.class}${s.section?' '+s.section:''}
+    </div>
+  `).join('');
+}
+
+function selectEnrollStudent(s) {
+  selectedEnrollStudent = s;
+  document.getElementById('es-search-results').innerHTML = '';
+  document.getElementById('es-search').value = '';
+  document.getElementById('es-selected-student').innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--sandal-light);border-radius:8px">
+      <div class="avatar" style="width:30px;height:30px;font-size:12px">${getInitials(s.full_name)}</div>
+      <div style="font-size:12px"><b>${s.full_name}</b> — ${s.admission_no} · ${s.class}${s.section?' '+s.section:''}</div>
+    </div>
+  `;
+}
+
+function buildInstallmentPreview() {
+  const amount = parseFloat(document.getElementById('es-fee-amount').value) || 0;
+  const count = parseInt(document.getElementById('es-installments').value) || 1;
+  if (amount <= 0) { document.getElementById('es-installment-preview').innerHTML = ''; return; }
+  const per = Math.floor(amount / count);
+  const remainder = amount - (per * count);
+  let html = '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px">Installment Breakdown (editable amounts saved when you enroll)</div>';
+  for (let i = 0; i < count; i++) {
+    const amt = per + (i === count-1 ? remainder : 0);
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px">
+      <span style="font-size:12px">Installment ${i+1}</span>
+      <input type="number" id="inst-amt-${i}" class="form-control" style="width:110px;text-align:right" value="${amt}">
+    </div>`;
+  }
+  document.getElementById('es-installment-preview').innerHTML = html;
+}
+
+async function saveEnrollment() {
+  const alertEl = document.getElementById('enroll-alert');
+  if (!selectedEnrollStudent) { alertEl.className='alert alert-danger'; alertEl.textContent='⚠️ Please select a student.'; return; }
+  const feeAmount = parseFloat(document.getElementById('es-fee-amount').value) || 0;
+  if (feeAmount <= 0) { alertEl.className='alert alert-danger'; alertEl.textContent='⚠️ Please enter the scheme fee amount.'; return; }
+
+  const startYear = parseInt(document.getElementById('es-start-year').value);
+  const completionYear = parseInt(document.getElementById('es-completion-year').value);
+  const installmentCount = parseInt(document.getElementById('es-installments').value);
+
+  alertEl.className = 'hidden';
+  const btn = document.getElementById('enroll-save-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+
+  const { data: enrollment, error } = await supabase.from('scheme_enrollments').insert([{
+    school_id: SCHOOL_ID,
+    student_id: selectedEnrollStudent.id,
+    student_name: selectedEnrollStudent.full_name,
+    admission_no: selectedEnrollStudent.admission_no,
+    start_year: startYear,
+    completion_year: completionYear,
+    free_van: document.getElementById('es-free-van').checked,
+    free_uniform: document.getElementById('es-free-uniform').checked,
+    free_books: document.getElementById('es-free-books').checked,
+    scheme_fee_amount: feeAmount,
+    installment_count: installmentCount,
+    status: 'active',
+    notes: document.getElementById('es-notes').value.trim(),
+  }]).select().single();
+
+  if (error) { alertEl.className='alert alert-danger'; alertEl.textContent='⚠️ Error: '+error.message; btn.textContent='✓ Enroll Student'; btn.disabled=false; return; }
+
+  // Create installment payment placeholders
+  const installments = [];
+  for (let i = 0; i < installmentCount; i++) {
+    const amt = parseFloat(document.getElementById(`inst-amt-${i}`)?.value) || 0;
+    installments.push({ scheme_enrollment_id: enrollment.id, school_id: SCHOOL_ID, installment_no: i+1, amount_due: amt, amount_paid: 0 });
+  }
+  if (installments.length > 0) await supabase.from('scheme_payments').insert(installments);
+
+  btn.textContent = '✓ Enroll Student'; btn.disabled = false;
+  closeEnrollModal();
+  showToast(selectedEnrollStudent.full_name + ' enrolled in 5-Year Scheme!','success');
+  await loadSchemes();
+}
+
+// ── COLLECT INSTALLMENT ──
+async function openCollectSchemeModal(enrollmentId) {
+  const scheme = allSchemes.find(s => s.id === enrollmentId);
+  if (!scheme) return;
+  currentSchemeEnrollment = scheme;
+
+  document.getElementById('cs-student-info').innerHTML = `
+    <div style="font-weight:700">${scheme.student_name}</div>
+    <div style="font-size:12px;color:var(--text-muted)">${scheme.admission_no} · Scheme: ${scheme.start_year}-${scheme.start_year+1} to ${scheme.completion_year}-${scheme.completion_year+1}</div>
+  `;
+
+  const { data: installments } = await supabase.from('scheme_payments').select('*').eq('scheme_enrollment_id', enrollmentId).order('installment_no');
+  let html = '';
+  (installments||[]).forEach(inst => {
+    const balance = (inst.amount_due||0) - (inst.amount_paid||0);
+    if (balance <= 0) {
+      html += `<div class="installment-row paid"><input type="checkbox" disabled> <div style="flex:1">Installment ${inst.installment_no} — Fully Paid ✓</div></div>`;
+    } else {
+      html += `
+        <div class="installment-row">
+          <input type="checkbox" id="inst-cb-${inst.id}" checked onchange="toggleInstAmt('${inst.id}')" style="width:16px;height:16px;cursor:pointer">
+          <div style="flex:1">Installment ${inst.installment_no} — Balance ₹${balance.toLocaleString('en-IN')} of ₹${(inst.amount_due||0).toLocaleString('en-IN')}</div>
+          <input type="number" id="inst-amt-in-${inst.id}" class="form-control" style="width:100px;text-align:right" value="${balance}" max="${balance}" min="0" oninput="clampInst('${inst.id}',${balance})">
+        </div>
+      `;
+    }
+  });
+  document.getElementById('cs-installments').innerHTML = html || '<div class="empty-state"><p>All installments paid.</p></div>';
+  document.getElementById('cs-alert').className = 'hidden';
+  document.getElementById('collect-scheme-modal').classList.add('open');
+}
+
+function toggleInstAmt(instId) {
+  const cb = document.getElementById('inst-cb-' + instId);
+  const amtInput = document.getElementById('inst-amt-in-' + instId);
+  amtInput.disabled = !cb.checked;
+  amtInput.style.opacity = cb.checked ? '1' : '.4';
+}
+function clampInst(instId, maxBal) {
+  const el = document.getElementById('inst-amt-in-' + instId);
+  let v = parseFloat(el.value) || 0;
+  if (v > maxBal) v = maxBal;
+  if (v < 0) v = 0;
+  el.value = v;
+}
+
+function closeCollectSchemeModal() { document.getElementById('collect-scheme-modal').classList.remove('open'); }
+
+async function processSchemePayment() {
+  const alertEl = document.getElementById('cs-alert');
+  const rows = document.querySelectorAll('[id^="inst-cb-"]');
+  const payDate = document.getElementById('cs-pay-date').value;
+  const payMode = document.getElementById('cs-pay-mode').value;
+  let anyPaid = false;
+
+  for (const cb of rows) {
+    if (!cb.checked) continue;
+    const instId = cb.id.replace('inst-cb-','');
+    const amtInput = document.getElementById('inst-amt-in-' + instId);
+    const amt = parseFloat(amtInput.value) || 0;
+    if (amt <= 0) continue;
+    anyPaid = true;
+
+    const { data: current } = await supabase.from('scheme_payments').select('amount_paid').eq('id', instId).single();
+    const newPaid = (current?.amount_paid || 0) + amt;
+    await supabase.from('scheme_payments').update({
+      amount_paid: newPaid, payment_date: payDate, payment_mode: payMode,
+      receipt_no: `SCH-${new Date().getFullYear()}-${instId.slice(0,6).toUpperCase()}`
+    }).eq('id', instId);
+  }
+
+  if (!anyPaid) { alertEl.className='alert alert-danger'; alertEl.textContent='⚠️ Please enter an amount greater than ₹0 for at least one installment.'; return; }
+
+  closeCollectSchemeModal();
+  showToast('Scheme payment collected!','success');
+  await loadSchemes();
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(' ');
+  return parts.length > 1 ? (parts[0][0]+parts[1][0]).toUpperCase() : parts[0].slice(0,2).toUpperCase();
+}
+
+['enroll-modal','collect-scheme-modal'].forEach(id => {
+  document.getElementById(id).addEventListener('click', (e) => { if (e.target.id === id) e.currentTarget.classList.remove('open'); });
+});
+</script>
+</body>
+</html>

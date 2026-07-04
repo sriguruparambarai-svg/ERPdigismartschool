@@ -355,6 +355,16 @@
       </select>
     </div>
     <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Fee Category</label>
+      <select id="fh-category" class="form-control">
+        <option value="general">General</option>
+        <option value="transport">Transport / Van</option>
+        <option value="uniform">Uniform</option>
+        <option value="books">Books</option>
+      </select>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Used to match with scheme waivers (e.g. "Free Van" applies to any fee head tagged Transport/Van)</div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">Description (optional)</label>
       <input type="text" id="fh-desc" class="form-control" placeholder="Short description">
     </div>
@@ -442,6 +452,7 @@ let monthStart = 5;
 let monthCount = 11;
 let currentCollectStudent = null;
 let currentCollectItems = [];
+let currentActiveScheme = null;
 
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', async () => {
@@ -585,6 +596,7 @@ function renderFeeHeads() {
         <div style="font-size:11px;color:var(--text-muted)">${h.type === 'per_period' ? 'Charged per period' : h.type === 'annual' ? 'Annual (once per year)' : 'One-time'} ${h.description ? '· ' + h.description : ''}</div>
       </div>
       <span class="badge badge-maroon" style="font-size:10px">${h.type}</span>
+      ${h.category && h.category !== 'general' ? `<span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${h.category}</span>` : ''}
       <button class="btn btn-danger btn-sm btn-icon" onclick="deleteFeeHead('${h.id}')">🗑</button>
     </div>
   `).join('');
@@ -596,10 +608,11 @@ function closeFeeHeadModal() { document.getElementById('feehead-modal').classLis
 async function saveFeeHead() {
   const name = document.getElementById('fh-name').value.trim();
   const type = document.getElementById('fh-type').value;
+  const category = document.getElementById('fh-category').value;
   const desc = document.getElementById('fh-desc').value.trim();
   if (!name) { showToast('Please enter fee head name.','error'); return; }
 
-  const { error } = await supabase.from('fee_heads').insert([{ school_id: SCHOOL_ID, name, type, description: desc }]);
+  const { error } = await supabase.from('fee_heads').insert([{ school_id: SCHOOL_ID, name, type, category, description: desc }]);
   if (error) { showToast('Error: ' + error.message,'error'); return; }
   closeFeeHeadModal();
   document.getElementById('fh-name').value = '';
@@ -755,6 +768,21 @@ async function searchStudents() {
   `).join('');
 }
 
+// ── 5-YEAR SCHEME WAIVER HELPERS ──
+async function getActiveScheme(studentId) {
+  const { data } = await supabase.from('scheme_enrollments').select('*').eq('student_id', studentId).eq('school_id', SCHOOL_ID).eq('status', 'active').single();
+  return data || null;
+}
+function isFeeWaived(scheme, feeHeadId) {
+  if (!scheme) return false;
+  const head = feeHeads.find(h => h.id === feeHeadId);
+  if (!head) return false;
+  if (head.category === 'transport') return !!scheme.free_van;
+  if (head.category === 'uniform') return !!scheme.free_uniform;
+  if (head.category === 'books') return !!scheme.free_books;
+  return false;
+}
+
 async function selectStudentForFee(studentId) {
   const { data: student } = await supabase.from('students').select('*').eq('id', studentId).single();
   if (!student) return;
@@ -766,6 +794,7 @@ async function selectStudentForFee(studentId) {
   const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id', studentId);
 
   const periods = getPeriods();
+  const activeScheme = await getActiveScheme(studentId);
 
   // Calculate paid amounts per fee head per period
   const paidMap = {};
@@ -782,13 +811,18 @@ async function selectStudentForFee(studentId) {
   }
 
   let totalFee = 0, totalPaid = 0;
-  structure.forEach(s => { totalFee += s.total_amount || 0; });
+  structure.forEach(s => { if (!isFeeWaived(activeScheme, s.fee_head_id)) totalFee += s.total_amount || 0; });
   if (payments) payments.forEach(p => { totalPaid += p.amount_paid || 0; });
   const balance = totalFee - totalPaid;
   const pct = totalFee > 0 ? Math.round((totalPaid/totalFee)*100) : 0;
 
+  currentActiveScheme = activeScheme;
+  const schemeYear = activeScheme ? `${activeScheme.start_year}-${activeScheme.start_year+1} to ${activeScheme.completion_year}-${activeScheme.completion_year+1}` : '';
+  const schemeFreeItems = activeScheme ? [activeScheme.free_van&&'Van',activeScheme.free_uniform&&'Uniform',activeScheme.free_books&&'Books'].filter(Boolean) : [];
+
   let html = `
     <div class="card">
+      ${activeScheme ? `<div class="alert alert-success" style="margin-bottom:14px">🎓 <b>5-Year Scheme Student</b> (${schemeYear})${schemeFreeItems.length?` — Free: ${schemeFreeItems.join(', ')}`:''}</div>` : ''}
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
         <div class="avatar" style="width:44px;height:44px;font-size:16px">${getInitials(student.full_name)}</div>
         <div style="flex:1">
@@ -822,6 +856,16 @@ async function selectStudentForFee(studentId) {
         </thead>
         <tbody>
           ${structure.map(s => {
+            if (isFeeWaived(activeScheme, s.fee_head_id)) {
+              return `
+                <tr style="background:#F3FBF5">
+                  <td style="font-weight:500">${s.fee_head_name}</td>
+                  ${periods.map(()=>`<td></td>`).join('')}
+                  <td style="text-align:right;font-weight:600;color:var(--text-muted);text-decoration:line-through">₹${(s.total_amount||0).toLocaleString('en-IN')}</td>
+                  <td colspan="2" style="text-align:center;color:#2D7A3A;font-weight:700;font-size:11px">🎓 Free — 5-Year Scheme</td>
+                </tr>
+              `;
+            }
             let rowPaid = 0;
             const periodCells = s.fee_head_name === s.fee_head_name && periods.map(p => {
               const amt = s.period_amounts?.[p] || (s.annual_amount ? s.annual_amount : 0);
@@ -895,6 +939,17 @@ async function openCollectModal(studentId) {
   itemsHtml += '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Select fee items to collect:</div>';
 
   structure?.forEach(s => {
+    if (isFeeWaived(currentActiveScheme, s.fee_head_id)) {
+      itemsHtml += `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed #B7E0C2;border-radius:8px;margin-bottom:6px;background:#F3FBF5">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px;color:#2D7A3A">${s.fee_head_name}</div>
+            <div style="font-size:11px;color:var(--text-muted)">🎓 Free under 5-Year Scheme</div>
+          </div>
+        </div>
+      `;
+      return;
+    }
     const periodsToShow = s.period_amounts ? periods : ['Amount'];
     periodsToShow.forEach(p => {
       const amt = s.period_amounts?.[p] || s.annual_amount || 0;
