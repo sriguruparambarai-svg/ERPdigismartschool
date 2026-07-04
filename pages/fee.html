@@ -864,12 +864,12 @@ async function openCollectModal(studentId) {
 
       itemsHtml += `
         <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">
-          <input type="checkbox" id="${itemId}" value="${balance}" onchange="updateCollectTotal()" style="width:16px;height:16px;cursor:pointer">
+          <input type="checkbox" id="${itemId}" value="${balance}" checked onchange="toggleItemAmount('${itemId}')" style="width:16px;height:16px;cursor:pointer">
           <div style="flex:1">
             <div style="font-weight:600;font-size:13px">${s.fee_head_name}</div>
-            <div style="font-size:11px;color:var(--text-muted)">${p} · Fee: ₹${amt.toLocaleString('en-IN')} · Paid: ₹${paid.toLocaleString('en-IN')}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${p} · Balance: ₹${balance.toLocaleString('en-IN')} of ₹${amt.toLocaleString('en-IN')}</div>
           </div>
-          <div style="font-weight:700;color:var(--maroon)">₹${balance.toLocaleString('en-IN')}</div>
+          <input type="number" id="${itemId}-amt" class="form-control" style="width:100px;text-align:right;font-weight:700;color:var(--maroon)" value="${balance}" max="${balance}" min="0" step="1" onclick="event.preventDefault();event.stopPropagation()" oninput="clampAndUpdate('${itemId}',${balance})">
         </label>
       `;
     });
@@ -889,11 +889,29 @@ async function openCollectModal(studentId) {
   document.getElementById('collect-modal').classList.add('open');
 }
 
+function toggleItemAmount(itemId) {
+  const cb = document.getElementById(itemId);
+  const amtInput = document.getElementById(itemId + '-amt');
+  amtInput.disabled = !cb.checked;
+  amtInput.style.opacity = cb.checked ? '1' : '.4';
+  updateCollectTotal();
+}
+
+function clampAndUpdate(itemId, maxBalance) {
+  const amtInput = document.getElementById(itemId + '-amt');
+  let val = parseFloat(amtInput.value) || 0;
+  if (val > maxBalance) val = maxBalance;
+  if (val < 0) val = 0;
+  amtInput.value = val;
+  updateCollectTotal();
+}
+
 function updateCollectTotal() {
   let total = 0;
   currentCollectItems.forEach(item => {
     const cb = document.getElementById(item.id);
-    if (cb && cb.checked) total += item.amount;
+    const amtInput = document.getElementById(item.id + '-amt');
+    if (cb && cb.checked) total += parseFloat(amtInput?.value) || 0;
   });
   document.getElementById('collect-selected-amt').textContent = '₹' + total.toLocaleString('en-IN');
 }
@@ -904,12 +922,16 @@ function closeReceiptModal() { document.getElementById('receipt-modal').classLis
 async function processPayment() {
   const selectedItems = currentCollectItems.filter(item => {
     const cb = document.getElementById(item.id);
-    return cb && cb.checked;
+    const amtInput = document.getElementById(item.id + '-amt');
+    return cb && cb.checked && (parseFloat(amtInput?.value) || 0) > 0;
+  }).map(item => {
+    const amtInput = document.getElementById(item.id + '-amt');
+    return { ...item, amount: parseFloat(amtInput.value) || 0 };
   });
 
   if (selectedItems.length === 0) {
     document.getElementById('collect-alert').className = 'alert alert-danger';
-    document.getElementById('collect-alert').textContent = '⚠️ Please select at least one fee item to collect.';
+    document.getElementById('collect-alert').textContent = '⚠️ Please select at least one fee item and enter an amount greater than ₹0.';
     return;
   }
 
