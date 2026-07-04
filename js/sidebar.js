@@ -33,7 +33,7 @@ async function renderSidebar(activePage) {
 
   // Feature-flagged: 5-Year Scheme only shows for schools with has_scheme = true
   try {
-    const { data } = await supabase.from('schools').select('has_scheme').eq('id', SCHOOL_ID).single();
+    const { data } = await supabase.from('schools').select('has_scheme').eq('school_id', SCHOOL_ID).single();
     if (data && data.has_scheme) {
       nav.find(g => g.group === 'Finance').items.push({ id:'scheme', icon:'🎓', label:'5-Year Scheme', href:'scheme.html' });
     }
