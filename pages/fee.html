@@ -166,6 +166,25 @@
             <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Custom Schedule Names (comma separated)</div>
             <input type="text" id="custom-periods" class="form-control" placeholder="e.g. Quarterly 1, Quarterly 2, Quarterly 3, Quarterly 4" style="max-width:500px">
           </div>
+          <div id="month-config" class="hidden" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Academic Year Calendar (set to match your school — e.g. Tamil Nadu schools start June, CBSE schools start April)</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="font-size:12px;color:var(--text-muted)">Academic Year Starts:</span>
+                <select id="month-start" class="form-control" style="width:130px" onchange="updateMonthPreview()">
+                  <option value="0">January</option><option value="1">February</option><option value="2">March</option>
+                  <option value="3">April</option><option value="4">May</option><option value="5" selected>June</option>
+                  <option value="6">July</option><option value="7">August</option><option value="8">September</option>
+                  <option value="9">October</option><option value="10">November</option><option value="11">December</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="font-size:12px;color:var(--text-muted)">Number of Fee Months:</span>
+                <input type="number" id="month-count" class="form-control" style="width:90px" value="11" min="1" max="12" oninput="updateMonthPreview()">
+              </div>
+            </div>
+            <div id="month-preview" style="margin-top:10px;font-size:11px;color:var(--text-muted)"></div>
+          </div>
         </div>
 
         <!-- Fee Heads -->
@@ -419,6 +438,8 @@ let feeHeads = [];
 let feeStructure = {};
 let collectionMode = 'term';
 let termConfig = [];
+let monthStart = 5;
+let monthCount = 11;
 let currentCollectStudent = null;
 let currentCollectItems = [];
 
@@ -452,6 +473,10 @@ async function loadSettings() {
       if (tc[2]) { document.getElementById('term3-name').value = tc[2].name; document.getElementById('term3-due').value = tc[2].due || ''; }
     }
     if (data.custom_periods) document.getElementById('custom-periods').value = data.custom_periods;
+    monthStart = data.month_start ?? 5;
+    monthCount = data.month_count || 11;
+    document.getElementById('month-start').value = monthStart;
+    document.getElementById('month-count').value = monthCount;
   } else {
     document.getElementById('mode-term').checked = true;
   }
@@ -474,6 +499,21 @@ function updateModeUI() {
   });
   document.getElementById('term-config').classList.toggle('hidden', mode !== 'term');
   document.getElementById('custom-config').classList.toggle('hidden', mode !== 'custom');
+  document.getElementById('month-config').classList.toggle('hidden', mode !== 'month');
+  if (mode === 'month') updateMonthPreview();
+}
+
+function generateMonthList(startIdx, count) {
+  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const list = [];
+  for (let i = 0; i < count; i++) list.push(names[(startIdx + i) % 12]);
+  return list;
+}
+
+function updateMonthPreview() {
+  const startIdx = parseInt(document.getElementById('month-start').value) || 0;
+  const count = parseInt(document.getElementById('month-count').value) || 12;
+  document.getElementById('month-preview').textContent = 'Fee months: ' + generateMonthList(startIdx, count).join(' → ');
 }
 
 async function saveCollectionMode() {
@@ -485,9 +525,11 @@ async function saveCollectionMode() {
     { name: document.getElementById('term3-name').value, due: document.getElementById('term3-due').value },
   ];
   const customPeriods = document.getElementById('custom-periods').value;
+  const monthStart_val = parseInt(document.getElementById('month-start').value) || 0;
+  const monthCount_val = parseInt(document.getElementById('month-count').value) || 12;
 
   const { data: existing } = await supabase.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
-  const payload = { school_id: SCHOOL_ID, collection_mode: mode, term_config: tc, custom_periods: customPeriods };
+  const payload = { school_id: SCHOOL_ID, collection_mode: mode, term_config: tc, custom_periods: customPeriods, month_start: monthStart_val, month_count: monthCount_val };
 
   if (existing) {
     await supabase.from('fee_settings').update(payload).eq('school_id', SCHOOL_ID);
@@ -496,6 +538,8 @@ async function saveCollectionMode() {
   }
   collectionMode = mode;
   termConfig = tc;
+  monthStart = monthStart_val;
+  monthCount = monthCount_val;
   showToast('Fee collection mode saved!', 'success');
   populateDefPeriod();
 }
@@ -514,7 +558,7 @@ function getPeriods() {
   if (collectionMode === 'term') {
     return termConfig.map(t => t.name).filter(Boolean);
   } else if (collectionMode === 'month') {
-    return ['April','May','June','July','August','September','October','November','December','January','February','March'];
+    return generateMonthList(monthStart, monthCount);
   } else {
     const custom = document.getElementById('custom-periods').value;
     return custom ? custom.split(',').map(s=>s.trim()).filter(Boolean) : [];
