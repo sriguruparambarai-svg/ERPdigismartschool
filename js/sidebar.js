@@ -1,7 +1,7 @@
 // DigiSmart ERP — Sidebar Component
 // Call renderSidebar('admission') to highlight the correct nav item
 
-function renderSidebar(activePage) {
+async function renderSidebar(activePage) {
   const nav = [
     { group: 'Overview', items: [
       { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard.html' },
@@ -30,6 +30,14 @@ function renderSidebar(activePage) {
       { id: 'communication', icon: '📣', label: 'Parent Communication', href: 'communication.html' },
     ]},
   ];
+
+  // Feature-flagged: 5-Year Scheme only shows for schools with has_scheme = true
+  try {
+    const { data } = await supabase.from('schools').select('has_scheme').eq('id', SCHOOL_ID).single();
+    if (data && data.has_scheme) {
+      nav.find(g => g.group === 'Finance').items.push({ id:'scheme', icon:'🎓', label:'5-Year Scheme', href:'scheme.html' });
+    }
+  } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
 
   let html = `
     <div class="sidebar-brand">
