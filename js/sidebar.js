@@ -13,8 +13,7 @@ function renderSidebar(activePage) {
     { group: 'Academic', items: [
       { id: 'admission', icon: '📝', label: 'Admission', href: 'admission.html' },
       { id: 'exam', icon: '📄', label: 'Exam Management', href: 'exam.html' },
-      { id: 'timetable', icon: '🗓', label: 'Time Table', href: 'timetable.html' },
-      { id: 'icard', icon: '🪪', label: 'I-Card Generator', href: 'icard.html' },
+      { id: 'icard', icon: '🪪', label: 'I-Card & Timetable', href: 'icard.html' },
     ]},
     { group: 'Finance', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },
