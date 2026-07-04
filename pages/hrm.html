@@ -941,10 +941,12 @@ async function loadSalarySheet() {
   const procMap = {};
   if (processed) processed.forEach(p=>{ procMap[p.staff_id]=p; });
 
+  const lopMap = await getLopMap(month, ids);
+
   let totalGross=0, totalNet=0, totalPaid=0;
   staffList.forEach(s=>{
     const st=structMap[s.id];
-    if(st){ totalGross+=st.gross_salary||0; const net=calcNet(st); totalNet+=net; }
+    if(st){ totalGross+=st.gross_salary||0; const net=calcNet(st, lopMap[s.id]||0); totalNet+=net; }
     if(procMap[s.id]?.status==='paid') totalPaid+=procMap[s.id].net_salary||0;
   });
 
@@ -967,6 +969,7 @@ async function loadSalarySheet() {
           <th>PF Ded.</th>
           <th>ESI Ded.</th>
           <th>Other Ded.</th>
+          <th>LOP Ded.</th>
           <th style="color:var(--maroon)">Net Salary</th>
           <th>Status</th>
           <th style="width:130px">Action</th>
@@ -980,7 +983,7 @@ async function loadSalarySheet() {
             <tr>
               <td><div style="font-weight:500">${s.name}</div><div style="font-size:11px;color:var(--text-muted)">${s.employee_id}</div></td>
               <td>${s.role||'—'}</td>
-              <td colspan="5" style="color:var(--text-muted);font-size:12px">No salary structure set. <a href="#" onclick="openSalStructModal('${s.id}')" style="color:var(--maroon)">Set now →</a></td>
+              <td colspan="6" style="color:var(--text-muted);font-size:12px">No salary structure set. <a href="#" onclick="openSalStructModal('${s.id}')" style="color:var(--maroon)">Set now →</a></td>
               <td>—</td><td>—</td>
             </tr>
           `;
@@ -989,7 +992,9 @@ async function loadSalarySheet() {
           const pfAmt = statutorySettings.pf ? Math.round(basicPay * statutorySettings.pfEmpPct / 100) : 0;
           const esiAmt = statutorySettings.esi && gross<=21000 ? Math.round(gross * statutorySettings.esiEmpPct / 100) : 0;
           const otherDed = salaryComponents.filter(c=>c.type==='deduction').reduce((sum,c)=>(st.components?.[c.id]||0)+sum,0);
-          const net = Math.max(0, gross - pfAmt - esiAmt - otherDed);
+          const lopDays = lopMap[s.id] || 0;
+          const lopDed = lopAmount(gross, lopDays);
+          const net = Math.max(0, gross - pfAmt - esiAmt - otherDed - lopDed);
           const status = proc?.status || 'unpaid';
           return `
             <tr>
@@ -999,6 +1004,7 @@ async function loadSalarySheet() {
               <td style="color:#A32D2D">${pfAmt>0?'₹'+pfAmt.toLocaleString('en-IN'):'—'}</td>
               <td style="color:#A32D2D">${esiAmt>0?'₹'+esiAmt.toLocaleString('en-IN'):'—'}</td>
               <td style="color:#A32D2D">${otherDed>0?'₹'+otherDed.toLocaleString('en-IN'):'—'}</td>
+              <td style="color:#A32D2D">${lopDed>0?`₹${lopDed.toLocaleString('en-IN')}<div style="font-size:10px">${lopDays} day${lopDays>1?'s':''}</div>`:'—'}</td>
               <td style="font-weight:700;color:var(--maroon);font-size:14px">₹${net.toLocaleString('en-IN')}</td>
               <td><span class="badge ${status==='paid'?'badge-green':status==='hold'?'badge-amber':'badge-red'}">${status}</span></td>
               <td>
@@ -1019,13 +1025,38 @@ async function loadSalarySheet() {
   `;
 }
 
-function calcNet(st) {
+// ── Loss of Pay (LOP) helpers ──
+// One day's pay = Gross ÷ 30 (fixed 30 days)
+async function getLopMap(month, staffIds) {
+  const [yr, mo] = month.split('-').map(Number);
+  const monthStart = new Date(yr, mo-1, 1);
+  const monthEnd = new Date(yr, mo, 0);
+  const fmt = d => d.toISOString().split('T')[0];
+  const { data: leaves } = await supabase.from('staff_leaves')
+    .select('staff_id,from_date,to_date')
+    .eq('school_id', SCHOOL_ID).eq('status','approved').eq('leave_type','unpaid')
+    .lte('from_date', fmt(monthEnd)).gte('to_date', fmt(monthStart));
+  const map = {};
+  (leaves||[]).forEach(l => {
+    if (staffIds && !staffIds.includes(l.staff_id)) return;
+    const s = new Date(Math.max(new Date(l.from_date), monthStart));
+    const e = new Date(Math.min(new Date(l.to_date), monthEnd));
+    if (s <= e) {
+      const days = Math.round((e - s) / 86400000) + 1;
+      map[l.staff_id] = (map[l.staff_id] || 0) + days;
+    }
+  });
+  return map;
+}
+function lopAmount(gross, lopDays) { return Math.round((gross / 30) * (lopDays || 0)); }
+
+function calcNet(st, lopDays = 0) {
   const gross = st.gross_salary || 0;
   const basicPay = st.basic_pay || 0;
   const pfAmt = statutorySettings.pf ? Math.round(basicPay * statutorySettings.pfEmpPct / 100) : 0;
   const esiAmt = statutorySettings.esi && gross<=21000 ? Math.round(gross * statutorySettings.esiEmpPct / 100) : 0;
   const otherDed = salaryComponents.filter(c=>c.type==='deduction').reduce((sum,c)=>(st.components?.[c.id]||0)+sum,0);
-  return Math.max(0, gross - pfAmt - esiAmt - otherDed);
+  return Math.max(0, gross - pfAmt - esiAmt - otherDed - lopAmount(gross, lopDays));
 }
 
 async function markSalaryPaid(staffId, month, netSalary) {
@@ -1085,7 +1116,10 @@ async function showPayslip(staffId, month) {
   const esiAmt = statutorySettings.esi && gross<=21000 ? Math.round(gross * statutorySettings.esiEmpPct / 100) : 0;
   const earnings = salaryComponents.filter(c=>c.type==='earning');
   const deductions = salaryComponents.filter(c=>c.type==='deduction');
-  let totalDed = pfAmt + esiAmt;
+  const lopMapSlip = await getLopMap(month, [staffId]);
+  const lopDaysSlip = lopMapSlip[staffId] || 0;
+  const lopDedSlip = lopAmount(gross, lopDaysSlip);
+  let totalDed = pfAmt + esiAmt + lopDedSlip;
   deductions.forEach(c=>{ totalDed += st.components?.[c.id]||0; });
   const net = Math.max(0, gross - totalDed);
   const [yr, mo] = month.split('-');
@@ -1116,6 +1150,7 @@ async function showPayslip(staffId, month) {
           ${deductions.map(c=>`<div class="slip-row"><span>${c.name}</span><span style="color:#A32D2D">₹${(st.components?.[c.id]||0).toLocaleString('en-IN')}</span></div>`).join('')}
           ${pfAmt>0?`<div class="slip-row"><span>PF (${statutorySettings.pfEmpPct}%)</span><span style="color:#A32D2D">₹${pfAmt.toLocaleString('en-IN')}</span></div>`:''}
           ${esiAmt>0?`<div class="slip-row"><span>ESI (${statutorySettings.esiEmpPct}%)</span><span style="color:#A32D2D">₹${esiAmt.toLocaleString('en-IN')}</span></div>`:''}
+          ${lopDedSlip>0?`<div class="slip-row"><span>Loss of Pay (${lopDaysSlip} day${lopDaysSlip>1?'s':''})</span><span style="color:#A32D2D">₹${lopDedSlip.toLocaleString('en-IN')}</span></div>`:''}
           <div class="slip-total"><span>Total Deductions</span><span>₹${totalDed.toLocaleString('en-IN')}</span></div>
         </div>
       </div>
