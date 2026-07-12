@@ -441,6 +441,26 @@
   </div>
 </div>
 
+<!-- ══ CUSTOM AMOUNTS MODAL (Student Fee Overrides) ══ -->
+<div class="modal-overlay" id="overrides-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title" id="ov-modal-title">✏️ Custom Fee Amounts</div>
+      <button class="modal-close" onclick="closeOverridesModal()">✕</button>
+    </div>
+    <div id="ov-alert" class="hidden"></div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
+      Set a custom amount for this student where it differs from the class fee
+      (e.g. van fee by boarding place). Leave a box <b>empty</b> to use the normal class amount.
+    </p>
+    <div id="ov-rows"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeOverridesModal()">Cancel</button>
+      <button class="btn btn-gold" id="ov-save-btn" onclick="saveOverrides()">✓ Save Custom Amounts</button>
+    </div>
+  </div>
+</div>
+
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
@@ -634,6 +654,108 @@ function getPeriods() {
   } else {
     const custom = document.getElementById('custom-periods').value;
     return custom ? custom.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  }
+}
+
+// ══ STUDENT FEE OVERRIDES (custom per-student amounts, e.g. route-based van fee) ══
+let studentOverrides = [];
+let origStructureAmounts = {};
+
+function escapeAttr(t) { return String(t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Replaces class-structure amounts with this student's custom amounts.
+// Keeps everything else (period logic, scheme waivers, paid tracking) untouched.
+function applyStudentOverrides(structure, overrides, periods) {
+  origStructureAmounts = {};
+  (structure || []).forEach(s => { origStructureAmounts[s.fee_head_id] = s.total_amount || 0; });
+  (overrides || []).forEach(ov => {
+    const s = (structure || []).find(x => x.fee_head_id === ov.fee_head_id);
+    if (!s) return;
+    const customTotal = parseFloat(ov.total_amount) || 0;
+    s.total_amount = customTotal;
+    if (s.period_amounts && typeof s.period_amounts === 'object') {
+      // Spread the custom total evenly across the periods that had amounts
+      const keys = Object.keys(s.period_amounts).filter(k => (parseFloat(s.period_amounts[k]) || 0) > 0);
+      const useKeys = keys.length > 0 ? keys : (periods || []);
+      const even = useKeys.length > 0 ? Math.round((customTotal / useKeys.length) * 100) / 100 : customTotal;
+      const newPA = {};
+      useKeys.forEach(k => { newPA[k] = even; });
+      s.period_amounts = newPA;
+    }
+    if (s.annual_amount) s.annual_amount = customTotal;
+    s.fee_head_name = s.fee_head_name +
+      ' <span style="font-size:10px;color:#185FA5;background:#EAF3FB;padding:1px 6px;border-radius:8px" title="' +
+      escapeAttr(ov.note || 'Custom amount') + '">✏️ ' + escapeAttr(ov.note || 'Custom') + '</span>';
+  });
+}
+
+let ovStudentId = null;
+
+async function openOverridesModal(studentId) {
+  ovStudentId = studentId;
+  const alertEl = document.getElementById('ov-alert');
+  alertEl.classList.add('hidden');
+
+  // Fresh class structure (original class amounts) + current overrides
+  const { data: stu } = await supabase.from('students').select('full_name,class').eq('id', studentId).single();
+  const { data: structure } = await secureFee.from('fee_structure').select('fee_head_id,fee_head_name,total_amount').eq('school_id', SCHOOL_ID).eq('class', stu ? stu.class : '');
+  const { data: ovs } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
+  const ovByHead = {};
+  (ovs || []).forEach(o => { ovByHead[o.fee_head_id] = o; });
+
+  document.getElementById('ov-modal-title').textContent = '✏️ Custom Fee Amounts — ' + (stu ? stu.full_name : '');
+
+  if (!structure || structure.length === 0) {
+    document.getElementById('ov-rows').innerHTML = '<div class="alert alert-info">No fee structure set for this class yet.</div>';
+  } else {
+    document.getElementById('ov-rows').innerHTML = structure.map(s => {
+      const ov = ovByHead[s.fee_head_id];
+      return '<div style="display:grid;grid-template-columns:1fr 130px 1fr;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)" data-head="' + s.fee_head_id + '" data-ovid="' + (ov ? ov.id : '') + '">' +
+        '<div><div style="font-size:13px;font-weight:600">' + s.fee_head_name + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted)">Class amount: ₹' + (s.total_amount || 0).toLocaleString('en-IN') + '</div></div>' +
+        '<input type="number" class="form-control ov-amt" placeholder="Custom ₹" value="' + (ov ? ov.total_amount : '') + '" min="0">' +
+        '<input type="text" class="form-control ov-note" placeholder="Note (e.g. Ariyalur route)" value="' + escapeAttr(ov ? (ov.note || '') : '') + '">' +
+      '</div>';
+    }).join('');
+  }
+  document.getElementById('overrides-modal').classList.add('open');
+}
+
+function closeOverridesModal() { document.getElementById('overrides-modal').classList.remove('open'); }
+
+async function saveOverrides() {
+  const btn = document.getElementById('ov-save-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  try {
+    const rows = Array.from(document.querySelectorAll('#ov-rows [data-head]'));
+    for (const row of rows) {
+      const headId = row.getAttribute('data-head');
+      const ovId = row.getAttribute('data-ovid');
+      const amtStr = row.querySelector('.ov-amt').value.trim();
+      const note = row.querySelector('.ov-note').value.trim();
+
+      if (amtStr === '') {
+        // Empty box → back to normal class amount (remove any override)
+        if (ovId) await secureFee.from('student_fee_overrides').delete().eq('id', ovId);
+      } else {
+        const amt = parseFloat(amtStr) || 0;
+        if (ovId) {
+          await secureFee.from('student_fee_overrides').update({ total_amount: amt, note: note, updated_at: new Date().toISOString() }).eq('id', ovId);
+        } else {
+          await secureFee.from('student_fee_overrides').insert([{ school_id: SCHOOL_ID, student_id: ovStudentId, fee_head_id: headId, total_amount: amt, note: note }]);
+        }
+      }
+    }
+    btn.textContent = '✓ Save Custom Amounts'; btn.disabled = false;
+    closeOverridesModal();
+    showToast('Custom amounts saved ✓');
+    selectStudentForFee(ovStudentId); // reload the dues screen with new amounts
+  } catch (e) {
+    btn.textContent = '✓ Save Custom Amounts'; btn.disabled = false;
+    const el = document.getElementById('ov-alert');
+    el.className = 'alert alert-danger';
+    el.textContent = 'Could not save. Please try again.';
+    el.classList.remove('hidden');
   }
 }
 
@@ -857,6 +979,11 @@ async function selectStudentForFee(studentId) {
   const periods = getPeriods();
   const activeScheme = await getActiveScheme(studentId);
 
+  // Apply this student's custom fee amounts (e.g. route-based van fee)
+  const { data: ovData } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
+  studentOverrides = ovData || [];
+  applyStudentOverrides(structure, studentOverrides, periods);
+
   // Calculate paid amounts per fee head per period
   const paidMap = {};
   if (payments) payments.forEach(p => {
@@ -890,6 +1017,7 @@ async function selectStudentForFee(studentId) {
           <div style="font-weight:700;font-size:15px">${student.full_name}</div>
           <div style="font-size:12px;color:var(--text-muted)">${student.admission_no} · ${student.class}${student.section?' '+student.section:''} · ${student.father_name||''} · ${student.mobile||''}</div>
         </div>
+        ${(typeof isFeeCollectionOnly === 'function' && isFeeCollectionOnly()) ? '' : `<button class="btn btn-secondary" onclick="openOverridesModal('${student.id}')">✏️ Custom Amounts</button>`}
         <button class="btn btn-gold" onclick="openCollectModal('${student.id}')">+ Collect Fee</button>
       </div>
       <div class="summary-band">
@@ -985,6 +1113,10 @@ async function openCollectModal(studentId) {
 
   const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
   const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+
+  // Apply this student's custom fee amounts here too
+  const { data: ovData2 } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
+  applyStudentOverrides(structure, ovData2 || [], getPeriods());
 
   const paidMap = {};
   if (payments) payments.forEach(p => {
