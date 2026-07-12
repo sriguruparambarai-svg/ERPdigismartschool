@@ -201,6 +201,54 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+// ══ Secure Fee Channel (Database Lockdown Phase 3) ══
+// Fee tables are locked in the database — browsers cannot reach them
+// directly. All fee queries travel through api/fee-data.js, which
+// verifies the login's signed session token and role first.
+const secureFee = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null, orFilter: null };
+    const b = {
+      select(cols) { req.select = cols || '*'; return b; },
+      insert(vals) { req.action = 'insert'; req.values = vals; return b; },
+      update(vals) { req.action = 'update'; req.values = vals; return b; },
+      delete() { req.action = 'delete'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      in(col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+      gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+      lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+      or(expr) { req.orFilter = expr; return b; },
+      order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+      limit(n) { req.limit = n; return b; },
+      single() { req.single = true; return b; },
+      then(resolve, reject) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/fee-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json().then(out => ({ status: r.status, out: out })))
+        .then(({ status, out }) => {
+          if (status === 401) {
+            showToast('Session expired — please log in again', 'error');
+            setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+          }
+          resolve({ data: (out && out.ok) ? out.data : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } });
+        })
+        .catch(() => resolve({ data: null, error: { message: 'Network error — please check your connection.' } }));
+      }
+    };
+    return b;
+  }
+};
+
+// Can this login see school-wide fee totals? (owner or Fee Full)
+function dashCanSeeFeeTotals() {
+  const isStaff = (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff');
+  return !isStaff || (typeof ALLOWED_MODULES !== 'undefined' && ALLOWED_MODULES.indexOf('fee') !== -1);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('dashboard');
 
@@ -266,7 +314,9 @@ async function loadMainStats() {
     supabase.from('exams').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID),
     supabase.from('buses').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
     supabase.from('communications').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).gte('created_at',monthStart),
-    supabase.from('fee_payments').select('amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart),
+    dashCanSeeFeeTotals()
+      ? secureFee.from('fee_payments').select('amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart)
+      : Promise.resolve({ data: [] }),
     supabase.from('students').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
     supabase.from('student_attendance').select('status',{count:'exact'}).eq('school_id',SCHOOL_ID).eq('date',today).eq('status','present'),
   ]);
@@ -369,9 +419,10 @@ async function loadClassStudentCount() {
 }
 
 async function loadFeeOverview() {
+  if (!dashCanSeeFeeTotals()) return; // section is hidden for this login anyway
   const today = new Date().toISOString().split('T')[0];
   const monthStart = today.slice(0,7) + '-01';
-  const { data } = await supabase.from('fee_payments').select('amount_paid,payment_date,student_class').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart).order('payment_date',{ascending:false}).limit(5);
+  const { data } = await secureFee.from('fee_payments').select('amount_paid,payment_date,student_class').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart).order('payment_date',{ascending:false}).limit(5);
   if (!data||data.length===0) {
     document.getElementById('fee-overview').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No fee collected this month. <a href="fee.html" style="color:var(--maroon);font-weight:600">Collect fee →</a></div>';
     return;

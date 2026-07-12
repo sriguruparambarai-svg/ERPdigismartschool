@@ -444,6 +444,48 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+// ══ Secure Fee Channel (Database Lockdown Phase 3) ══
+// Fee tables are locked in the database — browsers cannot reach them
+// directly. All fee queries travel through api/fee-data.js, which
+// verifies the login's signed session token and role first.
+const secureFee = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null, orFilter: null };
+    const b = {
+      select(cols) { req.select = cols || '*'; return b; },
+      insert(vals) { req.action = 'insert'; req.values = vals; return b; },
+      update(vals) { req.action = 'update'; req.values = vals; return b; },
+      delete() { req.action = 'delete'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      in(col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+      gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+      lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+      or(expr) { req.orFilter = expr; return b; },
+      order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+      limit(n) { req.limit = n; return b; },
+      single() { req.single = true; return b; },
+      then(resolve, reject) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/fee-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json().then(out => ({ status: r.status, out: out })))
+        .then(({ status, out }) => {
+          if (status === 401) {
+            showToast('Session expired — please log in again', 'error');
+            setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+          }
+          resolve({ data: (out && out.ok) ? out.data : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } });
+        })
+        .catch(() => resolve({ data: null, error: { message: 'Network error — please check your connection.' } }));
+      }
+    };
+    return b;
+  }
+};
+
 let feeHeads = [];
 let feeStructure = {};
 let collectionMode = 'term';
@@ -491,7 +533,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── LOAD SETTINGS ──
 async function loadSettings() {
-  const { data } = await supabase.from('fee_settings').select('*').eq('school_id', SCHOOL_ID).single();
+  const { data } = await secureFee.from('fee_settings').select('*').eq('school_id', SCHOOL_ID).single();
   if (data) {
     collectionMode = data.collection_mode || 'term';
     termConfig = data.term_config || getDefaultTermConfig();
@@ -558,13 +600,13 @@ async function saveCollectionMode() {
   const monthStart_val = parseInt(document.getElementById('month-start').value) || 0;
   const monthCount_val = parseInt(document.getElementById('month-count').value) || 12;
 
-  const { data: existing } = await supabase.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  const { data: existing } = await secureFee.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
   const payload = { school_id: SCHOOL_ID, collection_mode: mode, term_config: tc, custom_periods: customPeriods, month_start: monthStart_val, month_count: monthCount_val };
 
   if (existing) {
-    await supabase.from('fee_settings').update(payload).eq('school_id', SCHOOL_ID);
+    await secureFee.from('fee_settings').update(payload).eq('school_id', SCHOOL_ID);
   } else {
-    await supabase.from('fee_settings').insert([payload]);
+    await secureFee.from('fee_settings').insert([payload]);
   }
   collectionMode = mode;
   termConfig = tc;
@@ -597,7 +639,7 @@ function getPeriods() {
 
 // ── FEE HEADS ──
 async function loadFeeHeads() {
-  const { data } = await supabase.from('fee_heads').select('*').eq('school_id', SCHOOL_ID).order('created_at');
+  const { data } = await secureFee.from('fee_heads').select('*').eq('school_id', SCHOOL_ID).order('created_at');
   feeHeads = data || [];
   renderFeeHeads();
 }
@@ -631,7 +673,7 @@ async function saveFeeHead() {
   const desc = document.getElementById('fh-desc').value.trim();
   if (!name) { showToast('Please enter fee head name.','error'); return; }
 
-  const { error } = await supabase.from('fee_heads').insert([{ school_id: SCHOOL_ID, name, type, category, description: desc }]);
+  const { error } = await secureFee.from('fee_heads').insert([{ school_id: SCHOOL_ID, name, type, category, description: desc }]);
   if (error) { showToast('Error: ' + error.message,'error'); return; }
   closeFeeHeadModal();
   document.getElementById('fh-name').value = '';
@@ -642,7 +684,7 @@ async function saveFeeHead() {
 
 async function deleteFeeHead(id) {
   if (!confirm('Delete this fee head? This will also remove it from all fee structures.')) return;
-  await supabase.from('fee_heads').delete().eq('id', id);
+  await secureFee.from('fee_heads').delete().eq('id', id);
   showToast('Fee head deleted.','success');
   await loadFeeHeads();
 }
@@ -652,7 +694,7 @@ async function loadFeeStructure() {
   const cls = document.getElementById('struct-class').value;
   if (!cls) return;
 
-  const { data } = await supabase.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', cls);
+  const { data } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', cls);
   feeStructure = {};
   if (data) data.forEach(r => { feeStructure[r.fee_head_id] = r; });
 
@@ -755,13 +797,13 @@ async function saveFeeStructure() {
     // Upsert
     const existing = feeStructure[h.id];
     if (existing) {
-      await supabase.from('fee_structure').update({ period_amounts: periodAmounts, annual_amount: annualAmount, total_amount: totalAmount }).eq('id', existing.id);
+      await secureFee.from('fee_structure').update({ period_amounts: periodAmounts, annual_amount: annualAmount, total_amount: totalAmount }).eq('id', existing.id);
     } else {
       records.push({ school_id: SCHOOL_ID, class: cls, fee_head_id: h.id, fee_head_name: h.name, period_amounts: periodAmounts, annual_amount: annualAmount, total_amount: totalAmount });
     }
   }
 
-  if (records.length > 0) await supabase.from('fee_structure').insert(records);
+  if (records.length > 0) await secureFee.from('fee_structure').insert(records);
   showToast('Fee structure saved for ' + cls + '!','success');
   await loadFeeStructure();
 }
@@ -807,10 +849,10 @@ async function selectStudentForFee(studentId) {
   if (!student) return;
 
   // Load fee structure for this class
-  const { data: structure } = await supabase.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
+  const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
 
   // Load all payments for this student
-  const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id', studentId);
+  const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
 
   const periods = getPeriods();
   const activeScheme = await getActiveScheme(studentId);
@@ -941,8 +983,8 @@ async function openCollectModal(studentId) {
   const student = currentCollectStudent;
   if (!student) return;
 
-  const { data: structure } = await supabase.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
-  const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id', studentId);
+  const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
+  const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
 
   const paidMap = {};
   if (payments) payments.forEach(p => {
@@ -1064,7 +1106,7 @@ async function processPayment() {
   const totalAmt = selectedItems.reduce((s,i)=>s+i.amount, 0);
 
   // Generate receipt number
-  const { data: lastRec } = await supabase.from('fee_payments').select('receipt_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
+  const { data: lastRec } = await secureFee.from('fee_payments').select('receipt_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
   let recNum = 1;
   if (lastRec && lastRec.length > 0) {
     const last = lastRec[0].receipt_no?.split('-').pop();
@@ -1090,7 +1132,7 @@ async function processPayment() {
     receipt_no: receiptNo,
   }));
 
-  const { error } = await supabase.from('fee_payments').insert(records);
+  const { error } = await secureFee.from('fee_payments').insert(records);
   btn.textContent = '✓ Collect & Print Receipt'; btn.disabled = false;
 
   if (error) {
@@ -1156,7 +1198,7 @@ async function loadReceipts() {
   const from = document.getElementById('rec-from')?.value || '';
   const to = document.getElementById('rec-to')?.value || '';
 
-  let query = supabase.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(100);
+  let query = secureFee.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(100);
   if (from) query = query.gte('payment_date', from);
   if (to) query = query.lte('payment_date', to);
   if (search) query = query.or(`student_name.ilike.%${search}%,receipt_no.ilike.%${search}%,admission_no.ilike.%${search}%`);
@@ -1199,7 +1241,7 @@ async function loadReceipts() {
 }
 
 async function reprintReceipt(receiptNo) {
-  const { data } = await supabase.from('fee_payments').select('*').eq('receipt_no', receiptNo).eq('school_id',SCHOOL_ID);
+  const { data } = await secureFee.from('fee_payments').select('*').eq('receipt_no', receiptNo).eq('school_id',SCHOOL_ID);
   if (!data || data.length===0) return;
   const total = data.reduce((s,r)=>s+r.amount_paid,0);
   const student = { full_name: data[0].student_name, admission_no: data[0].admission_no, class: data[0].student_class, section: '', father_name: '' };
@@ -1211,7 +1253,7 @@ async function reprintReceipt(receiptNo) {
 async function loadDayReport() {
   const date = document.getElementById('day-report-date').value;
   if (!date) return;
-  const { data } = await supabase.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
+  const { data } = await secureFee.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
   if (!data || data.length===0) {
     document.getElementById('day-report').innerHTML = '<div class="empty-state"><div class="icon">📅</div><p>No collections on this date.</p></div>';
     return;
@@ -1235,7 +1277,7 @@ async function loadDayReport() {
 }
 
 async function loadClassReport() {
-  const { data } = await supabase.from('fee_payments').select('student_class,amount_paid').eq('school_id',SCHOOL_ID);
+  const { data } = await secureFee.from('fee_payments').select('student_class,amount_paid').eq('school_id',SCHOOL_ID);
   if (!data || data.length===0) { document.getElementById('class-report').innerHTML = '<div class="empty-state"><div class="icon">🏫</div><p>No data.</p></div>'; return; }
 
   const byClass = {};
@@ -1255,7 +1297,7 @@ async function loadClassReport() {
 async function loadModeReport() {
   const month = document.getElementById('mode-month-filter').value;
   if (!month) return;
-  const { data } = await supabase.from('fee_payments').select('payment_mode,amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-31');
+  const { data } = await secureFee.from('fee_payments').select('payment_mode,amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-31');
   if (!data || data.length===0) { document.getElementById('mode-report').innerHTML = '<div class="empty-state"><div class="icon">💳</div><p>No data for this month.</p></div>'; return; }
 
   const byMode = {};
@@ -1292,7 +1334,7 @@ async function searchLedgerStudent() {
 
 async function loadLedger(studentId) {
   document.getElementById('ledger-results').innerHTML = '';
-  const { data: payments } = await supabase.from('fee_payments').select('*').eq('student_id',studentId).order('payment_date');
+  const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id',studentId).order('payment_date');
   const { data: student } = await supabase.from('students').select('full_name,admission_no,class').eq('id',studentId).single();
   if (!payments || payments.length===0) { document.getElementById('ledger-content').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:12px 0">No payments found for this student.</div>'; return; }
   const total = payments.reduce((s,r)=>s+r.amount_paid,0);
@@ -1321,7 +1363,7 @@ async function loadDefaulters() {
   if (!students || students.length===0) { document.getElementById('defaulters-list').innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No students found.</p></div>'; return; }
 
   // Get all payments
-  const { data: payments } = await supabase.from('fee_payments').select('student_id,fee_head_id,period,amount_paid').eq('school_id',SCHOOL_ID);
+  const { data: payments } = await secureFee.from('fee_payments').select('student_id,fee_head_id,period,amount_paid').eq('school_id',SCHOOL_ID);
   const paidMap = {};
   if (payments) payments.forEach(p => {
     const key = p.student_id + '_' + p.fee_head_id + '_' + p.period;
@@ -1329,7 +1371,7 @@ async function loadDefaulters() {
   });
 
   // Get fee structures
-  const { data: structures } = await supabase.from('fee_structure').select('*').eq('school_id',SCHOOL_ID);
+  const { data: structures } = await secureFee.from('fee_structure').select('*').eq('school_id',SCHOOL_ID);
   const structMap = {};
   if (structures) structures.forEach(s => {
     if (!structMap[s.class]) structMap[s.class] = [];
@@ -1394,7 +1436,7 @@ function printDefaulters() { window.print(); }
 
 // ── STATS ──
 async function loadStats() {
-  const { data: payments } = await supabase.from('fee_payments').select('amount_paid,payment_date').eq('school_id',SCHOOL_ID);
+  const { data: payments } = await secureFee.from('fee_payments').select('amount_paid,payment_date').eq('school_id',SCHOOL_ID);
   if (!payments) return;
 
   const total = payments.reduce((s,r)=>s+r.amount_paid,0);
