@@ -523,6 +523,48 @@ input:checked + .toggle-slider:before{transform:translateX(20px)}
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+// ══ Secure Salary Channel (Database Lockdown Phase 3) ══
+// Salary tables are now locked in the database — browsers cannot reach
+// them directly. All salary queries below travel through api/hrm-data.js,
+// which verifies the login's signed session token first.
+// This mimics the Supabase query style, so the page code stays identical.
+const secureHrm = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null };
+    const b = {
+      select(cols) { req.select = cols || '*'; return b; },
+      insert(vals) { req.action = 'insert'; req.values = vals; return b; },
+      update(vals) { req.action = 'update'; req.values = vals; return b; },
+      delete() { req.action = 'delete'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      in(col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+      gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+      lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+      order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+      limit(n) { req.limit = n; return b; },
+      single() { req.single = true; return b; },
+      then(resolve, reject) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/hrm-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json().then(out => ({ status: r.status, out: out })))
+        .then(({ status, out }) => {
+          if (status === 401) {
+            showToast('Session expired — please log in again', 'error');
+            setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+          }
+          resolve({ data: (out && out.ok) ? out.data : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } });
+        })
+        .catch(() => resolve({ data: null, error: { message: 'Network error — please check your connection.' } }));
+      }
+    };
+    return b;
+  }
+};
+
 let allStaff = [];
 let salaryComponents = [];
 let statutorySettings = { pf: false, esi: false, tds: false, pfEmpPct: 12, pfErPct: 12, esiEmpPct: 0.75, esiErPct: 3.25 };
@@ -547,7 +589,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── STATUTORY SETTINGS ──
 async function loadStatutorySettings() {
-  const { data } = await supabase.from('hrm_settings').select('*').eq('school_id', SCHOOL_ID).single();
+  const { data } = await secureHrm.from('hrm_settings').select('*').eq('school_id', SCHOOL_ID).single();
   if (data) {
     statutorySettings = { ...statutorySettings, ...data };
     document.getElementById('pf-enabled').checked = data.pf_enabled || false;
@@ -579,16 +621,16 @@ async function saveStatutorySettings() {
     esi_emp_pct: parseFloat(document.getElementById('esi-emp-pct').value) || 0.75,
     esi_er_pct: parseFloat(document.getElementById('esi-er-pct').value) || 3.25,
   };
-  const { data: existing } = await supabase.from('hrm_settings').select('id').eq('school_id', SCHOOL_ID).single();
-  if (existing) { await supabase.from('hrm_settings').update(payload).eq('school_id', SCHOOL_ID); }
-  else { await supabase.from('hrm_settings').insert([payload]); }
+  const { data: existing } = await secureHrm.from('hrm_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  if (existing) { await secureHrm.from('hrm_settings').update(payload).eq('school_id', SCHOOL_ID); }
+  else { await secureHrm.from('hrm_settings').insert([payload]); }
   statutorySettings = { pf: payload.pf_enabled, esi: payload.esi_enabled, tds: payload.tds_enabled, pfEmpPct: payload.pf_emp_pct, pfErPct: payload.pf_er_pct, esiEmpPct: payload.esi_emp_pct, esiErPct: payload.esi_er_pct };
   showToast('Statutory settings saved!', 'success');
 }
 
 // ── SALARY COMPONENTS ──
 async function loadComponents() {
-  const { data } = await supabase.from('salary_components').select('*').eq('school_id', SCHOOL_ID).order('type').order('created_at');
+  const { data } = await secureHrm.from('salary_components').select('*').eq('school_id', SCHOOL_ID).order('type').order('created_at');
   salaryComponents = data || [];
   renderComponents();
 }
@@ -621,7 +663,7 @@ async function saveComponent() {
   const calc = document.getElementById('comp-calc').value;
   if (!name) { showToast('Please enter component name.','error'); return; }
 
-  await supabase.from('salary_components').insert([{ school_id: SCHOOL_ID, name, type, calc_type: calc }]);
+  await secureHrm.from('salary_components').insert([{ school_id: SCHOOL_ID, name, type, calc_type: calc }]);
   document.getElementById('comp-modal').classList.remove('open');
   document.getElementById('comp-name').value = '';
   showToast(name + ' added!', 'success');
@@ -630,7 +672,7 @@ async function saveComponent() {
 
 async function deleteComponent(id) {
   if (!confirm('Delete this component?')) return;
-  await supabase.from('salary_components').delete().eq('id', id);
+  await secureHrm.from('salary_components').delete().eq('id', id);
   await loadComponents();
 }
 
@@ -830,7 +872,7 @@ async function openSalStructModal(staffId) {
 
   document.getElementById('sal-struct-staff-info').innerHTML = `<b>${staff.name}</b> · ${staff.role} · ${staff.employee_id}`;
 
-  const { data: existing } = await supabase.from('staff_salary_structure').select('*').eq('staff_id', staffId).single();
+  const { data: existing } = await secureHrm.from('staff_salary_structure').select('*').eq('staff_id', staffId).single();
   const amounts = existing?.components || {};
 
   const earnings = salaryComponents.filter(c=>c.type==='earning');
@@ -910,11 +952,11 @@ async function saveSalaryStructure() {
     if (c.name.toLowerCase().includes('basic')) basicPay = v;
   });
 
-  const { data: existing } = await supabase.from('staff_salary_structure').select('id').eq('staff_id', currentSalStaffId).single();
+  const { data: existing } = await secureHrm.from('staff_salary_structure').select('id').eq('staff_id', currentSalStaffId).single();
   const record = { school_id: SCHOOL_ID, staff_id: currentSalStaffId, components: amounts, gross_salary: gross, basic_pay: basicPay };
 
-  if (existing) { await supabase.from('staff_salary_structure').update(record).eq('staff_id', currentSalStaffId); }
-  else { await supabase.from('staff_salary_structure').insert([record]); }
+  if (existing) { await secureHrm.from('staff_salary_structure').update(record).eq('staff_id', currentSalStaffId); }
+  else { await secureHrm.from('staff_salary_structure').insert([record]); }
 
   document.getElementById('sal-struct-modal').classList.remove('open');
   showToast('Salary structure saved!', 'success');
@@ -933,11 +975,11 @@ async function loadSalarySheet() {
   const ids = staffList.map(s=>s.id);
   if (ids.length===0) { document.getElementById('salary-sheet-content').innerHTML='<div class="empty-state"><div class="icon">👥</div><p>No active staff found.</p></div>'; return; }
 
-  const { data: structures } = await supabase.from('staff_salary_structure').select('*').in('staff_id', ids);
+  const { data: structures } = await secureHrm.from('staff_salary_structure').select('*').in('staff_id', ids);
   const structMap = {};
   if (structures) structures.forEach(s=>{ structMap[s.staff_id]=s; });
 
-  const { data: processed } = await supabase.from('salary_processed').select('*').eq('school_id',SCHOOL_ID).eq('month',month).in('staff_id',ids);
+  const { data: processed } = await secureHrm.from('salary_processed').select('*').eq('school_id',SCHOOL_ID).eq('month',month).in('staff_id',ids);
   const procMap = {};
   if (processed) processed.forEach(p=>{ procMap[p.staff_id]=p; });
 
@@ -1032,7 +1074,7 @@ async function getLopMap(month, staffIds) {
   const monthStart = new Date(yr, mo-1, 1);
   const monthEnd = new Date(yr, mo, 0);
   const fmt = d => d.toISOString().split('T')[0];
-  const { data: leaves } = await supabase.from('staff_leaves')
+  const { data: leaves } = await secureHrm.from('staff_leaves')
     .select('staff_id,from_date,to_date')
     .eq('school_id', SCHOOL_ID).eq('status','approved').eq('leave_type','unpaid')
     .lte('from_date', fmt(monthEnd)).gte('to_date', fmt(monthStart));
@@ -1063,10 +1105,10 @@ async function markSalaryPaid(staffId, month, netSalary) {
   const mode = prompt('Payment mode? (cash / bank_transfer / upi)', 'bank_transfer');
   if (!mode) return;
   const staff = allStaff.find(s=>s.id===staffId);
-  const { data: existing } = await supabase.from('salary_processed').select('id').eq('staff_id',staffId).eq('month',month).single();
+  const { data: existing } = await secureHrm.from('salary_processed').select('id').eq('staff_id',staffId).eq('month',month).single();
   const record = { school_id:SCHOOL_ID, staff_id:staffId, staff_name:staff?.name, month, net_salary:netSalary, payment_mode:mode, paid_on:new Date().toISOString().split('T')[0], status:'paid' };
-  if (existing) { await supabase.from('salary_processed').update(record).eq('id',existing.id); }
-  else { await supabase.from('salary_processed').insert([record]); }
+  if (existing) { await secureHrm.from('salary_processed').update(record).eq('id',existing.id); }
+  else { await secureHrm.from('salary_processed').insert([record]); }
   showToast(`Salary paid to ${staff?.name}!`, 'success');
   await loadSalarySheet();
   await loadStats();
@@ -1080,7 +1122,7 @@ async function processAllSalary() {
   const btn = document.getElementById('process-all-btn');
   btn.textContent = 'Processing...'; btn.disabled = true;
 
-  const { data: structures } = await supabase.from('staff_salary_structure').select('*').eq('school_id',SCHOOL_ID);
+  const { data: structures } = await secureHrm.from('staff_salary_structure').select('*').eq('school_id',SCHOOL_ID);
   const structMap = {};
   if (structures) structures.forEach(s=>{ structMap[s.staff_id]=s; });
 
@@ -1092,8 +1134,8 @@ async function processAllSalary() {
 
   if (records.length > 0) {
     // Upsert: delete existing then insert
-    await supabase.from('salary_processed').delete().eq('school_id',SCHOOL_ID).eq('month',month).in('staff_id', activeStaff.map(s=>s.id));
-    await supabase.from('salary_processed').insert(records);
+    await secureHrm.from('salary_processed').delete().eq('school_id',SCHOOL_ID).eq('month',month).in('staff_id', activeStaff.map(s=>s.id));
+    await secureHrm.from('salary_processed').insert(records);
   }
 
   btn.textContent = '⚡ Process All'; btn.disabled = false;
@@ -1105,8 +1147,8 @@ async function processAllSalary() {
 async function showPayslip(staffId, month) {
   const staff = allStaff.find(s=>s.id===staffId);
   if (!staff) return;
-  const { data: st } = await supabase.from('staff_salary_structure').select('*').eq('staff_id',staffId).single();
-  const { data: proc } = await supabase.from('salary_processed').select('*').eq('staff_id',staffId).eq('month',month).single();
+  const { data: st } = await secureHrm.from('staff_salary_structure').select('*').eq('staff_id',staffId).single();
+  const { data: proc } = await secureHrm.from('salary_processed').select('*').eq('staff_id',staffId).eq('month',month).single();
 
   if (!st) { showToast('No salary structure found for this staff.','error'); return; }
 
@@ -1189,7 +1231,7 @@ async function saveLeave() {
   const days = Math.max(0, Math.round((new Date(to)-new Date(from))/(1000*60*60*24))+1);
   const staff = allStaff.find(s=>s.id===staffId);
 
-  const { error } = await supabase.from('staff_leaves').insert([{
+  const { error } = await secureHrm.from('staff_leaves').insert([{
     school_id: SCHOOL_ID, staff_id: staffId, staff_name: staff?.name,
     leave_type: type, from_date: from, to_date: to, days,
     reason: document.getElementById('leave-reason').value.trim(),
@@ -1207,7 +1249,7 @@ async function loadLeaveRecords() {
   const staffId = document.getElementById('leave-filter-staff').value;
   const month = document.getElementById('leave-filter-month').value;
 
-  let query = supabase.from('staff_leaves').select('*').eq('school_id',SCHOOL_ID).order('from_date',{ascending:false});
+  let query = secureHrm.from('staff_leaves').select('*').eq('school_id',SCHOOL_ID).order('from_date',{ascending:false});
   if (staffId) query = query.eq('staff_id',staffId);
   if (month) query = query.gte('from_date',month+'-01').lte('from_date',month+'-31');
 
@@ -1244,20 +1286,20 @@ async function loadLeaveRecords() {
 }
 
 async function updateLeaveStatus(id, status) {
-  await supabase.from('staff_leaves').update({ status }).eq('id', id);
+  await secureHrm.from('staff_leaves').update({ status }).eq('id', id);
   showToast('Leave ' + status + '!', 'success');
   await loadLeaveRecords();
 }
 
 async function deleteLeave(id) {
   if (!confirm('Delete this leave record?')) return;
-  await supabase.from('staff_leaves').delete().eq('id', id);
+  await secureHrm.from('staff_leaves').delete().eq('id', id);
   await loadLeaveRecords();
 }
 
 async function loadLeaveBalance() {
   const year = document.getElementById('balance-year').value;
-  const { data } = await supabase.from('staff_leaves').select('staff_id,staff_name,leave_type,days,status').eq('school_id',SCHOOL_ID).eq('status','approved');
+  const { data } = await secureHrm.from('staff_leaves').select('staff_id,staff_name,leave_type,days,status').eq('school_id',SCHOOL_ID).eq('status','approved');
   if (!data || data.length===0) { document.getElementById('leave-balance-list').innerHTML='<div class="empty-state" style="padding:20px"><p>No approved leaves found.</p></div>'; return; }
 
   const ALLOTMENT = { casual:12, sick:10, earned:15 };
@@ -1290,7 +1332,7 @@ async function loadLeaveBalance() {
 async function loadMonthlySalaryReport() {
   const month = document.getElementById('rep-month').value;
   if (!month) return;
-  const { data } = await supabase.from('salary_processed').select('*').eq('school_id',SCHOOL_ID).eq('month',month);
+  const { data } = await secureHrm.from('salary_processed').select('*').eq('school_id',SCHOOL_ID).eq('month',month);
   if (!data || data.length===0) { document.getElementById('monthly-sal-report').innerHTML='<div class="empty-state"><div class="icon">📊</div><p>No salary processed for this month.</p></div>'; return; }
 
   const total = data.reduce((s,r)=>s+r.net_salary,0);
@@ -1307,7 +1349,7 @@ async function loadMonthlySalaryReport() {
 }
 
 async function loadDeptReport() {
-  const { data: structures } = await supabase.from('staff_salary_structure').select('staff_id,gross_salary').eq('school_id',SCHOOL_ID);
+  const { data: structures } = await secureHrm.from('staff_salary_structure').select('staff_id,gross_salary').eq('school_id',SCHOOL_ID);
   if (!structures) return;
   const deptCost = {};
   structures.forEach(st => {
@@ -1341,7 +1383,7 @@ async function searchHistStaff() {
 
 async function loadStaffHistory(staffId) {
   document.getElementById('hist-staff-results').innerHTML='';
-  const { data } = await supabase.from('salary_processed').select('*').eq('staff_id',staffId).order('month',{ascending:false});
+  const { data } = await secureHrm.from('salary_processed').select('*').eq('staff_id',staffId).order('month',{ascending:false});
   const staff = allStaff.find(s=>s.id===staffId);
   if (!data || data.length===0) { document.getElementById('staff-sal-history').innerHTML=`<div style="font-size:13px;color:var(--text-muted);padding:10px">No salary records for ${staff?.name}.</div>`; return; }
   const total = data.reduce((s,r)=>s+r.net_salary,0);
@@ -1358,7 +1400,7 @@ async function loadStaffHistory(staffId) {
 }
 
 async function loadYearReport() {
-  const { data } = await supabase.from('salary_processed').select('month,net_salary').eq('school_id',SCHOOL_ID).eq('status','paid').order('month');
+  const { data } = await secureHrm.from('salary_processed').select('month,net_salary').eq('school_id',SCHOOL_ID).eq('status','paid').order('month');
   if (!data || data.length===0) { document.getElementById('year-report').innerHTML='<div class="empty-state"><div class="icon">📅</div><p>No salary data.</p></div>'; return; }
   const byMonth={};
   data.forEach(r=>{ byMonth[r.month]=(byMonth[r.month]||0)+r.net_salary; });
@@ -1377,21 +1419,21 @@ async function loadStats() {
   const active = allStaff.filter(s=>s.status==='active').length;
   document.getElementById('st-total').textContent = active;
 
-  const { data: structures } = await supabase.from('staff_salary_structure').select('gross_salary').eq('school_id',SCHOOL_ID);
+  const { data: structures } = await secureHrm.from('staff_salary_structure').select('gross_salary').eq('school_id',SCHOOL_ID);
   if (structures) {
     const total = structures.reduce((s,r)=>s+(r.gross_salary||0),0);
     document.getElementById('st-salary').textContent = '₹'+total.toLocaleString('en-IN');
   }
 
   const month = new Date().toISOString().slice(0,7);
-  const { data: processed } = await supabase.from('salary_processed').select('net_salary').eq('school_id',SCHOOL_ID).eq('month',month).eq('status','paid');
+  const { data: processed } = await secureHrm.from('salary_processed').select('net_salary').eq('school_id',SCHOOL_ID).eq('month',month).eq('status','paid');
   if (processed) {
     const paid = processed.reduce((s,r)=>s+(r.net_salary||0),0);
     document.getElementById('st-paid').textContent = '₹'+paid.toLocaleString('en-IN');
   }
 
   const today = new Date().toISOString().split('T')[0];
-  const { data: leaves } = await supabase.from('staff_leaves').select('id').eq('school_id',SCHOOL_ID).eq('status','approved').lte('from_date',today).gte('to_date',today);
+  const { data: leaves } = await secureHrm.from('staff_leaves').select('id').eq('school_id',SCHOOL_ID).eq('status','approved').lte('from_date',today).gte('to_date',today);
   document.getElementById('st-leave').textContent = leaves?.length || 0;
 }
 
