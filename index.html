@@ -428,6 +428,9 @@ async function handleUser(user) {
       sessionStorage.setItem('digismart_school_id', school.school_id);
       sessionStorage.setItem('digismart_school_code', school.school_code); // ← NEW: for RLS security
       sessionStorage.setItem('school_name', school.name);
+      sessionStorage.setItem('digismart_role', 'owner');
+      sessionStorage.removeItem('digismart_staff_name');
+      sessionStorage.removeItem('digismart_modules');
       toast('Welcome! Loading ' + school.name + '...');
       setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
     } else {
@@ -466,8 +469,8 @@ async function doLogin() {
     .single();
 
   if (schoolErr || !school) {
-    btn.textContent = 'Sign In →'; btn.disabled = false;
-    setA('login-alert', '⚠️ Email not found. Please check your email or contact DigiSmart ERP support.', 'err');
+    // Not a school owner — check if this is a staff login (Staff Logins feature)
+    await tryStaffLogin(email, pw, btn);
     return;
   }
 
@@ -517,8 +520,43 @@ async function doLogin() {
   sessionStorage.setItem('digismart_school_code', school.school_code);
   sessionStorage.setItem('school_name', school.name);
   sessionStorage.setItem('school_email', email);
+  sessionStorage.setItem('digismart_role', 'owner');
+  sessionStorage.removeItem('digismart_staff_name');
+  sessionStorage.removeItem('digismart_modules');
   toast('Welcome! Loading ' + school.name + '...');
   setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
+}
+
+// ── STAFF LOGIN (password checked on the server — api/staff-login.js) ──
+async function tryStaffLogin(email, pw, btn) {
+  try {
+    const res = await fetch('/api/staff-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, password: pw })
+    });
+    const result = await res.json();
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+
+    if (!res.ok || !result.ok) {
+      setA('login-alert', '⚠️ ' + (result.error || 'Email not found. Please check your email or contact DigiSmart ERP support.'), 'err');
+      return;
+    }
+
+    const s = result.staff;
+    sessionStorage.setItem('digismart_school_id', s.school_id);
+    sessionStorage.setItem('digismart_school_code', s.school_code || s.school_id);
+    sessionStorage.setItem('school_name', s.school_name);
+    sessionStorage.setItem('school_email', s.email);
+    sessionStorage.setItem('digismart_role', 'staff');
+    sessionStorage.setItem('digismart_staff_name', s.staff_name);
+    sessionStorage.setItem('digismart_modules', JSON.stringify(s.allowed_modules || []));
+    toast('Welcome ' + s.staff_name + '! Loading ' + s.school_name + '...');
+    setTimeout(() => { window.location.href = 'pages/dashboard.html'; }, 800);
+  } catch (e) {
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+    setA('login-alert', '⚠️ Could not sign in. Please check your connection and try again.', 'err');
+  }
 }
 
 // ── CONTACT FORM ──
