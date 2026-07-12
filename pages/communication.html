@@ -923,7 +923,7 @@ function selectResetStudent(id, name, admNo, cls, dob) {
 
 async function resetParentPassword() {
   if (!resetStudentId) return;
-  await supabase.from('students').update({ parent_password: null }).eq('id', resetStudentId);
+  await supabase.from('students').update({ parent_password: null, parent_password_hash: null }).eq('id', resetStudentId);
   showToast('Password reset to DOB default!','success');
   document.getElementById('pw-reset-student-info').style.display = 'none';
   document.getElementById('pw-reset-btn').style.display = 'none';
