@@ -203,6 +203,39 @@
 <script>
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('dashboard');
+
+  // ── Staff view (Staff Logins feature) ──
+  // 1. Money figures (Fee Collected, Fee Defaulters, monthly fee section)
+  //    are shown only to the owner and staff with Fee Management (Full).
+  // 2. Quick Action buttons appear only for modules the staff member has.
+  const IS_STAFF_DASH = (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff');
+  const CAN_SEE_FEE_TOTALS = !IS_STAFF_DASH ||
+    (typeof ALLOWED_MODULES !== 'undefined' && ALLOWED_MODULES.indexOf('fee') !== -1);
+
+  if (!CAN_SEE_FEE_TOTALS) {
+    const feeVal = document.getElementById('st-fee');
+    if (feeVal && feeVal.closest('.dash-card')) feeVal.closest('.dash-card').style.display = 'none';
+    const defVal = document.getElementById('st-defaulters');
+    if (defVal && defVal.closest('.dash-card')) defVal.closest('.dash-card').style.display = 'none';
+    const feeOv = document.getElementById('fee-overview');
+    if (feeOv && feeOv.closest('.card')) feeOv.closest('.card').style.display = 'none';
+  }
+
+  if (IS_STAFF_DASH && typeof hasModuleAccess === 'function') {
+    const QA_MODULES = {
+      'admission.html': 'admission',
+      'face-attendance.html': 'face',
+      'fee.html': 'fee',
+      'exam.html': 'exam',
+      'communication.html': 'communication',
+      'hrm.html': 'hrm'
+    };
+    document.querySelectorAll('.quick-btn').forEach(btnEl => {
+      const mod = QA_MODULES[btnEl.getAttribute('href')];
+      if (mod && !hasModuleAccess(mod)) btnEl.style.display = 'none';
+    });
+  }
+
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
