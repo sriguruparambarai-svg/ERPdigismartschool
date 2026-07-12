@@ -103,16 +103,17 @@ module.exports = async (req, res) => {
         return res.status(400).json({ ok: false, error: 'Email and password are required.' });
       }
 
-      const schools = await sb('GET', 'schools?email=eq.' + encodeURIComponent(email) + '&select=school_id,school_code,name,password_hash,subscription_status,status&limit=1');
+      const schools = await sb('GET', 'schools?email=eq.' + encodeURIComponent(email) + '&select=school_id,school_code,name,subscription_status,status&limit=1');
       if (!schools || schools.length === 0) {
         return res.status(401).json({ ok: false, error: 'Owner account not found.' });
       }
       const school = schools[0];
 
+      // Password lives in the protected owner_credentials table (Lockdown Phase 1)
       let passwordOk = false;
-      if (school.password_hash) {
-        // Password stored in schools table (hashed)
-        passwordOk = school.password_hash === sha256(password);
+      const creds = await sb('GET', 'owner_credentials?school_id=eq.' + encodeURIComponent(school.school_id) + '&select=password_hash&limit=1');
+      if (creds && creds.length > 0 && creds[0].password_hash) {
+        passwordOk = creds[0].password_hash === sha256(password);
       } else {
         // Older accounts: password lives in Supabase Auth — verify there
         const authRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
