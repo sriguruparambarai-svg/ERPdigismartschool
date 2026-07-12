@@ -2,6 +2,14 @@
 // Call renderSidebar('admission') to highlight the correct nav item
 
 async function renderSidebar(activePage) {
+  // ── PAGE GUARD (Staff Logins feature) ──
+  // If a staff member opens a page they don't have permission for
+  // (even by typing the URL directly), send them back to Dashboard.
+  if (typeof hasModuleAccess === 'function' && !hasModuleAccess(activePage)) {
+    window.location.href = 'dashboard.html';
+    return;
+  }
+
   const nav = [
     { group: 'Overview', items: [
       { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard.html' },
@@ -39,6 +47,21 @@ async function renderSidebar(activePage) {
     }
   } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
 
+  // ── Owner-only: Staff Logins management page ──
+  if (typeof USER_ROLE === 'undefined' || USER_ROLE !== 'staff') {
+    nav.push({ group: 'Settings', items: [
+      { id: 'staff-logins', icon: '🔐', label: 'Staff Logins', href: 'staff-logins.html' },
+    ]});
+  }
+
+  // ── Filter menu by permissions (owner sees everything, staff sees ticked modules) ──
+  const visibleNav = nav
+    .map(group => ({
+      group: group.group,
+      items: group.items.filter(item => typeof hasModuleAccess !== 'function' || hasModuleAccess(item.id))
+    }))
+    .filter(group => group.items.length > 0);
+
   let html = `
     <div class="sidebar-brand">
       <div class="brand-logo">DS</div>
@@ -49,7 +72,14 @@ async function renderSidebar(activePage) {
     </div>
   `;
 
-  nav.forEach(group => {
+  // Small badge showing who is logged in (staff only)
+  if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff' && typeof STAFF_NAME !== 'undefined' && STAFF_NAME) {
+    html += `<div style="margin:0 14px 10px;padding:8px 10px;background:rgba(255,255,255,.08);border-radius:8px;font-size:11px;color:#E8C99A">
+      👤 ${STAFF_NAME} <span style="opacity:.7">· Staff</span>
+    </div>`;
+  }
+
+  visibleNav.forEach(group => {
     html += `<div class="nav-group"><div class="nav-group-label">${group.group}</div>`;
     group.items.forEach(item => {
       const isActive = item.id === activePage;

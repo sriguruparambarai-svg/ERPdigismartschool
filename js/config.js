@@ -6,6 +6,25 @@ var SUPABASE_KEY = 'sb_publishable_7RgXFcDeOipMGoFuPI7XBQ_r_aJpZdL';
 var SCHOOL_ID = sessionStorage.getItem('digismart_school_id') || 'ARK2024';
 var SCHOOL_CODE = sessionStorage.getItem('digismart_school_code') || 'ARK2024';
 
+// ── Role-based access (Staff Logins feature) ──
+// 'owner' = full access (default, keeps all existing logins working exactly as before)
+// 'staff' = only the modules ticked by the school owner
+var USER_ROLE = sessionStorage.getItem('digismart_role') || 'owner';
+var STAFF_NAME = sessionStorage.getItem('digismart_staff_name') || '';
+var ALLOWED_MODULES = [];
+try {
+  ALLOWED_MODULES = JSON.parse(sessionStorage.getItem('digismart_modules') || '[]');
+  if (!Array.isArray(ALLOWED_MODULES)) ALLOWED_MODULES = [];
+} catch (e) { ALLOWED_MODULES = []; }
+
+// Can the current user open this module? Owner → always yes.
+// Staff → only ticked modules (Dashboard always allowed as the landing page).
+function hasModuleAccess(moduleId) {
+  if (USER_ROLE !== 'staff') return true;
+  if (moduleId === 'dashboard') return true;
+  return ALLOWED_MODULES.indexOf(moduleId) !== -1;
+}
+
 // Initialize Supabase client
 var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
