@@ -99,7 +99,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, month: month, records: rows || [] });
     }
 
-    // ══ FEES — this child's class structure + their payment history ══
+    // ══ FEES — per-head breakdown, scheme waivers, payment history ══
     if (action === 'fees') {
       const stuRows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
         '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
@@ -114,14 +114,71 @@ module.exports = async (req, res) => {
         '&school_id=eq.' + encodeURIComponent(schoolId) +
         '&select=receipt_no,amount_paid,payment_date,payment_mode,fee_head_id,period&order=payment_date.desc') || [];
 
-      const totalFee = structure.reduce((s, r) => s + (parseFloat(r.total_amount) || 0), 0);
+      // Fee head categories (used to match scheme waivers)
+      const heads = await sb('GET', 'fee_heads?school_id=eq.' + encodeURIComponent(schoolId) +
+        '&select=id,name,category') || [];
+      const headById = {};
+      heads.forEach(h => { headById[h.id] = h; });
+
+      // Active 5-Year Scheme enrolment (if the school offers it)
+      let scheme = null;
+      try {
+        const schemes = await sb('GET', 'scheme_enrollments?student_id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&status=eq.active&select=free_van,free_uniform,free_books&limit=1');
+        scheme = (schemes && schemes[0]) || null;
+      } catch (e) { scheme = null; } // table may not exist for this school
+
+      function isWaived(feeHeadId) {
+        if (!scheme) return false;
+        const head = headById[feeHeadId];
+        if (!head) return false;
+        if (head.category === 'transport') return !!scheme.free_van;
+        if (head.category === 'uniform') return !!scheme.free_uniform;
+        if (head.category === 'books') return !!scheme.free_books;
+        return false;
+      }
+
+      // Paid amount per fee head
+      const paidByHead = {};
+      let unmatchedPaid = 0;
+      payments.forEach(p => {
+        const amt = parseFloat(p.amount_paid) || 0;
+        if (p.fee_head_id) paidByHead[p.fee_head_id] = (paidByHead[p.fee_head_id] || 0) + amt;
+        else unmatchedPaid += amt;
+      });
+
+      // One breakdown row per fee head in this class's structure
+      const breakdown = structure.map(s => {
+        const waived = isWaived(s.fee_head_id);
+        const total = waived ? 0 : (parseFloat(s.total_amount) || 0);
+        const paid = paidByHead[s.fee_head_id] || 0;
+        const name = s.fee_head_name || (headById[s.fee_head_id] && headById[s.fee_head_id].name) || 'Fee';
+        delete paidByHead[s.fee_head_id];
+        return { name: name, total: total, paid: paid, balance: Math.max(total - paid, 0), waived: waived };
+      });
+
+      // Payments toward heads not in the structure (e.g. old heads) → still shown
+      Object.keys(paidByHead).forEach(hid => {
+        const name = (headById[hid] && headById[hid].name) || 'Other Fee';
+        breakdown.push({ name: name, total: 0, paid: paidByHead[hid], balance: 0, waived: false });
+      });
+      if (unmatchedPaid > 0) {
+        breakdown.push({ name: 'Other Payments', total: 0, paid: unmatchedPaid, balance: 0, waived: false });
+      }
+
+      const totalFee = breakdown.reduce((s, r) => s + r.total, 0);
       const totalPaid = payments.reduce((s, r) => s + (parseFloat(r.amount_paid) || 0), 0);
+      const schemeFree = scheme
+        ? [scheme.free_van && 'Van', scheme.free_uniform && 'Uniform', scheme.free_books && 'Books'].filter(Boolean)
+        : [];
 
       return res.status(200).json({
         ok: true,
         total_fee: totalFee,
         total_paid: totalPaid,
         balance: Math.max(totalFee - totalPaid, 0),
+        breakdown: breakdown,
+        scheme_free: schemeFree,
         payments: payments
       });
     }
