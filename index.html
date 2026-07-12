@@ -461,70 +461,44 @@ async function doLogin() {
     return;
   }
 
-  // School login — check schools table directly (no email confirmation needed)
-  const { data: school, error: schoolErr } = await db
-    .from('schools')
-    .select('*')
-    .eq('email', email)
-    .single();
+  // School owner login — password checked on the SERVER (api/owner-login.js)
+  // Password hashes never travel to the browser (Database Lockdown Phase 1)
+  try {
+    const res = await fetch('/api/owner-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, password: pw })
+    });
 
-  if (schoolErr || !school) {
-    // Not a school owner — check if this is a staff login (Staff Logins feature)
-    await tryStaffLogin(email, pw, btn);
-    return;
-  }
-
-  // Check password — use Supabase Auth (primary) or password_hash column
-  if (!school.password_hash) {
-    // No password set in schools table yet — use Supabase Auth
-    const { error: authErr } = await db.auth.signInWithPassword({ email, password: pw });
-    if (authErr) {
-      btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Incorrect password. Please contact DigiSmart ERP support.', 'err');
+    if (res.status === 404) {
+      // Not an owner account — check if this is a staff login
+      await tryStaffLogin(email, pw, btn);
       return;
     }
-  } else {
-    // Hash what user typed and compare with stored hash
-    const enteredHash = await hashPassword(pw);
-    if (school.password_hash !== enteredHash) {
-      btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Incorrect password. Please try again or contact support.', 'err');
-      return;
-    }
-  }
 
-  // Check if school is active (use subscription_status — actual column name)
-  const schoolStatus = school.subscription_status || school.status;
-  if (schoolStatus === 'suspended') {
+    const result = await res.json();
     btn.textContent = 'Sign In →'; btn.disabled = false;
-    setA('login-alert', '⚠️ Your school account is suspended. Please contact DigiSmart ERP support.', 'err');
-    return;
-  }
 
-  // Check if demo has expired
-  if (schoolStatus === 'demo' && school.demo_expires) {
-    const today = new Date().toISOString().split('T')[0];
-    if (school.demo_expires < today) {
-      // Auto-suspend expired demo
-      await db.from('schools').update({subscription_status:'suspended'}).eq('school_code', school.school_code);
-      btn.textContent = 'Sign In →'; btn.disabled = false;
-      setA('login-alert', '⚠️ Your demo period has ended. Please contact DigiSmart ERP to purchase a plan.', 'err');
+    if (!res.ok || !result.ok) {
+      setA('login-alert', '⚠️ ' + (result.error || 'Login failed. Please try again.'), 'err');
       return;
     }
+
+    // Login successful
+    const school = result.school;
+    sessionStorage.setItem('digismart_school_id', school.school_code || school.school_id);
+    sessionStorage.setItem('digismart_school_code', school.school_code);
+    sessionStorage.setItem('school_name', school.name);
+    sessionStorage.setItem('school_email', email);
+    sessionStorage.setItem('digismart_role', 'owner');
+    sessionStorage.removeItem('digismart_staff_name');
+    sessionStorage.removeItem('digismart_modules');
+    toast('Welcome! Loading ' + school.name + '...');
+    setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
+  } catch (e) {
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+    setA('login-alert', '⚠️ Could not sign in. Please check your connection and try again.', 'err');
   }
-
-  btn.textContent = 'Sign In →'; btn.disabled = false;
-
-  // Login successful
-  sessionStorage.setItem('digismart_school_id', school.school_code || school.school_id);
-  sessionStorage.setItem('digismart_school_code', school.school_code);
-  sessionStorage.setItem('school_name', school.name);
-  sessionStorage.setItem('school_email', email);
-  sessionStorage.setItem('digismart_role', 'owner');
-  sessionStorage.removeItem('digismart_staff_name');
-  sessionStorage.removeItem('digismart_modules');
-  toast('Welcome! Loading ' + school.name + '...');
-  setTimeout(() => { window.location.href = 'pages/admission.html'; }, 800);
 }
 
 // ── STAFF LOGIN (password checked on the server — api/staff-login.js) ──
@@ -673,6 +647,7 @@ async function changeStatus(id, status) {
 async function delSchool(id) {
   if (!confirm('Delete this school? This cannot be undone.')) return;
   await db.from('schools').delete().eq('school_id', id);
+  await db.from('owner_credentials').delete().eq('school_id', id);
   toast('Deleted.'); await loadSA();
 }
 
@@ -763,7 +738,6 @@ async function addSchool() {
     city,
     admin_name: admin,
     email: email,
-    password_hash: hashedPw,
     plan,
     subscription_status: document.getElementById('as-is-demo')?.checked ? 'demo' : 'active',
     status: document.getElementById('as-is-demo')?.checked ? 'demo' : 'active',
@@ -775,6 +749,13 @@ async function addSchool() {
   btn.textContent = 'Create School Account →'; btn.disabled = false;
 
   if (dbErr) { setA('add-alert', '⚠️ DB error: ' + dbErr.message, 'err'); return; }
+
+  // Store the hashed password in the protected owner_credentials table
+  // (readable only by the super admin and the server — never by browsers)
+  const { error: credErr } = await db.from('owner_credentials').upsert([{
+    school_id: schoolId, email: email, password_hash: hashedPw
+  }]);
+  if (credErr) { setA('add-alert', '⚠️ School created, but password could not be saved: ' + credErr.message, 'err'); return; }
 
   setA('add-alert', '✅ School added! Note: Make sure "Confirm email" is OFF in Supabase Auth → Sign In/Providers for the school to login directly.', 'ok');
 
