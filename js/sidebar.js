@@ -70,6 +70,11 @@ async function renderSidebar(activePage) {
         <div class="tagline">School Management</div>
       </div>
     </div>
+    <div style="margin:0 14px 12px">
+      <a href="javascript:void(0)" onclick="erpLogout()" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border:1px solid rgba(255,255,255,.2);border-radius:8px;color:#E8C99A;font-size:12px;font-weight:600;text-decoration:none">
+        🚪 Logout
+      </a>
+    </div>
   `;
 
   // Small badge showing who is logged in (staff only)
@@ -91,4 +96,15 @@ async function renderSidebar(activePage) {
   });
 
   document.getElementById('sidebar').innerHTML = html;
+}
+
+// ── Logout: clears the session and returns to the login page ──
+async function erpLogout() {
+  try {
+    if (typeof supabase !== 'undefined' && supabase.auth) {
+      await supabase.auth.signOut();
+    }
+  } catch (e) { /* ignore — clearing session below is what matters */ }
+  sessionStorage.clear();
+  window.location.href = '../index.html';
 }
