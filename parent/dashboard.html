@@ -277,6 +277,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="qs-card"><div class="qs-num" id="fee-paid" style="color:#2D7A3A;font-size:15px">—</div><div class="qs-label">Paid</div></div>
       <div class="qs-card"><div class="qs-num" id="fee-due" style="color:#A32D2D;font-size:15px">—</div><div class="qs-label">Balance Due</div></div>
     </div>
+    <div class="section-title"><span>📋 Fee Breakdown</span></div>
+    <div id="fee-breakdown" style="margin-bottom:16px">
+      <div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Loading breakdown...</div></div>
+    </div>
+
     <div class="section-title"><span>🧾 Payment History</span></div>
     <div id="fee-list">
       <div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Loading payments...</div></div>
@@ -786,6 +791,35 @@ async function loadFees() {
   document.getElementById('fee-paid').textContent = inr(out.total_paid);
   document.getElementById('fee-due').textContent = inr(out.balance);
   document.getElementById('qs-fees').textContent = inr(out.balance);
+
+  // ── Per-head breakdown (school fee, van fee, books, etc.) ──
+  const bd = out.breakdown || [];
+  const bdEl = document.getElementById('fee-breakdown');
+  if (bd.length === 0) {
+    bdEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Fee structure not set for this class yet</div></div>';
+  } else {
+    let html = bd.map(h => {
+      const settled = h.balance === 0;
+      const badge = h.waived
+        ? '<span style="font-size:10px;font-weight:700;color:#2D7A3A;background:#E8F5EB;padding:2px 8px;border-radius:10px">FREE 🎓 Scheme</span>'
+        : (settled
+            ? '<span style="font-size:10px;font-weight:700;color:#2D7A3A;background:#E8F5EB;padding:2px 8px;border-radius:10px">✓ PAID</span>'
+            : '<span style="font-size:10px;font-weight:700;color:#A32D2D;background:#FCEBEB;padding:2px 8px;border-radius:10px">DUE ' + inr(h.balance) + '</span>');
+      return '<div style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:11px 12px;margin-bottom:6px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+          '<span style="font-size:13px;font-weight:600">' + h.name + '</span>' + badge +
+        '</div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;color:#9B928A">' +
+          '<span>Total: ' + (h.waived ? 'FREE' : inr(h.total)) + '</span>' +
+          '<span>Paid: ' + inr(h.paid) + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    if (out.scheme_free && out.scheme_free.length > 0) {
+      html += '<div style="font-size:11px;color:#2D7A3A;text-align:center;margin-top:6px">🎓 5-Year Scheme benefits: Free ' + out.scheme_free.join(', ') + '</div>';
+    }
+    bdEl.innerHTML = html;
+  }
 
   const pays = out.payments || [];
   if (pays.length === 0) {
