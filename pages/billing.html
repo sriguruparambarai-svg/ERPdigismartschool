@@ -529,6 +529,51 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+// ══ Secure Billing Channel (Database Lockdown Phase 3) ══
+// Billing tables are locked in the database — browsers cannot reach them
+// directly. All billing queries travel through api/billing-data.js, which
+// verifies the login's signed session token first.
+const secureBilling = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null, count: false };
+    const b = {
+      select(cols, opts) {
+        req.select = cols || '*';
+        if (opts && opts.count) req.count = true;
+        return b;
+      },
+      insert(vals) { req.action = 'insert'; req.values = vals; return b; },
+      update(vals) { req.action = 'update'; req.values = vals; return b; },
+      delete() { req.action = 'delete'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      in(col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+      gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+      lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+      order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+      limit(n) { req.limit = n; return b; },
+      single() { req.single = true; return b; },
+      then(resolve, reject) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/billing-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json().then(out => ({ status: r.status, out: out })))
+        .then(({ status, out }) => {
+          if (status === 401) {
+            showToast('Session expired — please log in again', 'error');
+            setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+          }
+          resolve({ data: (out && out.ok) ? out.data : null, count: (out && out.ok) ? out.count : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } });
+        })
+        .catch(() => resolve({ data: null, count: null, error: { message: 'Network error — please check your connection.' } }));
+      }
+    };
+    return b;
+  }
+};
+
 let allCategories = [];
 let catModalType = 'income';
 let invItemCount = 0;
@@ -558,7 +603,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── CATEGORIES ──
 async function loadCategories() {
-  const { data } = await supabase.from('account_categories').select('*').eq('school_id',SCHOOL_ID).order('type').order('name');
+  const { data } = await secureBilling.from('account_categories').select('*').eq('school_id',SCHOOL_ID).order('type').order('name');
   allCategories = data || [];
 
   if (allCategories.length === 0) await seedDefaultCategories();
@@ -587,7 +632,7 @@ async function seedDefaultCategories() {
     {name:'Other Expense',type:'expense',color:'#888',description:'Miscellaneous expense'},
   ];
   const records = defaults.map(d => ({...d, school_id: SCHOOL_ID}));
-  const { data } = await supabase.from('account_categories').insert(records).select();
+  const { data } = await secureBilling.from('account_categories').insert(records).select();
   allCategories = data || [];
 }
 
@@ -640,7 +685,7 @@ async function saveCategory() {
   if (!name) { showToast('Please enter category name.','error'); return; }
   const color = document.getElementById('cat-color').value;
   const desc = document.getElementById('cat-desc').value.trim();
-  const { error } = await supabase.from('account_categories').insert([{ school_id: SCHOOL_ID, name, type: catModalType, color, description: desc }]);
+  const { error } = await secureBilling.from('account_categories').insert([{ school_id: SCHOOL_ID, name, type: catModalType, color, description: desc }]);
   if (error) { showToast('Error: '+error.message,'error'); return; }
   closeCatModal();
   showToast(name+' added!','success');
@@ -649,7 +694,7 @@ async function saveCategory() {
 
 async function deleteCategory(id, name) {
   if (!confirm(`Delete category "${name}"?`)) return;
-  await supabase.from('account_categories').delete().eq('id',id);
+  await secureBilling.from('account_categories').delete().eq('id',id);
   await loadCategories();
 }
 
@@ -680,8 +725,8 @@ async function saveIncome() {
   };
 
   let error;
-  if (editingIncId) { ({ error } = await supabase.from('account_transactions').update(record).eq('id',editingIncId)); }
-  else { ({ error } = await supabase.from('account_transactions').insert([record])); }
+  if (editingIncId) { ({ error } = await secureBilling.from('account_transactions').update(record).eq('id',editingIncId)); }
+  else { ({ error } = await secureBilling.from('account_transactions').insert([record])); }
 
   btn.textContent='Record Income'; btn.disabled=false;
   if (error) { document.getElementById('inc-alert').className='alert alert-danger'; document.getElementById('inc-alert').textContent='⚠️ '+error.message; return; }
@@ -708,7 +753,7 @@ function clearIncomeForm() {
 async function loadIncomeList() {
   const month = document.getElementById('inc-month').value;
   const catId = document.getElementById('inc-list-cat').value;
-  let query = supabase.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).eq('type','income').order('date',{ascending:false});
+  let query = secureBilling.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).eq('type','income').order('date',{ascending:false});
   if (month) query = query.gte('date',month+'-01').lte('date',month+'-31');
   if (catId) query = query.eq('category_id',catId);
   const { data } = await query.limit(100);
@@ -718,7 +763,7 @@ async function loadIncomeList() {
 async function loadExpenseList() {
   const month = document.getElementById('exp-month').value;
   const catId = document.getElementById('exp-list-cat').value;
-  let query = supabase.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).eq('type','expense').order('date',{ascending:false});
+  let query = secureBilling.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).eq('type','expense').order('date',{ascending:false});
   if (month) query = query.gte('date',month+'-01').lte('date',month+'-31');
   if (catId) query = query.eq('category_id',catId);
   const { data } = await query.limit(100);
@@ -791,8 +836,8 @@ async function saveExpense() {
   };
 
   let error;
-  if (editingExpId) { ({ error } = await supabase.from('account_transactions').update(record).eq('id',editingExpId)); }
-  else { ({ error } = await supabase.from('account_transactions').insert([record])); }
+  if (editingExpId) { ({ error } = await secureBilling.from('account_transactions').update(record).eq('id',editingExpId)); }
+  else { ({ error } = await secureBilling.from('account_transactions').insert([record])); }
 
   btn.textContent='Record Expense'; btn.disabled=false;
   if (error) { document.getElementById('exp-alert').className='alert alert-danger'; document.getElementById('exp-alert').textContent='⚠️ '+error.message; return; }
@@ -817,7 +862,7 @@ function clearExpenseForm() {
 }
 
 async function editTransaction(id) {
-  const { data } = await supabase.from('account_transactions').select('*').eq('id',id).single();
+  const { data } = await secureBilling.from('account_transactions').select('*').eq('id',id).single();
   if (!data) return;
   if (data.type==='income') {
     editingIncId=id;
@@ -850,7 +895,7 @@ async function editTransaction(id) {
 
 async function deleteTransaction(id) {
   if (!confirm('Delete this transaction?')) return;
-  await supabase.from('account_transactions').delete().eq('id',id);
+  await secureBilling.from('account_transactions').delete().eq('id',id);
   showToast('Transaction deleted.','success');
   await loadLedger(); await loadIncomeList(); await loadExpenseList(); await loadStats();
 }
@@ -864,7 +909,7 @@ async function loadLedger() {
   const type = document.getElementById('led-type').value;
   const catId = document.getElementById('led-cat').value;
 
-  let query = supabase.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).order('date',{ascending:false}).order('created_at',{ascending:false});
+  let query = secureBilling.from('account_transactions').select('*').eq('school_id',SCHOOL_ID).order('date',{ascending:false}).order('created_at',{ascending:false});
   if (from) query = query.gte('date',from);
   if (to) query = query.lte('date',to);
   if (type) query = query.eq('type',type);
@@ -979,12 +1024,12 @@ async function saveInvoice() {
   const total = subtotal+taxAmt;
 
   // Generate invoice number
-  const { data: lastInv } = await supabase.from('invoices').select('invoice_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
+  const { data: lastInv } = await secureBilling.from('invoices').select('invoice_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
   let num = 1;
   if (lastInv&&lastInv.length>0) { const last=lastInv[0].invoice_no?.split('-').pop(); if(last) num=parseInt(last)+1; }
   const invoiceNo = `INV-${new Date().getFullYear()}-${String(num).padStart(4,'0')}`;
 
-  const { error } = await supabase.from('invoices').insert([{
+  const { error } = await secureBilling.from('invoices').insert([{
     school_id: SCHOOL_ID, invoice_no: invoiceNo,
     invoice_to: to, invoice_for: document.getElementById('inv-for').value.trim(),
     invoice_date: document.getElementById('inv-date').value,
@@ -1004,7 +1049,7 @@ async function saveInvoice() {
 async function loadInvoices() {
   const status = document.getElementById('inv-filter-status').value;
   const month = document.getElementById('inv-filter-month').value;
-  let query = supabase.from('invoices').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false});
+  let query = secureBilling.from('invoices').select('*').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false});
   if (status) query = query.eq('status',status);
   if (month) query = query.gte('invoice_date',month+'-01').lte('invoice_date',month+'-31');
   const { data } = await query.limit(50);
@@ -1039,7 +1084,7 @@ async function loadInvoices() {
 }
 
 async function viewInvoice(id) {
-  const { data: inv } = await supabase.from('invoices').select('*').eq('id',id).single();
+  const { data: inv } = await secureBilling.from('invoices').select('*').eq('id',id).single();
   if (!inv) return;
   document.getElementById('invoice-view-content').innerHTML = `
     <div class="invoice-box" id="printable-invoice">
@@ -1079,14 +1124,14 @@ async function viewInvoice(id) {
 }
 
 async function markInvoicePaid(id) {
-  await supabase.from('invoices').update({status:'paid'}).eq('id',id);
+  await secureBilling.from('invoices').update({status:'paid'}).eq('id',id);
   showToast('Invoice marked as paid!','success');
   await loadInvoices(); await loadStats();
 }
 
 async function deleteInvoice(id) {
   if (!confirm('Delete this invoice?')) return;
-  await supabase.from('invoices').delete().eq('id',id);
+  await secureBilling.from('invoices').delete().eq('id',id);
   showToast('Invoice deleted.','success');
   await loadInvoices(); await loadStats();
 }
@@ -1095,7 +1140,7 @@ async function deleteInvoice(id) {
 let budgetData = {};
 async function loadBudget() {
   const year = document.getElementById('bud-year').value;
-  const { data } = await supabase.from('account_budget').select('*').eq('school_id',SCHOOL_ID).eq('academic_year',year);
+  const { data } = await secureBilling.from('account_budget').select('*').eq('school_id',SCHOOL_ID).eq('academic_year',year);
   budgetData = {};
   if (data) data.forEach(b => { budgetData[b.category_id] = b.budget_amount; });
 
@@ -1113,13 +1158,13 @@ async function loadBudget() {
 async function saveBudget() {
   const year = document.getElementById('bud-year').value;
   const expCats = allCategories.filter(c=>c.type==='expense');
-  await supabase.from('account_budget').delete().eq('school_id',SCHOOL_ID).eq('academic_year',year);
+  await secureBilling.from('account_budget').delete().eq('school_id',SCHOOL_ID).eq('academic_year',year);
   const records = expCats.map(c => ({
     school_id: SCHOOL_ID, academic_year: year,
     category_id: c.id, category_name: c.name,
     budget_amount: parseFloat(document.getElementById('bud-'+c.id)?.value)||0,
   })).filter(r=>r.budget_amount>0);
-  if (records.length>0) await supabase.from('account_budget').insert(records);
+  if (records.length>0) await secureBilling.from('account_budget').insert(records);
   showToast('Budget saved!','success');
   await loadBudgetActual();
 }
@@ -1130,8 +1175,8 @@ async function loadBudgetActual() {
   const from = fy+'-04-01';
   const to = (parseInt(fy)+1)+'-03-31';
 
-  const { data: budgets } = await supabase.from('account_budget').select('*').eq('school_id',SCHOOL_ID).eq('academic_year',year);
-  const { data: txns } = await supabase.from('account_transactions').select('category_id,amount').eq('school_id',SCHOOL_ID).eq('type','expense').gte('date',from).lte('date',to);
+  const { data: budgets } = await secureBilling.from('account_budget').select('*').eq('school_id',SCHOOL_ID).eq('academic_year',year);
+  const { data: txns } = await secureBilling.from('account_transactions').select('category_id,amount').eq('school_id',SCHOOL_ID).eq('type','expense').gte('date',from).lte('date',to);
 
   const actualMap = {};
   if (txns) txns.forEach(t => { actualMap[t.category_id] = (actualMap[t.category_id]||0)+t.amount; });
@@ -1167,7 +1212,7 @@ async function loadBudgetActual() {
 async function loadStats() {
   const today = new Date().toISOString().split('T')[0];
   const monthStart = today.slice(0,7)+'-01';
-  const { data } = await supabase.from('account_transactions').select('type,amount').eq('school_id',SCHOOL_ID).gte('date',monthStart).lte('date',today);
+  const { data } = await secureBilling.from('account_transactions').select('type,amount').eq('school_id',SCHOOL_ID).gte('date',monthStart).lte('date',today);
   if (data) {
     const inc = data.filter(r=>r.type==='income').reduce((s,r)=>s+r.amount,0);
     const exp = data.filter(r=>r.type==='expense').reduce((s,r)=>s+r.amount,0);
@@ -1177,7 +1222,7 @@ async function loadStats() {
     document.getElementById('st-balance').textContent = '₹'+(Math.abs(bal)/1000).toFixed(0)+'K';
     document.getElementById('st-balance').style.color = bal>=0?'#2D7A3A':'#A32D2D';
   }
-  const { count } = await supabase.from('invoices').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','pending');
+  const { count } = await secureBilling.from('invoices').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','pending');
   document.getElementById('st-invoices').textContent = count||0;
 }
 
@@ -1185,7 +1230,7 @@ async function loadPL() {
   const from = document.getElementById('pl-from').value;
   const to = document.getElementById('pl-to').value;
   if (!from||!to) return;
-  const { data } = await supabase.from('account_transactions').select('type,category_name,category_color,amount').eq('school_id',SCHOOL_ID).gte('date',from+'-01').lte('date',to+'-31');
+  const { data } = await secureBilling.from('account_transactions').select('type,category_name,category_color,amount').eq('school_id',SCHOOL_ID).gte('date',from+'-01').lte('date',to+'-31');
   if (!data||data.length===0) { document.getElementById('pl-content').innerHTML='<div class="empty-state"><div class="icon">📈</div><p>No data for this period.</p></div>'; return; }
 
   const incByCat={}, expByCat={};
@@ -1244,7 +1289,7 @@ async function loadMonthChart() {
     [(parseInt(fy)+1)+'-03-01',(parseInt(fy)+1)+'-03-31'],
   ];
 
-  const { data } = await supabase.from('account_transactions').select('type,amount,date').eq('school_id',SCHOOL_ID).gte('date',fy+'-04-01').lte('date',(parseInt(fy)+1)+'-03-31');
+  const { data } = await secureBilling.from('account_transactions').select('type,amount,date').eq('school_id',SCHOOL_ID).gte('date',fy+'-04-01').lte('date',(parseInt(fy)+1)+'-03-31');
   const monthData = dates.map(([from,to],i) => {
     const filtered = data?.filter(r=>r.date>=from&&r.date<=to)||[];
     return {
@@ -1281,7 +1326,7 @@ async function loadMonthChart() {
 async function loadCategoryBreakdown() {
   const month = document.getElementById('cat-month').value;
   if (!month) return;
-  const { data } = await supabase.from('account_transactions').select('type,category_name,category_color,amount').eq('school_id',SCHOOL_ID).gte('date',month+'-01').lte('date',month+'-31');
+  const { data } = await secureBilling.from('account_transactions').select('type,category_name,category_color,amount').eq('school_id',SCHOOL_ID).gte('date',month+'-01').lte('date',month+'-31');
   if (!data||data.length===0) { document.getElementById('cat-breakdown-content').innerHTML='<div class="empty-state"><div class="icon">🍕</div><p>No data for this month.</p></div>'; return; }
 
   const expData={}, incData={};
@@ -1327,7 +1372,7 @@ async function loadCashFlow() {
     [(parseInt(fy)+1)+'-02-01',(parseInt(fy)+1)+'-02-28'],
     [(parseInt(fy)+1)+'-03-01',(parseInt(fy)+1)+'-03-31'],
   ];
-  const { data } = await supabase.from('account_transactions').select('type,amount,date').eq('school_id',SCHOOL_ID).gte('date',fy+'-04-01').lte('date',(parseInt(fy)+1)+'-03-31');
+  const { data } = await secureBilling.from('account_transactions').select('type,amount,date').eq('school_id',SCHOOL_ID).gte('date',fy+'-04-01').lte('date',(parseInt(fy)+1)+'-03-31');
 
   let cumulative = 0;
   const rows = dates.map(([from,to],i) => {
