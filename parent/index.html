@@ -179,37 +179,31 @@ async function doParentLogin() {
 
   btn.textContent = 'Signing in...'; btn.disabled = true;
 
-  // Find student by admission number
-  let query = sbClient.from('students').select('id,full_name,class,section,school_id,parent_password,dob').eq('admission_no', admNo);
-  if (schoolId) query = query.eq('school_id', schoolId);
+  // Password is checked on the SERVER (api/parent-login.js) —
+  // no passwords or birth dates ever travel to the browser
+  try {
+    const res = await fetch('/api/parent-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ admission_no: admNo, password: pw, school_id: schoolId || '' })
+    });
+    const result = await res.json();
+    btn.textContent = 'Sign In →'; btn.disabled = false;
 
-  const { data: student, error } = await query.single();
-  btn.textContent = 'Sign In →'; btn.disabled = false;
+    if (!res.ok || !result.ok) {
+      showAlert('⚠️ ' + (result.error || 'Login failed. Please try again.'));
+      return;
+    }
 
-  if (error || !student) { showAlert('⚠️ Admission number not found. Please check and try again.'); return; }
+    sessionStorage.setItem('parent_token', result.parent_token);
+    sessionStorage.setItem('parent_session', JSON.stringify(result.student));
+    sessionStorage.setItem('parent_school_id', result.student.school_id);
 
-  // Check password — stored hash or default (DOB as DDMMYYYY)
-  const defaultPw = student.dob ? student.dob.replace(/-/g,'').split('').reverse().join('').slice(0,4) + student.dob.replace(/-/g,'').slice(0,4) : '';
-  const dobPw = student.dob ? student.dob.replace(/-/g,'').split('').slice(6,8).join('') + student.dob.replace(/-/g,'').slice(4,6) + student.dob.replace(/-/g,'').slice(0,4) : '';
-
-  // Simple check: stored password OR dob-based default
-  const storedPw = student.parent_password;
-  const isValid = storedPw ? pw === storedPw : (pw === dobPw || pw === student.dob?.replace(/-/g,''));
-
-  if (!isValid) { showAlert('⚠️ Incorrect password. Default password is child\'s date of birth (DDMMYYYY). E.g. 15042012'); return; }
-
-  // Save session
-  sessionStorage.setItem('parent_session', JSON.stringify({
-    student_id: student.id,
-    student_name: student.full_name,
-    class: student.class,
-    section: student.section,
-    admission_no: admNo,
-    school_id: student.school_id,
-  }));
-  sessionStorage.setItem('parent_school_id', student.school_id);
-
-  window.location.href = 'dashboard.html';
+    window.location.href = 'dashboard.html';
+  } catch (e) {
+    btn.textContent = 'Sign In →'; btn.disabled = false;
+    showAlert('⚠️ Could not sign in. Please check your internet connection and try again.');
+  }
 }
 
 function showAlert(msg) {

@@ -169,6 +169,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
 
+    <!-- Attendance & Fees tap-cards (Parent Portal 2.0) -->
+    <div class="quick-stats" style="grid-template-columns:1fr 1fr">
+      <div class="qs-card" onclick="openAttendance()" style="cursor:pointer">
+        <div class="qs-num" id="qs-attendance" style="color:#2D7A3A">—</div>
+        <div class="qs-label">📅 Attendance — tap to view</div>
+      </div>
+      <div class="qs-card" onclick="openFees()" style="cursor:pointer">
+        <div class="qs-num" id="qs-fees" style="color:var(--maroon)">—</div>
+        <div class="qs-label">💰 Fees Due — tap to view</div>
+      </div>
+    </div>
+
     <!-- Urgent notices -->
     <div id="urgent-section" class="hidden">
       <div class="section-title">
@@ -235,6 +247,45 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
 
   <!-- ── SETTINGS ── -->
+  <!-- ── ATTENDANCE (Parent Portal 2.0) ── -->
+  <div id="tab-attendance" class="tab-section">
+    <div class="section-title">
+      <span>📅 Attendance</span>
+      <span class="see-all" onclick="showTab('home')">← Home</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+      <input type="month" id="att-month" style="flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit" onchange="loadAttendance()">
+    </div>
+    <div class="quick-stats" style="margin-bottom:14px">
+      <div class="qs-card"><div class="qs-num" id="att-present" style="color:#2D7A3A">—</div><div class="qs-label">Present</div></div>
+      <div class="qs-card"><div class="qs-num" id="att-absent" style="color:#A32D2D">—</div><div class="qs-label">Absent</div></div>
+      <div class="qs-card"><div class="qs-num" id="att-pct" style="color:var(--maroon)">—</div><div class="qs-label">Attendance %</div></div>
+    </div>
+    <div id="att-list">
+      <div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">Loading attendance...</div></div>
+    </div>
+  </div>
+
+  <!-- ── FEES (Parent Portal 2.0) ── -->
+  <div id="tab-fees" class="tab-section">
+    <div class="section-title">
+      <span>💰 Fees</span>
+      <span class="see-all" onclick="showTab('home')">← Home</span>
+    </div>
+    <div class="quick-stats" style="margin-bottom:14px">
+      <div class="qs-card"><div class="qs-num" id="fee-total" style="color:#185FA5;font-size:15px">—</div><div class="qs-label">Total Fee</div></div>
+      <div class="qs-card"><div class="qs-num" id="fee-paid" style="color:#2D7A3A;font-size:15px">—</div><div class="qs-label">Paid</div></div>
+      <div class="qs-card"><div class="qs-num" id="fee-due" style="color:#A32D2D;font-size:15px">—</div><div class="qs-label">Balance Due</div></div>
+    </div>
+    <div class="section-title"><span>🧾 Payment History</span></div>
+    <div id="fee-list">
+      <div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Loading payments...</div></div>
+    </div>
+    <div style="margin-top:14px;font-size:11px;color:#9B928A;text-align:center;line-height:1.6">
+      For fee payments, please visit the school office.<br>Figures update as the office records payments.
+    </div>
+  </div>
+
   <div id="tab-settings" class="tab-section">
     <div class="section-title">👤 My Account</div>
 
@@ -628,16 +679,9 @@ async function changePassword() {
   if (newPw.length < 6) { showPwAlert('⚠️ New password must be at least 6 characters.','#FCEBEB','#A32D2D'); return; }
   if (newPw !== confirm) { showPwAlert('⚠️ Passwords do not match.','#FCEBEB','#A32D2D'); return; }
 
-  // Verify current password matches
-  const { data: student } = await sbClient.from('students').select('parent_password,dob').eq('id', session.student_id).single();
-  const storedPw = student?.parent_password;
-  const dobPw = student?.dob ? student.dob.replace(/-/g,'') : '';
-  const isValid = storedPw ? current === storedPw : (current === dobPw);
-
-  if (!isValid) { showPwAlert('⚠️ Current password is incorrect.','#FCEBEB','#A32D2D'); return; }
-
-  const { error } = await sbClient.from('students').update({ parent_password: newPw }).eq('id', session.student_id);
-  if (error) { showPwAlert('⚠️ Error updating password.','#FCEBEB','#A32D2D'); return; }
+  // Password change happens on the SERVER (api/parent-data.js)
+  const result = await parentApi('change_password', { old_password: current, new_password: newPw });
+  if (!result.ok) { showPwAlert('⚠️ ' + (result.error || 'Error updating password.'),'#FCEBEB','#A32D2D'); return; }
 
   showPwAlert('✓ Password changed successfully!','#E8F5EB','#2D7A3A');
   setTimeout(() => closeModal('pw-modal'), 1500);
@@ -655,6 +699,107 @@ function showTab(tab) {
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+tab)?.classList.add('active');
   document.getElementById('nav-'+tab)?.classList.add('active');
+}
+
+// ══ Parent Portal 2.0 — secure data channel ══
+async function parentApi(action, extra) {
+  try {
+    const token = sessionStorage.getItem('parent_token') || '';
+    const res = await fetch('/api/parent-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: token, action: action }, extra || {}))
+    });
+    const out = await res.json();
+    if (res.status === 401) {
+      sessionStorage.removeItem('parent_token');
+      sessionStorage.removeItem('parent_session');
+      window.location.href = 'index.html';
+      return { ok: false, error: 'Session expired' };
+    }
+    return out;
+  } catch (e) {
+    return { ok: false, error: 'Network error — please check your connection.' };
+  }
+}
+
+// ── Attendance ──
+let attLoaded = false;
+function openAttendance() {
+  showTab('attendance');
+  if (!attLoaded) {
+    document.getElementById('att-month').value = new Date().toISOString().slice(0, 7);
+    loadAttendance();
+    attLoaded = true;
+  }
+}
+
+async function loadAttendance() {
+  const month = document.getElementById('att-month').value || new Date().toISOString().slice(0, 7);
+  const out = await parentApi('attendance', { month: month });
+  const list = document.getElementById('att-list');
+  if (!out.ok) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">' + (out.error || 'Could not load attendance') + '</div></div>';
+    return;
+  }
+  const records = out.records || [];
+  const present = records.filter(r => r.status === 'present').length;
+  const absent = records.filter(r => r.status === 'absent').length;
+  const total = records.length;
+  document.getElementById('att-present').textContent = present;
+  document.getElementById('att-absent').textContent = absent;
+  document.getElementById('att-pct').textContent = total > 0 ? Math.round((present / total) * 100) + '%' : '—';
+  document.getElementById('qs-attendance').textContent = total > 0 ? Math.round((present / total) * 100) + '%' : '—';
+
+  if (records.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">No attendance marked for this month yet</div></div>';
+    return;
+  }
+  list.innerHTML = records.map(r => {
+    const d = new Date(r.date);
+    const dayStr = d.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+    const isPresent = r.status === 'present';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;font-size:13px">' +
+      '<span>' + dayStr + '</span>' +
+      '<span style="font-weight:700;color:' + (isPresent ? '#2D7A3A' : '#A32D2D') + '">' + (isPresent ? '✓ Present' : '✗ Absent') + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+// ── Fees ──
+let feesLoaded = false;
+function openFees() {
+  showTab('fees');
+  if (!feesLoaded) { loadFees(); feesLoaded = true; }
+}
+
+function inr(n) { return '₹' + (n || 0).toLocaleString('en-IN'); }
+
+async function loadFees() {
+  const out = await parentApi('fees', {});
+  const list = document.getElementById('fee-list');
+  if (!out.ok) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">' + (out.error || 'Could not load fee details') + '</div></div>';
+    return;
+  }
+  document.getElementById('fee-total').textContent = inr(out.total_fee);
+  document.getElementById('fee-paid').textContent = inr(out.total_paid);
+  document.getElementById('fee-due').textContent = inr(out.balance);
+  document.getElementById('qs-fees').textContent = inr(out.balance);
+
+  const pays = out.payments || [];
+  if (pays.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">No payments recorded yet</div></div>';
+    return;
+  }
+  list.innerHTML = pays.map(p => {
+    const d = p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:6px">' +
+      '<div><div style="font-size:13px;font-weight:600">' + d + '</div>' +
+      '<div style="font-size:11px;color:#9B928A">Receipt: ' + (p.receipt_no || '—') + (p.payment_mode ? ' · ' + p.payment_mode : '') + '</div></div>' +
+      '<div style="font-size:14px;font-weight:800;color:#2D7A3A">' + inr(parseFloat(p.amount_paid)) + '</div>' +
+    '</div>';
+  }).join('');
 }
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
