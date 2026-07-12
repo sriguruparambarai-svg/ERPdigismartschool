@@ -22,7 +22,16 @@ try {
 function hasModuleAccess(moduleId) {
   if (USER_ROLE !== 'staff') return true;
   if (moduleId === 'dashboard') return true;
+  // 'Fee Collection Only' permission also opens the Fee page
+  if (moduleId === 'fee' && ALLOWED_MODULES.indexOf('fee-collect') !== -1) return true;
   return ALLOWED_MODULES.indexOf(moduleId) !== -1;
+}
+
+// True when staff can collect fees but must NOT see totals, reports or settings
+function isFeeCollectionOnly() {
+  if (USER_ROLE !== 'staff') return false;
+  if (ALLOWED_MODULES.indexOf('fee') !== -1) return false; // Full access wins
+  return ALLOWED_MODULES.indexOf('fee-collect') !== -1;
 }
 
 // Initialize Supabase client
