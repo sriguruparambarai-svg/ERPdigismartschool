@@ -380,6 +380,9 @@
 <script>
 
 // ── Init ──
+// Staff logins can view and admit students, but cannot edit or delete
+// existing records (owner-only, protects student data)
+const IS_STAFF_LOGIN = (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff');
 let allStudents = [];
 let editingId = null;
 let deletingId = null;
@@ -476,8 +479,8 @@ function renderTable(students) {
         <td>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm btn-icon" title="View" onclick="viewStudent('${s.id}')">👁</button>
-            <button class="btn btn-secondary btn-sm btn-icon" title="Edit" onclick="editStudent('${s.id}')">✏️</button>
-            <button class="btn btn-danger btn-sm btn-icon" title="Delete" onclick="askDelete('${s.id}', '${(s.full_name||'').replace(/'/g,"\\'")}')">🗑</button>
+            ${IS_STAFF_LOGIN ? '' : `<button class="btn btn-secondary btn-sm btn-icon" title="Edit" onclick="editStudent('${s.id}')">✏️</button>
+            <button class="btn btn-danger btn-sm btn-icon" title="Delete" onclick="askDelete('${s.id}', '${(s.full_name||'').replace(/'/g,"\\'")}')">🗑</button>`}
           </div>
         </td>
       </tr>
@@ -729,6 +732,7 @@ function viewStudent(id) {
     closeViewModal();
     editStudent(id);
   };
+  if (IS_STAFF_LOGIN) document.getElementById('edit-from-view-btn').style.display = 'none';
   document.getElementById('view-modal').classList.add('open');
 }
 
