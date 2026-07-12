@@ -120,6 +120,15 @@ module.exports = async (req, res) => {
       const headById = {};
       heads.forEach(h => { headById[h.id] = h; });
 
+      // This student's custom fee amounts (e.g. route-based van fee)
+      let overrides = [];
+      try {
+        overrides = await sb('GET', 'student_fee_overrides?student_id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=fee_head_id,total_amount,note') || [];
+      } catch (e) { overrides = []; } // table may not exist yet
+      const ovByHead = {};
+      overrides.forEach(o => { ovByHead[o.fee_head_id] = o; });
+
       // Active 5-Year Scheme enrolment (if the school offers it)
       let scheme = null;
       try {
@@ -147,12 +156,15 @@ module.exports = async (req, res) => {
         else unmatchedPaid += amt;
       });
 
-      // One breakdown row per fee head in this class's structure
+      // One breakdown row per fee head — custom student amount wins over class amount
       const breakdown = structure.map(s => {
         const waived = isWaived(s.fee_head_id);
-        const total = waived ? 0 : (parseFloat(s.total_amount) || 0);
+        const ov = ovByHead[s.fee_head_id];
+        const baseAmount = ov ? (parseFloat(ov.total_amount) || 0) : (parseFloat(s.total_amount) || 0);
+        const total = waived ? 0 : baseAmount;
         const paid = paidByHead[s.fee_head_id] || 0;
-        const name = s.fee_head_name || (headById[s.fee_head_id] && headById[s.fee_head_id].name) || 'Fee';
+        let name = s.fee_head_name || (headById[s.fee_head_id] && headById[s.fee_head_id].name) || 'Fee';
+        if (ov && ov.note) name = name + ' (' + ov.note + ')';
         delete paidByHead[s.fee_head_id];
         return { name: name, total: total, paid: paid, balance: Math.max(total - paid, 0), waived: waived };
       });
