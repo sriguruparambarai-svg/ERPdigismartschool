@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff Logins — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .module-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:8px}
+  .module-check{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #E8E0D5;border-radius:8px;cursor:pointer;font-size:13px;background:#fff;transition:all .15s}
+  .module-check:hover{border-color:#C9A84C;background:#FDFAF4}
+  .module-check input{width:16px;height:16px;accent-color:#6B1A1A;cursor:pointer}
+  .module-check.checked{border-color:#6B1A1A;background:#FBF5EE}
+  .mod-chip{display:inline-block;background:#FBF5EE;border:1px solid #E8C99A;color:#6B1A1A;border-radius:20px;padding:2px 9px;font-size:11px;margin:2px 3px 2px 0;white-space:nowrap}
+  .status-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill-active{background:#E7F4E9;color:#2D7A3A}
+  .pill-inactive{background:#F5E9E9;color:#A32D2D}
+  .verify-card{max-width:440px;margin:60px auto;background:#fff;border:1px solid #E8E0D5;border-radius:16px;padding:32px;box-shadow:0 8px 40px rgba(107,26,26,.08);text-align:center}
+  .icon-btn{border:1px solid #E8E0D5;background:#fff;border-radius:8px;padding:6px 9px;cursor:pointer;font-size:13px;margin-left:4px;transition:all .15s}
+  .icon-btn:hover{border-color:#C9A84C;background:#FDFAF4}
+</style>
+</head>
+<body>
+
+<div class="erp-layout">
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- MAIN -->
+  <div class="main-content">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Staff Logins</div>
+        <div class="breadcrumb" style="margin-left:10px; padding-left:10px; border-left:1px solid #E8E0D5; color:#9B928A; font-size:12px">Settings → Staff Logins</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px; color:#9B928A;" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <!-- PAGE BODY -->
+    <div class="page-body">
+
+      <!-- ══ STEP A: OWNER PASSWORD VERIFY (shown first) ══ -->
+      <div id="verify-section" class="hidden">
+        <div class="verify-card">
+          <div style="font-size:36px;margin-bottom:10px">🔐</div>
+          <div style="font-size:18px;font-weight:800;color:#6B1A1A;margin-bottom:6px">Confirm Your Password</div>
+          <div style="font-size:13px;color:#9B928A;margin-bottom:20px">Staff login management is protected. Please re-enter your owner password to continue.</div>
+          <div id="verify-alert" class="hidden"></div>
+          <input type="email" id="verify-email" class="form-control" readonly style="margin-bottom:10px;background:#F7F3ED">
+          <input type="password" id="verify-pw" class="form-control" placeholder="Your owner password" style="margin-bottom:16px" onkeydown="if(event.key==='Enter')doVerify()">
+          <button class="btn btn-primary" id="verify-btn" style="width:100%" onclick="doVerify()">Verify & Continue →</button>
+        </div>
+      </div>
+
+      <!-- ══ STEP B: STAFF MANAGEMENT (shown after verify) ══ -->
+      <div id="manage-section" class="hidden">
+
+        <div id="page-alert" class="hidden"></div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Staff Login Accounts</div>
+              <div class="card-subtitle" id="staff-count">Loading...</div>
+            </div>
+            <div>
+              <button class="btn btn-primary" onclick="openAddModal()">+ New Staff Login</button>
+            </div>
+          </div>
+
+          <div id="loading-state" style="padding:40px;text-align:center;color:#9B928A;font-size:13px">Loading staff accounts...</div>
+
+          <div id="empty-state" class="hidden" style="padding:50px;text-align:center">
+            <div style="font-size:36px;margin-bottom:10px">👥</div>
+            <div style="font-size:15px;font-weight:700;color:#6B1A1A;margin-bottom:6px">No staff logins yet</div>
+            <div style="font-size:13px;color:#9B928A;margin-bottom:16px">Create logins for your staff and choose exactly which modules each person can access.</div>
+            <button class="btn btn-gold" onclick="openAddModal()">+ Create First Staff Login</button>
+          </div>
+
+          <div id="staff-table-wrap" class="hidden" style="overflow-x:auto">
+            <table style="width:100%">
+              <thead>
+                <tr>
+                  <th>STAFF NAME</th>
+                  <th>LOGIN EMAIL</th>
+                  <th>ALLOWED MODULES</th>
+                  <th>STATUS</th>
+                  <th style="text-align:right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody id="staff-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;font-size:12px;color:#9B928A;line-height:1.6">
+          💡 <b>How it works:</b> Staff sign in on the same login page with their own email and password.
+          They will see only the modules you tick here — everything else stays hidden and blocked.
+          Deactivate a staff member anytime to instantly stop their access without deleting their account.
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADD / EDIT STAFF MODAL ══ -->
+<div class="modal-overlay" id="staff-modal">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <div class="modal-title" id="staff-modal-title">New Staff Login</div>
+      <button class="modal-close" onclick="closeStaffModal()">✕</button>
+    </div>
+    <div id="staff-modal-alert" class="hidden"></div>
+
+    <div class="form-section">
+      <div class="form-section-title">👤 Staff Details</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Staff Name <span class="req">*</span></label>
+          <input type="text" id="s-name" class="form-control" placeholder="e.g. Priya M">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Login Email <span class="req">*</span></label>
+          <input type="email" id="s-email" class="form-control" placeholder="e.g. priya@yourschool.com">
+        </div>
+        <div class="form-group" id="s-password-group">
+          <label class="form-label">Password <span class="req">*</span></label>
+          <input type="text" id="s-password" class="form-control" placeholder="Minimum 6 characters">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">✅ Allowed Modules <span style="font-weight:400;font-size:12px;color:#9B928A">— tick what this staff member can access (Dashboard is always included)</span></div>
+      <div class="module-grid" id="module-grid"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeStaffModal()">Cancel</button>
+      <button class="btn btn-gold" id="staff-save-btn" onclick="saveStaff()">✓ Save Staff Login</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RESET PASSWORD MODAL ══ -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div class="modal-title">Reset Password</div>
+      <button class="modal-close" onclick="closeResetModal()">✕</button>
+    </div>
+    <div id="reset-alert" class="hidden"></div>
+    <p style="font-size:13px;color:#5C534B;margin-bottom:12px">Set a new password for <b id="reset-staff-name"></b>. Share it with them privately.</p>
+    <div class="form-group">
+      <label class="form-label">New Password <span class="req">*</span></label>
+      <input type="text" id="reset-password" class="form-control" placeholder="Minimum 6 characters">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeResetModal()">Cancel</button>
+      <button class="btn btn-primary" id="reset-save-btn" onclick="saveResetPassword()">🔑 Set New Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DELETE CONFIRM MODAL ══ -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div class="modal-title">Delete Staff Login</div>
+      <button class="modal-close" onclick="closeDeleteModal()">✕</button>
+    </div>
+    <p style="font-size:13px;color:#5C534B">Delete the login for <b id="delete-staff-name"></b>? They will no longer be able to sign in.</p>
+    <p style="font-size:12px; color:#A32D2D; margin-top:8px">⚠️ This action cannot be undone. Tip: use Deactivate instead if they may return.</p>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" id="confirm-delete-btn" onclick="doDeleteStaff()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+
+// ── Modules the owner can tick (ids match sidebar.js exactly) ──
+const MODULE_LIST = [
+  { id: 'face',          icon: '📷', label: 'Face Recognition' },
+  { id: 'student-att',   icon: '✅', label: 'Student Attendance' },
+  { id: 'admission',     icon: '📝', label: 'Admission' },
+  { id: 'exam',          icon: '📄', label: 'Exam Management' },
+  { id: 'icard',         icon: '🪪', label: 'I-Card & Timetable' },
+  { id: 'fee',           icon: '💰', label: 'Fee Management' },
+  { id: 'billing',       icon: '🧾', label: 'Billing & Accounts' },
+  { id: 'hrm',           icon: '👥', label: 'HRM & Salary' },
+  { id: 'frontoffice',   icon: '🏢', label: 'Front Office' },
+  { id: 'transport',     icon: '🚌', label: 'Transport & GPS' },
+  { id: 'communication', icon: '📣', label: 'Parent Communication' },
+  { id: 'scheme',        icon: '🎓', label: '5-Year Scheme' },
+];
+
+const API = '/api/staff-admin';
+let adminToken = sessionStorage.getItem('digismart_admin_token') || '';
+let allStaff = [];
+let editingId = null;
+let resetId = null;
+let deletingId = null;
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('staff-logins');
+
+  // Extra safety: this page is for owners only
+  if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff') {
+    window.location.href = 'dashboard.html';
+    return;
+  }
+
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
+  document.getElementById('verify-email').value = sessionStorage.getItem('school_email') || '';
+
+  if (adminToken) {
+    // Try existing token — if expired, the API will tell us and we show the verify screen
+    const ok = await loadStaff(true);
+    if (ok) { showManage(); return; }
+  }
+  showVerify();
+});
+
+function showVerify() {
+  document.getElementById('verify-section').classList.remove('hidden');
+  document.getElementById('manage-section').classList.add('hidden');
+}
+function showManage() {
+  document.getElementById('verify-section').classList.add('hidden');
+  document.getElementById('manage-section').classList.remove('hidden');
+}
+
+// ── Alerts ──
+function setAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  el.className = 'alert ' + (type === 'ok' ? 'alert-success' : 'alert-danger');
+  el.style.cssText = 'padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;' +
+    (type === 'ok' ? 'background:#E7F4E9;color:#2D7A3A;border:1px solid #BFE3C6' : 'background:#F5E9E9;color:#A32D2D;border:1px solid #E8C4C4');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function clearAlert(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ── API helper ──
+async function callAdmin(payload) {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+// ── STEP A: Owner verify ──
+async function doVerify() {
+  const email = document.getElementById('verify-email').value.trim().toLowerCase();
+  const pw = document.getElementById('verify-pw').value;
+  const btn = document.getElementById('verify-btn');
+  clearAlert('verify-alert');
+  if (!email) { setAlert('verify-alert', 'Owner email missing — please log out and log in again.', 'err'); return; }
+  if (!pw) { setAlert('verify-alert', 'Please enter your password.', 'err'); return; }
+
+  btn.textContent = 'Verifying...'; btn.disabled = true;
+  try {
+    const { data } = await callAdmin({ action: 'owner_verify', email: email, password: pw });
+    btn.textContent = 'Verify & Continue →'; btn.disabled = false;
+    if (!data.ok) { setAlert('verify-alert', data.error || 'Verification failed.', 'err'); return; }
+
+    adminToken = data.token;
+    sessionStorage.setItem('digismart_admin_token', adminToken);
+    document.getElementById('verify-pw').value = '';
+    showManage();
+    await loadStaff();
+  } catch (e) {
+    btn.textContent = 'Verify & Continue →'; btn.disabled = false;
+    setAlert('verify-alert', 'Could not verify. Please check your connection and try again.', 'err');
+  }
+}
+
+// ── Load staff list ──
+async function loadStaff(silent) {
+  document.getElementById('loading-state').classList.remove('hidden');
+  document.getElementById('staff-table-wrap').classList.add('hidden');
+  document.getElementById('empty-state').classList.add('hidden');
+  try {
+    const { status, data } = await callAdmin({ action: 'list_staff', token: adminToken, school_id: SCHOOL_ID });
+    if (status === 401 || !data.ok) {
+      if (!silent) setAlert('page-alert', data.error || 'Session expired — please verify again.', 'err');
+      sessionStorage.removeItem('digismart_admin_token');
+      adminToken = '';
+      showVerify();
+      return false;
+    }
+    allStaff = data.staff || [];
+    renderStaffTable();
+    return true;
+  } catch (e) {
+    if (!silent) setAlert('page-alert', 'Could not load staff. Please refresh the page.', 'err');
+    return false;
+  }
+}
+
+function renderStaffTable() {
+  document.getElementById('loading-state').classList.add('hidden');
+  document.getElementById('staff-count').textContent = allStaff.length + ' staff login' + (allStaff.length === 1 ? '' : 's');
+
+  if (allStaff.length === 0) {
+    document.getElementById('empty-state').classList.remove('hidden');
+    document.getElementById('staff-table-wrap').classList.add('hidden');
+    return;
+  }
+
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('staff-table-wrap').classList.remove('hidden');
+
+  const tbody = document.getElementById('staff-tbody');
+  tbody.innerHTML = allStaff.map(s => {
+    const mods = (s.allowed_modules || []).map(id => {
+      const m = MODULE_LIST.find(x => x.id === id);
+      return m ? '<span class="mod-chip">' + m.icon + ' ' + m.label + '</span>' : '';
+    }).join('');
+    const statusPill = s.is_active
+      ? '<span class="status-pill pill-active">Active</span>'
+      : '<span class="status-pill pill-inactive">Deactivated</span>';
+    const toggleBtn = s.is_active
+      ? '<button class="icon-btn" title="Deactivate" onclick="toggleActive(\'' + s.id + '\', false)">⏸</button>'
+      : '<button class="icon-btn" title="Activate" onclick="toggleActive(\'' + s.id + '\', true)">▶️</button>';
+    return '<tr>' +
+      '<td style="font-weight:600;color:#3B332C">' + escapeHtml(s.staff_name) + '</td>' +
+      '<td style="color:#5C534B">' + escapeHtml(s.email) + '</td>' +
+      '<td style="max-width:340px">' + mods + '</td>' +
+      '<td>' + statusPill + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        '<button class="icon-btn" title="Edit modules" onclick="openEditModal(\'' + s.id + '\')">✏️</button>' +
+        '<button class="icon-btn" title="Reset password" onclick="openResetModal(\'' + s.id + '\')">🔑</button>' +
+        toggleBtn +
+        '<button class="icon-btn" title="Delete" onclick="openDeleteModal(\'' + s.id + '\')">🗑</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function escapeHtml(t) {
+  return String(t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Module checkboxes ──
+function renderModuleGrid(selected) {
+  selected = selected || [];
+  document.getElementById('module-grid').innerHTML = MODULE_LIST.map(m => {
+    const checked = selected.indexOf(m.id) !== -1;
+    return '<label class="module-check' + (checked ? ' checked' : '') + '">' +
+      '<input type="checkbox" value="' + m.id + '"' + (checked ? ' checked' : '') + ' onchange="this.parentElement.classList.toggle(\'checked\', this.checked)">' +
+      '<span>' + m.icon + ' ' + m.label + '</span>' +
+    '</label>';
+  }).join('');
+}
+
+function getTickedModules() {
+  return Array.from(document.querySelectorAll('#module-grid input:checked')).map(i => i.value);
+}
+
+// ── Add / Edit modal ──
+function openAddModal() {
+  editingId = null;
+  document.getElementById('staff-modal-title').textContent = 'New Staff Login';
+  document.getElementById('s-name').value = '';
+  document.getElementById('s-email').value = '';
+  document.getElementById('s-email').readOnly = false;
+  document.getElementById('s-password').value = '';
+  document.getElementById('s-password-group').classList.remove('hidden');
+  renderModuleGrid([]);
+  clearAlert('staff-modal-alert');
+  document.getElementById('staff-modal').classList.add('open');
+}
+
+function openEditModal(id) {
+  const s = allStaff.find(x => x.id === id);
+  if (!s) return;
+  editingId = id;
+  document.getElementById('staff-modal-title').textContent = 'Edit Staff — ' + s.staff_name;
+  document.getElementById('s-name').value = s.staff_name;
+  document.getElementById('s-email').value = s.email;
+  document.getElementById('s-email').readOnly = true;
+  document.getElementById('s-password-group').classList.add('hidden');
+  renderModuleGrid(s.allowed_modules || []);
+  clearAlert('staff-modal-alert');
+  document.getElementById('staff-modal').classList.add('open');
+}
+
+function closeStaffModal() { document.getElementById('staff-modal').classList.remove('open'); }
+
+async function saveStaff() {
+  const name = document.getElementById('s-name').value.trim();
+  const email = document.getElementById('s-email').value.trim().toLowerCase();
+  const password = document.getElementById('s-password').value;
+  const modules = getTickedModules();
+  const btn = document.getElementById('staff-save-btn');
+  clearAlert('staff-modal-alert');
+
+  if (!name) { setAlert('staff-modal-alert', 'Please enter the staff name.', 'err'); return; }
+  if (!editingId && !email) { setAlert('staff-modal-alert', 'Please enter a login email.', 'err'); return; }
+  if (!editingId && password.length < 6) { setAlert('staff-modal-alert', 'Password must be at least 6 characters.', 'err'); return; }
+  if (modules.length === 0) { setAlert('staff-modal-alert', 'Please tick at least one module.', 'err'); return; }
+
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  try {
+    let payload;
+    if (editingId) {
+      payload = { action: 'update_staff', token: adminToken, school_id: SCHOOL_ID, id: editingId, staff_name: name, allowed_modules: modules };
+    } else {
+      payload = { action: 'create_staff', token: adminToken, school_id: SCHOOL_ID, school_code: SCHOOL_CODE, staff_name: name, email: email, password: password, allowed_modules: modules };
+    }
+    const { status, data } = await callAdmin(payload);
+    btn.textContent = '✓ Save Staff Login'; btn.disabled = false;
+
+    if (status === 401) { closeStaffModal(); sessionStorage.removeItem('digismart_admin_token'); adminToken=''; showVerify(); return; }
+    if (!data.ok) { setAlert('staff-modal-alert', data.error || 'Could not save.', 'err'); return; }
+
+    closeStaffModal();
+    showToast(editingId ? 'Staff updated ✓' : 'Staff login created ✓');
+    if (!editingId) {
+      showToast('Share the email & password with ' + name + ' privately');
+    }
+    await loadStaff();
+  } catch (e) {
+    btn.textContent = '✓ Save Staff Login'; btn.disabled = false;
+    setAlert('staff-modal-alert', 'Could not save. Please try again.', 'err');
+  }
+}
+
+// ── Reset password ──
+function openResetModal(id) {
+  const s = allStaff.find(x => x.id === id);
+  if (!s) return;
+  resetId = id;
+  document.getElementById('reset-staff-name').textContent = s.staff_name;
+  document.getElementById('reset-password').value = '';
+  clearAlert('reset-alert');
+  document.getElementById('reset-modal').classList.add('open');
+}
+function closeResetModal() { document.getElementById('reset-modal').classList.remove('open'); }
+
+async function saveResetPassword() {
+  const password = document.getElementById('reset-password').value;
+  const btn = document.getElementById('reset-save-btn');
+  clearAlert('reset-alert');
+  if (password.length < 6) { setAlert('reset-alert', 'Password must be at least 6 characters.', 'err'); return; }
+
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  try {
+    const { status, data } = await callAdmin({ action: 'reset_password', token: adminToken, school_id: SCHOOL_ID, id: resetId, password: password });
+    btn.textContent = '🔑 Set New Password'; btn.disabled = false;
+    if (status === 401) { closeResetModal(); sessionStorage.removeItem('digismart_admin_token'); adminToken=''; showVerify(); return; }
+    if (!data.ok) { setAlert('reset-alert', data.error || 'Could not reset password.', 'err'); return; }
+    closeResetModal();
+    showToast('Password updated ✓ Share it privately');
+  } catch (e) {
+    btn.textContent = '🔑 Set New Password'; btn.disabled = false;
+    setAlert('reset-alert', 'Could not reset. Please try again.', 'err');
+  }
+}
+
+// ── Activate / Deactivate ──
+async function toggleActive(id, makeActive) {
+  try {
+    const { status, data } = await callAdmin({ action: 'set_active', token: adminToken, school_id: SCHOOL_ID, id: id, is_active: makeActive });
+    if (status === 401) { sessionStorage.removeItem('digismart_admin_token'); adminToken=''; showVerify(); return; }
+    if (!data.ok) { setAlert('page-alert', data.error || 'Could not update status.', 'err'); return; }
+    showToast(makeActive ? 'Staff activated ✓' : 'Staff deactivated — they can no longer sign in');
+    await loadStaff();
+  } catch (e) {
+    setAlert('page-alert', 'Could not update. Please try again.', 'err');
+  }
+}
+
+// ── Delete ──
+function openDeleteModal(id) {
+  const s = allStaff.find(x => x.id === id);
+  if (!s) return;
+  deletingId = id;
+  document.getElementById('delete-staff-name').textContent = s.staff_name;
+  document.getElementById('delete-modal').classList.add('open');
+}
+function closeDeleteModal() { document.getElementById('delete-modal').classList.remove('open'); }
+
+async function doDeleteStaff() {
+  const btn = document.getElementById('confirm-delete-btn');
+  btn.textContent = 'Deleting...'; btn.disabled = true;
+  try {
+    const { status, data } = await callAdmin({ action: 'delete_staff', token: adminToken, school_id: SCHOOL_ID, id: deletingId });
+    btn.textContent = 'Delete'; btn.disabled = false;
+    if (status === 401) { closeDeleteModal(); sessionStorage.removeItem('digismart_admin_token'); adminToken=''; showVerify(); return; }
+    if (!data.ok) { closeDeleteModal(); setAlert('page-alert', data.error || 'Could not delete.', 'err'); return; }
+    closeDeleteModal();
+    showToast('Staff login deleted');
+    await loadStaff();
+  } catch (e) {
+    btn.textContent = 'Delete'; btn.disabled = false;
+    closeDeleteModal();
+    setAlert('page-alert', 'Could not delete. Please try again.', 'err');
+  }
+}
+
+</script>
+</body>
+</html>
