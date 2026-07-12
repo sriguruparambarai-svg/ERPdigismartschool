@@ -21,6 +21,20 @@ function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
+// ── Signed session token (Lockdown Phase 2) ──
+// A tamper-proof identity pass the browser carries for 12 hours.
+// Phase 3 APIs will verify this before serving sensitive data.
+function makeSessionToken(schoolId, role, modules) {
+  const payload = JSON.stringify({
+    sid: schoolId,
+    role: role,
+    mods: modules || [],
+    exp: Date.now() + 12 * 60 * 60 * 1000
+  });
+  const sig = crypto.createHmac('sha256', getServiceKey()).update(payload).digest('hex');
+  return Buffer.from(payload).toString('base64') + '.' + sig;
+}
+
 async function sb(method, path, bodyObj) {
   const key = getServiceKey();
   const opts = {
@@ -71,7 +85,10 @@ module.exports = async (req, res) => {
       '&select=password_hash&limit=1');
     if (creds && creds.length > 0 && creds[0].password_hash) {
       passwordOk = creds[0].password_hash === sha256(password);
-    } else {
+    }
+    if (!passwordOk) {
+      // No stored hash, or hash didn't match (e.g. password was changed
+      // via the email reset link) — verify with Supabase Auth instead
       const authRes = await fetch(SUPABASE_URL + '/auth/v1/token?grant_type=password', {
         method: 'POST',
         headers: { apikey: ANON_KEY, 'Content-Type': 'application/json' },
@@ -103,6 +120,7 @@ module.exports = async (req, res) => {
     // 5. Success
     return res.status(200).json({
       ok: true,
+      session_token: makeSessionToken(school.school_id, 'owner', ['*']),
       school: {
         school_id: school.school_id,
         school_code: school.school_code,

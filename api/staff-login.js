@@ -17,6 +17,18 @@ function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
 }
 
+// ── Signed session token (Lockdown Phase 2) ──
+function makeSessionToken(schoolId, role, modules) {
+  const payload = JSON.stringify({
+    sid: schoolId,
+    role: role,
+    mods: modules || [],
+    exp: Date.now() + 12 * 60 * 60 * 1000
+  });
+  const sig = crypto.createHmac('sha256', getServiceKey()).update(payload).digest('hex');
+  return Buffer.from(payload).toString('base64') + '.' + sig;
+}
+
 // Small helper: talk to Supabase REST with the service key
 async function sbGet(path) {
   const key = getServiceKey();
@@ -75,6 +87,7 @@ module.exports = async (req, res) => {
     // 5. Success — send back identity + allowed modules (never the password hash)
     return res.status(200).json({
       ok: true,
+      session_token: makeSessionToken(staff.school_id, 'staff', staff.allowed_modules || []),
       staff: {
         staff_name: staff.staff_name,
         email: staff.email,
