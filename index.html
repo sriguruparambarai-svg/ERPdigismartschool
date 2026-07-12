@@ -486,6 +486,7 @@ async function doLogin() {
 
     // Login successful
     const school = result.school;
+    if (result.session_token) sessionStorage.setItem('digismart_session_token', result.session_token);
     sessionStorage.setItem('digismart_school_id', school.school_code || school.school_id);
     sessionStorage.setItem('digismart_school_code', school.school_code);
     sessionStorage.setItem('school_name', school.name);
@@ -518,6 +519,7 @@ async function tryStaffLogin(email, pw, btn) {
     }
 
     const s = result.staff;
+    if (result.session_token) sessionStorage.setItem('digismart_session_token', result.session_token);
     sessionStorage.setItem('digismart_school_id', s.school_id);
     sessionStorage.setItem('digismart_school_code', s.school_code || s.school_id);
     sessionStorage.setItem('school_name', s.school_name);
