@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Certificates — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .type-card{border:1.5px solid #E8E0D5;border-radius:12px;padding:14px;cursor:pointer;text-align:center;transition:all .15s;background:#fff}
+  .type-card:hover{border-color:#C9A84C}
+  .type-card.selected{border-color:#6B1A1A;background:#FBF5EE;box-shadow:0 2px 8px rgba(107,26,26,.1)}
+  .type-card .t-icon{font-size:26px;margin-bottom:6px}
+  .type-card .t-name{font-size:13px;font-weight:700;color:#3B332C}
+  .type-card .t-desc{font-size:11px;color:#9B928A;margin-top:3px}
+
+  /* ── Certificate paper ── */
+  #cert-paper{background:#fff;border:1px solid #D9CDBD;max-width:800px;margin:0 auto;padding:48px 56px;box-shadow:0 4px 24px rgba(0,0,0,.08);font-family:Georgia,'Times New Roman',serif;color:#1A1A1A;position:relative}
+  .cp-border{position:absolute;inset:14px;border:2px solid #6B1A1A;pointer-events:none}
+  .cp-border:after{content:'';position:absolute;inset:4px;border:1px solid #C9A84C}
+  .cp-head{text-align:center;margin-bottom:8px}
+  .cp-school{font-size:24px;font-weight:700;color:#6B1A1A;letter-spacing:.5px;text-transform:uppercase}
+  .cp-addr{font-size:12px;color:#5C534B;margin-top:4px}
+  .cp-rule{border-top:2px solid #6B1A1A;margin:14px 0}
+  .cp-meta{display:flex;justify-content:space-between;font-size:13px;margin-bottom:18px}
+  .cp-title{text-align:center;font-size:18px;font-weight:700;letter-spacing:3px;text-decoration:underline;text-underline-offset:6px;margin:10px 0 26px;color:#3B332C}
+  .cp-body{font-size:14.5px;line-height:2.1;text-align:justify}
+  .cp-body b{color:#3B332C}
+  .cp-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+  .cp-table th,.cp-table td{border:1px solid #8B7B65;padding:7px 12px;text-align:left}
+  .cp-table th{background:#F5EDE0}
+  .cp-table td.amt,.cp-table th.amt{text-align:right}
+  .cp-sign{display:flex;justify-content:space-between;margin-top:64px;font-size:13px}
+  .cp-sign .sig{text-align:center;font-weight:700}
+  .cp-sign .sig .line{margin-bottom:6px;color:#5C534B;font-weight:400}
+  .fee-row-check{width:15px;height:15px;accent-color:#6B1A1A}
+
+  @media print {
+    body * { visibility: hidden !important; }
+    #cert-paper, #cert-paper * { visibility: visible !important; }
+    #cert-paper{position:fixed;left:0;top:0;right:0;margin:0;border:none;box-shadow:none;max-width:none;padding:40px 48px}
+    .no-print{display:none !important}
+  }
+</style>
+</head>
+<body>
+
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Certificates</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academic → Certificates</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <button class="btn btn-secondary" onclick="openSettings()">⚙️ Letterhead</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- Tab buttons -->
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-primary" id="tabbtn-issue" onclick="showSection('issue')">📜 Issue Certificate</button>
+        <button class="btn btn-secondary" id="tabbtn-register" onclick="showSection('register')">📖 Register</button>
+      </div>
+
+      <!-- ══ ISSUE SECTION ══ -->
+      <div id="section-issue">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">1 · Select Student</div></div>
+          <input type="text" id="stu-search" class="form-control" placeholder="Search by name or admission number..." oninput="searchStudents()" style="max-width:420px">
+          <div id="stu-results" style="margin-top:10px"></div>
+          <div id="stu-selected" class="hidden" style="margin-top:10px;padding:10px 14px;background:#FBF5EE;border:1px solid #E8C99A;border-radius:10px;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <span style="font-weight:700;color:#6B1A1A" id="sel-name"></span>
+              <span style="font-size:12px;color:#5C534B;margin-left:8px" id="sel-info"></span>
+            </div>
+            <button class="btn btn-secondary btn-sm no-print" onclick="clearStudent()">✕ Change</button>
+          </div>
+        </div>
+
+        <div class="card hidden" id="type-card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">2 · Certificate Type</div></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+            <div class="type-card" id="type-bonafide" onclick="selectType('bonafide')">
+              <div class="t-icon">🎓</div>
+              <div class="t-name">Bonafide Certificate</div>
+              <div class="t-desc">For bank, bus pass, passport, scholarship</div>
+            </div>
+            <div class="type-card" id="type-feecert" onclick="selectType('feecert')">
+              <div class="t-icon">🧾</div>
+              <div class="t-name">Fee Paid Certificate</div>
+              <div class="t-desc">For income tax — amounts auto-filled</div>
+            </div>
+            <div class="type-card" id="type-conduct" onclick="selectType('conduct')">
+              <div class="t-icon">🤝</div>
+              <div class="t-name">Conduct Certificate</div>
+              <div class="t-desc">Character & conduct</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card hidden" id="form-card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">3 · Details</div></div>
+
+          <div id="form-bonafide" class="hidden">
+            <div class="form-group" style="max-width:520px">
+              <label class="form-label">Purpose <span class="req">*</span></label>
+              <select id="bf-purpose" class="form-control">
+                <option>Bank Account Opening</option>
+                <option>Bus Pass</option>
+                <option>Passport Application</option>
+                <option>Scholarship Application</option>
+                <option>Aadhaar / ID Proof</option>
+                <option value="other">Other (type below)</option>
+              </select>
+              <input type="text" id="bf-purpose-other" class="form-control hidden" placeholder="Enter purpose" style="margin-top:8px">
+            </div>
+          </div>
+
+          <div id="form-feecert" class="hidden">
+            <div class="form-group" style="max-width:280px">
+              <label class="form-label">Financial Year <span class="req">*</span></label>
+              <select id="fc-fy" class="form-control" onchange="loadFeeCertData()"></select>
+            </div>
+            <div id="fc-rows" style="margin-top:8px;font-size:13px;color:#9B928A">Select financial year to load payments...</div>
+            <div style="font-size:11px;color:#9B928A;margin-top:8px">✔ Tick the rows that count as <b>Tuition Fee</b> (eligible for income-tax claim). Van, books, uniform are usually not eligible.</div>
+          </div>
+
+          <div id="form-conduct" class="hidden">
+            <div class="form-group" style="max-width:280px">
+              <label class="form-label">Conduct Rating <span class="req">*</span></label>
+              <select id="cd-rating" class="form-control">
+                <option>Excellent</option>
+                <option selected>Good</option>
+                <option>Satisfactory</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:16px">
+            <button class="btn btn-gold" id="gen-btn" onclick="generateCertificate()">✓ Generate & Save to Register</button>
+          </div>
+        </div>
+
+        <!-- Preview + print -->
+        <div id="preview-wrap" class="hidden">
+          <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;max-width:800px;margin:0 auto 12px">
+            <div style="font-size:13px;color:#2D7A3A;font-weight:600">✓ Saved to register — Serial: <span id="done-serial"></span></div>
+            <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save PDF</button>
+          </div>
+          <div id="cert-paper"></div>
+        </div>
+      </div>
+
+      <!-- ══ REGISTER SECTION ══ -->
+      <div id="section-register" class="hidden">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Certificate Register</div>
+              <div class="card-subtitle" id="reg-count">Loading...</div>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%">
+              <thead><tr><th>SERIAL NO</th><th>DATE</th><th>STUDENT</th><th>CLASS</th><th>TYPE</th><th>ISSUED BY</th><th style="text-align:right">ACTIONS</th></tr></thead>
+              <tbody id="reg-tbody"></tbody>
+            </table>
+          </div>
+          <div id="reg-empty" class="hidden" style="padding:40px;text-align:center;color:#9B928A;font-size:13px">No certificates issued yet</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ LETTERHEAD SETTINGS MODAL ══ -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">⚙️ Certificate Letterhead</div>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+    <p style="font-size:12px;color:#9B928A;margin-bottom:14px">These details print at the top of every certificate.</p>
+    <div class="form-group">
+      <label class="form-label">School Address Line</label>
+      <input type="text" id="set-address" class="form-control" placeholder="e.g. 12, Main Road, Mayiladuthurai - 609001">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Affiliation / Recognition Line (optional)</label>
+      <input type="text" id="set-affiliation" class="form-control" placeholder="e.g. Affiliated to CBSE, New Delhi — Affl. No. 123456">
+    </div>
+    <div class="form-group" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div>
+        <label class="form-label">Place</label>
+        <input type="text" id="set-place" class="form-control" placeholder="e.g. Mayiladuthurai">
+      </div>
+      <div>
+        <label class="form-label">Signatory Title</label>
+        <input type="text" id="set-signatory" class="form-control" value="PRINCIPAL">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveSettings()">✓ Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+
+// ══ Secure Fee Channel (needed for Fee Paid Certificate amounts) ══
+const secureFee = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null, orFilter: null };
+    const b = {
+      select(cols) { req.select = cols || '*'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+      lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+      order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+      then(resolve) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/fee-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json().then(out => ({ status: r.status, out: out })))
+        .then(({ status, out }) => resolve({ status: status, data: (out && out.ok) ? out.data : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } }))
+        .catch(() => resolve({ status: 0, data: null, error: { message: 'Network error' } }));
+      }
+    };
+    return b;
+  }
+};
+
+let selectedStudent = null;
+let selectedType = null;
+let certSettings = { address_line: '', affiliation: '', place: '', signatory: 'PRINCIPAL' };
+let feeCertData = null;
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('certificates');
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
+  buildFyOptions();
+  loadSettings();
+});
+
+function showSection(name) {
+  document.getElementById('section-issue').classList.toggle('hidden', name !== 'issue');
+  document.getElementById('section-register').classList.toggle('hidden', name !== 'register');
+  document.getElementById('tabbtn-issue').className = name === 'issue' ? 'btn btn-primary' : 'btn btn-secondary';
+  document.getElementById('tabbtn-register').className = name === 'register' ? 'btn btn-primary' : 'btn btn-secondary';
+  if (name === 'register') loadRegister();
+}
+
+function escapeHtml(t) { return String(t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Letterhead settings ──
+async function loadSettings() {
+  const { data } = await supabase.from('cert_settings').select('*').eq('school_id', SCHOOL_ID).single();
+  if (data) certSettings = data;
+}
+function openSettings() {
+  document.getElementById('set-address').value = certSettings.address_line || '';
+  document.getElementById('set-affiliation').value = certSettings.affiliation || '';
+  document.getElementById('set-place').value = certSettings.place || '';
+  document.getElementById('set-signatory').value = certSettings.signatory || 'PRINCIPAL';
+  document.getElementById('settings-modal').classList.add('open');
+}
+function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
+async function saveSettings() {
+  certSettings = {
+    school_id: SCHOOL_ID,
+    address_line: document.getElementById('set-address').value.trim(),
+    affiliation: document.getElementById('set-affiliation').value.trim(),
+    place: document.getElementById('set-place').value.trim(),
+    signatory: document.getElementById('set-signatory').value.trim() || 'PRINCIPAL'
+  };
+  await supabase.from('cert_settings').upsert([certSettings]);
+  closeSettings();
+  showToast('Letterhead saved ✓');
+}
+
+// ── Student search ──
+let searchTimer = null;
+function searchStudents() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = document.getElementById('stu-search').value.trim();
+    const box = document.getElementById('stu-results');
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    const { data } = await supabase.from('students')
+      .select('id,full_name,admission_no,class,section,father_name,gender,dob,academic_year,admission_date')
+      .eq('school_id', SCHOOL_ID).eq('status', 'active')
+      .or('full_name.ilike.%' + q + '%,admission_no.ilike.%' + q + '%')
+      .limit(8);
+    box.innerHTML = (data || []).map(s =>
+      '<div onclick=\'pickStudent(' + JSON.stringify(JSON.stringify(s)) + ')\' style="padding:9px 12px;border:1px solid #E8E0D5;border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:13px;background:#fff">' +
+        '<b>' + escapeHtml(s.full_name) + '</b> · ' + escapeHtml(s.admission_no || '') + ' · ' + escapeHtml(s.class || '') + ' ' + escapeHtml(s.section || '') +
+      '</div>'
+    ).join('') || '<div style="font-size:12px;color:#9B928A">No matching students</div>';
+  }, 300);
+}
+
+function pickStudent(jsonStr) {
+  selectedStudent = JSON.parse(jsonStr);
+  document.getElementById('stu-results').innerHTML = '';
+  document.getElementById('stu-search').value = '';
+  document.getElementById('sel-name').textContent = selectedStudent.full_name;
+  document.getElementById('sel-info').textContent = (selectedStudent.admission_no || '') + ' · ' + (selectedStudent.class || '') + ' ' + (selectedStudent.section || '');
+  document.getElementById('stu-selected').classList.remove('hidden');
+  document.getElementById('type-card').classList.remove('hidden');
+}
+
+function clearStudent() {
+  selectedStudent = null; selectedType = null;
+  document.getElementById('stu-selected').classList.add('hidden');
+  document.getElementById('type-card').classList.add('hidden');
+  document.getElementById('form-card').classList.add('hidden');
+  document.getElementById('preview-wrap').classList.add('hidden');
+  document.querySelectorAll('.type-card').forEach(el => el.classList.remove('selected'));
+}
+
+// ── Type select ──
+function selectType(type) {
+  selectedType = type;
+  document.querySelectorAll('.type-card').forEach(el => el.classList.remove('selected'));
+  document.getElementById('type-' + type).classList.add('selected');
+  document.getElementById('form-card').classList.remove('hidden');
+  document.getElementById('preview-wrap').classList.add('hidden');
+  ['bonafide', 'feecert', 'conduct'].forEach(t => document.getElementById('form-' + t).classList.toggle('hidden', t !== type));
+  if (type === 'feecert') loadFeeCertData();
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'bf-purpose') {
+    document.getElementById('bf-purpose-other').classList.toggle('hidden', e.target.value !== 'other');
+  }
+});
+
+// ── Financial year options (Apr–Mar) ──
+function buildFyOptions() {
+  const now = new Date();
+  const startYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  const sel = document.getElementById('fc-fy');
+  sel.innerHTML = '';
+  for (let y = startYear; y >= startYear - 2; y--) {
+    const label = y + '-' + String(y + 1).slice(2);
+    sel.innerHTML += '<option value="' + y + '">' + label + '</option>';
+  }
+}
+
+// ── Fee cert data (through the secure fee door) ──
+async function loadFeeCertData() {
+  if (!selectedStudent) return;
+  const y = parseInt(document.getElementById('fc-fy').value, 10);
+  const from = y + '-04-01', to = (y + 1) + '-03-31';
+  const box = document.getElementById('fc-rows');
+  box.innerHTML = '<span style="color:#9B928A">Loading payments...</span>';
+
+  const { status, data: payments, error } = await secureFee.from('fee_payments')
+    .select('amount_paid,payment_date,fee_head_id,receipt_no')
+    .eq('student_id', selectedStudent.id)
+    .gte('payment_date', from).lte('payment_date', to);
+
+  if (status === 403) {
+    box.innerHTML = '<div class="alert alert-danger" style="font-size:12px">You need Fee permission to issue Fee Paid Certificates. Bonafide and Conduct certificates are still available.</div>';
+    feeCertData = null; return;
+  }
+  if (error) { box.innerHTML = '<span style="color:#A32D2D">Could not load payments. Please try again.</span>'; feeCertData = null; return; }
+
+  const { data: heads } = await secureFee.from('fee_heads').select('id,name,category').eq('school_id', SCHOOL_ID);
+  const headById = {}; (heads || []).forEach(h => headById[h.id] = h);
+
+  // Group by head
+  const byHead = {};
+  (payments || []).forEach(p => {
+    const key = p.fee_head_id || 'other';
+    if (!byHead[key]) byHead[key] = 0;
+    byHead[key] += parseFloat(p.amount_paid) || 0;
+  });
+
+  const rows = Object.keys(byHead).map(hid => {
+    const h = headById[hid];
+    const name = h ? h.name : 'Other Fees';
+    const isTuitionDefault = h ? (h.category === 'general' && /tuition|school|term/i.test(h.name)) : false;
+    return { head_id: hid, name: name, amount: byHead[hid], tuition: isTuitionDefault };
+  });
+
+  feeCertData = { fy: y, rows: rows };
+
+  if (rows.length === 0) {
+    box.innerHTML = '<span style="color:#9B928A">No payments recorded in this financial year for this student.</span>';
+    return;
+  }
+  box.innerHTML = '<table style="width:100%;max-width:520px"><thead><tr><th style="width:40px">Tuition?</th><th>Fee Type</th><th style="text-align:right">Paid (₹)</th></tr></thead><tbody>' +
+    rows.map((r, i) =>
+      '<tr><td><input type="checkbox" class="fee-row-check" data-i="' + i + '"' + (r.tuition ? ' checked' : '') + ' onchange="feeCertData.rows[' + i + '].tuition=this.checked"></td>' +
+      '<td>' + escapeHtml(r.name) + '</td><td style="text-align:right">' + r.amount.toLocaleString('en-IN') + '</td></tr>'
+    ).join('') + '</tbody></table>';
+}
+
+// ── Amount in words (Indian system) ──
+function amountInWords(num) {
+  num = Math.round(num);
+  if (num === 0) return 'Zero';
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function two(n) { return n < 20 ? ones[n] : (tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '')); }
+  function three(n) { return (n >= 100 ? ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' and ' + two(n%100) : '') : two(n)); }
+  let out = '';
+  const crore = Math.floor(num / 10000000); num %= 10000000;
+  const lakh = Math.floor(num / 100000); num %= 100000;
+  const thousand = Math.floor(num / 1000); num %= 1000;
+  if (crore) out += three(crore) + ' Crore ';
+  if (lakh) out += two(lakh) + ' Lakh ';
+  if (thousand) out += two(thousand) + ' Thousand ';
+  if (num) out += three(num);
+  return out.trim();
+}
+
+// ── Serial number ──
+async function nextSerial(typeCode) {
+  const year = typeof ACADEMIC_YEAR !== 'undefined' ? ACADEMIC_YEAR : '2026-27';
+  const { count } = await supabase.from('certificates_issued')
+    .select('id', { count: 'exact', head: true })
+    .eq('school_id', SCHOOL_ID).eq('cert_type', typeCode).eq('academic_year', year);
+  const n = (count || 0) + 1;
+  return (SCHOOL_CODE || SCHOOL_ID) + '/' + typeCode.toUpperCase() + '/' + year + '/' + String(n).padStart(3, '0');
+}
+
+// ── Generate ──
+async function generateCertificate() {
+  if (!selectedStudent || !selectedType) return;
+  const btn = document.getElementById('gen-btn');
+
+  let payload = {};
+  if (selectedType === 'bonafide') {
+    let purpose = document.getElementById('bf-purpose').value;
+    if (purpose === 'other') purpose = document.getElementById('bf-purpose-other').value.trim();
+    if (!purpose) { showToast('Please enter the purpose', 'error'); return; }
+    payload = { purpose: purpose };
+  } else if (selectedType === 'feecert') {
+    if (!feeCertData || feeCertData.rows.length === 0) { showToast('No fee payments to certify for this year', 'error'); return; }
+    payload = { fy: feeCertData.fy, rows: feeCertData.rows };
+  } else if (selectedType === 'conduct') {
+    payload = { rating: document.getElementById('cd-rating').value };
+  }
+
+  btn.textContent = 'Generating...'; btn.disabled = true;
+  try {
+    const typeCode = selectedType === 'bonafide' ? 'BC' : selectedType === 'feecert' ? 'FC' : 'CC';
+    const serial = await nextSerial(typeCode);
+    const issuedBy = (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff' && typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : 'Admin';
+    const record = {
+      school_id: SCHOOL_ID,
+      student_id: selectedStudent.id,
+      student_name: selectedStudent.full_name,
+      student_class: (selectedStudent.class || '') + (selectedStudent.section ? ' - ' + selectedStudent.section : ''),
+      cert_type: typeCode,
+      serial_no: serial,
+      academic_year: (typeof ACADEMIC_YEAR !== 'undefined' ? ACADEMIC_YEAR : '2026-27'),
+      payload: Object.assign({}, payload, { student: selectedStudent }),
+      issued_by: issuedBy,
+      issued_on: new Date().toISOString().split('T')[0]
+    };
+    const { error } = await supabase.from('certificates_issued').insert([record]);
+    if (error) { showToast('Could not save: ' + error.message, 'error'); btn.textContent = '✓ Generate & Save to Register'; btn.disabled = false; return; }
+
+    renderCertificate(record);
+    document.getElementById('done-serial').textContent = serial;
+    document.getElementById('preview-wrap').classList.remove('hidden');
+    document.getElementById('preview-wrap').scrollIntoView({ behavior: 'smooth' });
+    btn.textContent = '✓ Generate & Save to Register'; btn.disabled = false;
+    showToast('Certificate saved — Serial ' + serial);
+  } catch (e) {
+    btn.textContent = '✓ Generate & Save to Register'; btn.disabled = false;
+    showToast('Something went wrong. Please try again.', 'error');
+  }
+}
+
+// ── Render certificate paper ──
+function renderCertificate(rec) {
+  const s = rec.payload.student || {};
+  const isMale = (s.gender || '').toLowerCase() === 'male';
+  const child = isMale ? 'Selvan' : 'Selvi';
+  const rel = isMale ? 'son' : 'daughter';
+  const his = isMale ? 'His' : 'Her';
+  const schoolName = sessionStorage.getItem('school_name') || 'School';
+  const dateStr = formatDate(rec.issued_on);
+  const dobStr = s.dob ? formatDate(s.dob) : '—';
+  const acadYear = rec.academic_year;
+
+  let title = '', body = '';
+
+  if (rec.cert_type === 'BC') {
+    title = 'BONAFIDE CERTIFICATE';
+    body = 'This is to certify that <b>' + escapeHtml(child + ' ' + (s.full_name || '')) + '</b>' +
+      (s.father_name ? ', ' + rel + ' of <b>Thiru ' + escapeHtml(s.father_name) + '</b>,' : '') +
+      ' (Admission No: <b>' + escapeHtml(s.admission_no || '—') + '</b>) is a bonafide student of our school, studying in <b>' +
+      escapeHtml((s.class || '') + (s.section ? ' - ' + s.section : '')) + '</b> during the academic year <b>' + acadYear + '</b>. ' +
+      his + ' date of birth as per our school records is <b>' + dobStr + '</b>.' +
+      '<br><br>This certificate is issued for the purpose of <b>' + escapeHtml(rec.payload.purpose) + '</b>.';
+  }
+
+  if (rec.cert_type === 'CC') {
+    title = 'CONDUCT CERTIFICATE';
+    body = 'This is to certify that <b>' + escapeHtml(child + ' ' + (s.full_name || '')) + '</b>' +
+      (s.father_name ? ', ' + rel + ' of <b>Thiru ' + escapeHtml(s.father_name) + '</b>,' : '') +
+      ' (Admission No: <b>' + escapeHtml(s.admission_no || '—') + '</b>) is a student of our school, studying in <b>' +
+      escapeHtml((s.class || '') + (s.section ? ' - ' + s.section : '')) + '</b> during the academic year <b>' + acadYear + '</b>. ' +
+      his + ' conduct and character during the period of study in our school have been <b>' + escapeHtml(rec.payload.rating) + '</b>.';
+  }
+
+  if (rec.cert_type === 'FC') {
+    const rows = rec.payload.rows || [];
+    const fyLabel = rec.payload.fy + '-' + String(rec.payload.fy + 1).slice(2);
+    const total = rows.reduce((a, r) => a + r.amount, 0);
+    const tuition = rows.filter(r => r.tuition).reduce((a, r) => a + r.amount, 0);
+    title = 'FEE PAID CERTIFICATE';
+    body = 'This is to certify that the following fees have been paid in respect of <b>' + escapeHtml(child + ' ' + (s.full_name || '')) + '</b>' +
+      (s.father_name ? ', ' + rel + ' of <b>Thiru ' + escapeHtml(s.father_name) + '</b>,' : '') +
+      ' (Admission No: <b>' + escapeHtml(s.admission_no || '—') + '</b>, Class: <b>' + escapeHtml((s.class || '') + (s.section ? ' - ' + s.section : '')) + '</b>) for the Financial Year <b>' + fyLabel + '</b>:' +
+      '<table class="cp-table"><thead><tr><th>Fee Particulars</th><th class="amt">Amount Paid (₹)</th></tr></thead><tbody>' +
+      rows.map(r => '<tr><td>' + escapeHtml(r.name) + (r.tuition ? ' <span style="font-size:10px;color:#2D7A3A">(Tuition Fee)</span>' : '') + '</td><td class="amt">' + r.amount.toLocaleString('en-IN') + '</td></tr>').join('') +
+      '<tr><td><b>Total Fees Paid</b></td><td class="amt"><b>' + total.toLocaleString('en-IN') + '</b></td></tr>' +
+      (tuition > 0 ? '<tr><td><b>Of which Tuition Fee (eligible u/s 80C)</b></td><td class="amt"><b>' + tuition.toLocaleString('en-IN') + '</b></td></tr>' : '') +
+      '</tbody></table>' +
+      'Amount in words: <b>Rupees ' + amountInWords(total) + ' Only</b>.' +
+      '<br>This certificate is issued for the purpose of <b>Income Tax declaration</b> at the request of the parent.';
+  }
+
+  document.getElementById('cert-paper').innerHTML =
+    '<div class="cp-border"></div>' +
+    '<div class="cp-head">' +
+      '<div class="cp-school">' + escapeHtml(schoolName) + '</div>' +
+      (certSettings.address_line ? '<div class="cp-addr">' + escapeHtml(certSettings.address_line) + '</div>' : '') +
+      (certSettings.affiliation ? '<div class="cp-addr">' + escapeHtml(certSettings.affiliation) + '</div>' : '') +
+    '</div>' +
+    '<div class="cp-rule"></div>' +
+    '<div class="cp-meta"><span>Serial No: <b>' + escapeHtml(rec.serial_no) + '</b></span><span>Date: <b>' + dateStr + '</b></span></div>' +
+    '<div class="cp-title">' + title + '</div>' +
+    '<div class="cp-body">' + body + '</div>' +
+    '<div class="cp-sign">' +
+      '<div class="sig"><div class="line">Place: ' + escapeHtml(certSettings.place || '') + '</div><div class="line">Date: ' + dateStr + '</div></div>' +
+      '<div class="sig"><div class="line" style="margin-bottom:44px">&nbsp;</div>' + escapeHtml(certSettings.signatory || 'PRINCIPAL') + '</div>' +
+    '</div>';
+}
+
+// ── Register ──
+async function loadRegister() {
+  const { data } = await supabase.from('certificates_issued')
+    .select('*').eq('school_id', SCHOOL_ID)
+    .order('created_at', { ascending: false }).limit(200);
+  const rows = data || [];
+  document.getElementById('reg-count').textContent = rows.length + ' certificate' + (rows.length === 1 ? '' : 's') + ' issued';
+  const typeName = { BC: '🎓 Bonafide', FC: '🧾 Fee Paid', CC: '🤝 Conduct' };
+  document.getElementById('reg-empty').classList.toggle('hidden', rows.length > 0);
+  document.getElementById('reg-tbody').innerHTML = rows.map(r =>
+    '<tr>' +
+      '<td style="font-weight:600;color:#6B1A1A">' + escapeHtml(r.serial_no) + '</td>' +
+      '<td>' + formatDate(r.issued_on) + '</td>' +
+      '<td>' + escapeHtml(r.student_name) + '</td>' +
+      '<td>' + escapeHtml(r.student_class || '') + '</td>' +
+      '<td>' + (typeName[r.cert_type] || r.cert_type) + '</td>' +
+      '<td>' + escapeHtml(r.issued_by || '') + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-secondary btn-sm" onclick=\'reprint(' + JSON.stringify(JSON.stringify(r)) + ')\'>🖨 Reprint</button></td>' +
+    '</tr>'
+  ).join('');
+}
+
+function reprint(jsonStr) {
+  const rec = JSON.parse(jsonStr);
+  showSection('issue');
+  renderCertificate(rec);
+  document.getElementById('done-serial').textContent = rec.serial_no;
+  document.getElementById('preview-wrap').classList.remove('hidden');
+  document.getElementById('preview-wrap').scrollIntoView({ behavior: 'smooth' });
+}
+
+</script>
+</body>
+</html>
