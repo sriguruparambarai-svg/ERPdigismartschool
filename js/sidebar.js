@@ -22,6 +22,7 @@ async function renderSidebar(activePage) {
       { id: 'admission', icon: '📝', label: 'Admission', href: 'admission.html' },
       { id: 'exam', icon: '📄', label: 'Exam Management', href: 'exam.html' },
       { id: 'icard', icon: '🪪', label: 'I-Card & Timetable', href: 'icard.html' },
+      { id: 'certificates', icon: '📜', label: 'Certificates', href: 'certificates.html' },
     ]},
     { group: 'Finance', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },
