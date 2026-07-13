@@ -651,9 +651,26 @@ function renderExamList() {
           ${(e.classes||[]).map(c=>`<span class="subject-chip">${c}</span>`).join('')}
         </div>
         <div style="font-size:11px;color:var(--text-muted)">${(e.subjects||[]).map(s=>s.name+'('+s.max_marks+')').join(' · ')}</div>
+        <div style="margin-top:8px">
+          ${e.published_to_parents
+            ? `<button class="btn btn-sm btn-secondary" style="font-size:11px" onclick="event.stopPropagation();togglePublish('${e.id}', false)">✓ Published to Parents — click to hide</button>`
+            : `<button class="btn btn-sm btn-gold" style="font-size:11px" onclick="event.stopPropagation();togglePublish('${e.id}', true)">📢 Publish Results to Parents</button>`}
+        </div>
       </div>
     `;
   }).join('');
+}
+
+// ── Publish / unpublish results to the Parent Portal ──
+async function togglePublish(examId, makePublished) {
+  const msg = makePublished
+    ? 'Publish this exam\'s results to the Parent Portal?\n\nMake sure ALL marks are fully entered first — parents will see them immediately.'
+    : 'Hide this exam\'s results from the Parent Portal?';
+  if (!confirmAction(msg)) return;
+  const { error } = await supabase.from('exams').update({ published_to_parents: makePublished }).eq('id', examId);
+  if (error) { showToast('Could not update: ' + error.message, 'error'); return; }
+  showToast(makePublished ? 'Results published — parents can now view ✓' : 'Results hidden from parents');
+  loadExams();
 }
 
 function populateExamSelects() {
