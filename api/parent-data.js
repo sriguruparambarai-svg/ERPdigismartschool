@@ -195,6 +195,64 @@ module.exports = async (req, res) => {
       });
     }
 
+    // ══ EXAM RESULTS — published exams only, this child's marks ══
+    if (action === 'exam_results') {
+      const stuRows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
+      const cls = stuRows && stuRows[0] ? stuRows[0].class : null;
+      if (!cls) return res.status(200).json({ ok: true, exams: [] });
+
+      // Only exams the school has explicitly published
+      const allExams = await sb('GET', 'exams?school_id=eq.' + encodeURIComponent(schoolId) +
+        '&published_to_parents=eq.true&select=id,name,type,academic_year,start_date,classes&order=start_date.desc') || [];
+      const exams = allExams.filter(e => Array.isArray(e.classes) && e.classes.indexOf(cls) !== -1).slice(0, 8);
+
+      // Grade bands (e.g. A1 >= 91, A2 >= 81 ...)
+      let bands = [];
+      try {
+        bands = await sb('GET', 'exam_grading?school_id=eq.' + encodeURIComponent(schoolId) +
+          '&select=grade,min_pct&order=min_pct.desc') || [];
+      } catch (e) { bands = []; }
+      function gradeFor(pct) {
+        for (const b of bands) { if (pct >= parseFloat(b.min_pct)) return b.grade; }
+        return bands.length ? bands[bands.length - 1].grade : '';
+      }
+
+      const out = [];
+      for (const ex of exams) {
+        const marks = await sb('GET', 'exam_marks?exam_id=eq.' + encodeURIComponent(ex.id) +
+          '&student_id=eq.' + encodeURIComponent(studentId) +
+          '&select=subject,marks_obtained,max_marks,is_pass,is_absent') || [];
+        if (marks.length === 0) continue; // no marks entered for this child
+
+        let total = 0, maxTotal = 0, anyFail = false, anyAbsent = false;
+        const rows = marks.map(m => {
+          const max = parseFloat(m.max_marks) || 0;
+          const obt = m.is_absent ? 0 : (parseFloat(m.marks_obtained) || 0);
+          total += obt; maxTotal += max;
+          if (m.is_absent) anyAbsent = true;
+          else if (m.is_pass === false) anyFail = true;
+          const pct = max > 0 ? (obt / max) * 100 : 0;
+          return {
+            subject: m.subject,
+            marks: m.is_absent ? null : obt,
+            max: max,
+            grade: m.is_absent ? '—' : gradeFor(pct),
+            status: m.is_absent ? 'Absent' : (m.is_pass === false ? 'Fail' : 'Pass')
+          };
+        });
+        const pct = maxTotal > 0 ? Math.round((total / maxTotal) * 1000) / 10 : 0;
+        out.push({
+          name: ex.name, type: ex.type, academic_year: ex.academic_year,
+          date: ex.start_date, rows: rows,
+          total: total, max_total: maxTotal, pct: pct,
+          grade: gradeFor(pct),
+          result: anyFail ? 'FAIL' : (anyAbsent ? 'ABSENT IN SOME SUBJECTS' : 'PASS')
+        });
+      }
+      return res.status(200).json({ ok: true, exams: out });
+    }
+
     // ══ CHANGE PASSWORD ══
     if (action === 'change_password') {
       const oldPw = String(body.old_password || '');
