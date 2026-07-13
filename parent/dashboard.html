@@ -169,15 +169,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
 
-    <!-- Attendance & Fees tap-cards (Parent Portal 2.0) -->
-    <div class="quick-stats" style="grid-template-columns:1fr 1fr">
+    <!-- Attendance, Fees & Exams tap-cards (Parent Portal 2.0) -->
+    <div class="quick-stats">
       <div class="qs-card" onclick="openAttendance()" style="cursor:pointer">
         <div class="qs-num" id="qs-attendance" style="color:#2D7A3A">—</div>
-        <div class="qs-label">📅 Attendance — tap to view</div>
+        <div class="qs-label">📅 Attendance</div>
       </div>
       <div class="qs-card" onclick="openFees()" style="cursor:pointer">
         <div class="qs-num" id="qs-fees" style="color:var(--maroon)">—</div>
-        <div class="qs-label">💰 Fees Due — tap to view</div>
+        <div class="qs-label">💰 Fees Due</div>
+      </div>
+      <div class="qs-card" onclick="openExams()" style="cursor:pointer">
+        <div class="qs-num" id="qs-exams" style="color:#185FA5">📊</div>
+        <div class="qs-label">Exam Results</div>
       </div>
     </div>
 
@@ -263,6 +267,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
     <div id="att-list">
       <div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">Loading attendance...</div></div>
+    </div>
+  </div>
+
+  <!-- ── EXAM RESULTS (Parent Portal 2.0) ── -->
+  <div id="tab-exams" class="tab-section">
+    <div class="section-title">
+      <span>📊 Exam Results</span>
+      <span class="see-all" onclick="showTab('home')">← Home</span>
+    </div>
+    <div id="exam-list-p">
+      <div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">Loading results...</div></div>
     </div>
   </div>
 
@@ -769,6 +784,60 @@ async function loadAttendance() {
       '<span style="font-weight:700;color:' + (isPresent ? '#2D7A3A' : '#A32D2D') + '">' + (isPresent ? '✓ Present' : '✗ Absent') + '</span>' +
     '</div>';
   }).join('');
+}
+
+// ── Exam Results ──
+let examsLoaded = false;
+function openExams() {
+  showTab('exams');
+  if (!examsLoaded) { loadExamResults(); examsLoaded = true; }
+}
+
+async function loadExamResults() {
+  const out = await parentApi('exam_results', {});
+  const list = document.getElementById('exam-list-p');
+  if (!out.ok) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">' + (out.error || 'Could not load results') + '</div></div>';
+    return;
+  }
+  const exams = out.exams || [];
+  document.getElementById('qs-exams').textContent = exams.length > 0 ? exams.length : '📊';
+  if (exams.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">No results published yet.<br>Results appear here when the school publishes them.</div></div>';
+    return;
+  }
+  list.innerHTML = exams.map((ex, i) => {
+    const resultColor = ex.result === 'PASS' ? '#2D7A3A' : (ex.result === 'FAIL' ? '#A32D2D' : '#B8860B');
+    const rowsHtml = ex.rows.map(r =>
+      '<tr>' +
+        '<td style="padding:7px 4px;border-bottom:1px solid var(--border)">' + r.subject + '</td>' +
+        '<td style="padding:7px 4px;border-bottom:1px solid var(--border);text-align:center">' + (r.marks === null ? 'AB' : r.marks + ' / ' + r.max) + '</td>' +
+        '<td style="padding:7px 4px;border-bottom:1px solid var(--border);text-align:center">' + (r.grade || '—') + '</td>' +
+        '<td style="padding:7px 4px;border-bottom:1px solid var(--border);text-align:center;font-weight:700;color:' + (r.status === 'Pass' ? '#2D7A3A' : r.status === 'Fail' ? '#A32D2D' : '#B8860B') + '">' + r.status + '</td>' +
+      '</tr>').join('');
+    return '<div style="background:#fff;border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden">' +
+      '<div onclick="toggleExam(' + i + ')" style="padding:13px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">' +
+        '<div><div style="font-size:14px;font-weight:700">' + ex.name + '</div>' +
+        '<div style="font-size:11px;color:#9B928A">' + (ex.type || '') + ' · ' + (ex.academic_year || '') + '</div></div>' +
+        '<div style="text-align:right"><div style="font-size:15px;font-weight:800;color:' + resultColor + '">' + ex.pct + '%</div>' +
+        '<div style="font-size:10px;font-weight:700;color:' + resultColor + '">' + ex.result + (ex.grade ? ' · ' + ex.grade : '') + '</div></div>' +
+      '</div>' +
+      '<div id="exam-detail-' + i + '" style="display:none;padding:0 14px 13px">' +
+        '<table style="width:100%;font-size:12.5px;border-collapse:collapse">' +
+          '<thead><tr style="color:#9B928A;font-size:11px"><th style="text-align:left;padding:4px">SUBJECT</th><th style="padding:4px">MARKS</th><th style="padding:4px">GRADE</th><th style="padding:4px">STATUS</th></tr></thead>' +
+          '<tbody>' + rowsHtml + '</tbody>' +
+        '</table>' +
+        '<div style="margin-top:10px;font-size:13px;font-weight:700;display:flex;justify-content:space-between">' +
+          '<span>Total: ' + ex.total + ' / ' + ex.max_total + '</span><span style="color:' + resultColor + '">' + ex.pct + '% ' + (ex.grade ? '· Grade ' + ex.grade : '') + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function toggleExam(i) {
+  const el = document.getElementById('exam-detail-' + i);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 // ── Fees ──
