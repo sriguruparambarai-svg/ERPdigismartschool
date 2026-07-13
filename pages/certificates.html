@@ -152,7 +152,10 @@
         <div id="preview-wrap" class="hidden">
           <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;max-width:800px;margin:0 auto 12px">
             <div style="font-size:13px;color:#2D7A3A;font-weight:600">✓ Saved to register — Serial: <span id="done-serial"></span></div>
-            <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save PDF</button>
+            <span>
+              <button class="btn btn-secondary" id="edit-btn" onclick="toggleEdit()">✏️ Edit Text</button>
+              <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save PDF</button>
+            </span>
           </div>
           <div id="cert-paper"></div>
         </div>
@@ -206,6 +209,10 @@
         <label class="form-label">Signatory Title</label>
         <input type="text" id="set-signatory" class="form-control" value="PRINCIPAL">
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Standard Note (optional — prints on every certificate)</label>
+      <input type="text" id="set-note" class="form-control" placeholder="e.g. This certificate is issued as per school records.">
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
@@ -277,6 +284,7 @@ function openSettings() {
   document.getElementById('set-affiliation').value = certSettings.affiliation || '';
   document.getElementById('set-place').value = certSettings.place || '';
   document.getElementById('set-signatory').value = certSettings.signatory || 'PRINCIPAL';
+  document.getElementById('set-note').value = certSettings.standard_note || '';
   document.getElementById('settings-modal').classList.add('open');
 }
 function closeSettings() { document.getElementById('settings-modal').classList.remove('open'); }
@@ -286,7 +294,8 @@ async function saveSettings() {
     address_line: document.getElementById('set-address').value.trim(),
     affiliation: document.getElementById('set-affiliation').value.trim(),
     place: document.getElementById('set-place').value.trim(),
-    signatory: document.getElementById('set-signatory').value.trim() || 'PRINCIPAL'
+    signatory: document.getElementById('set-signatory').value.trim() || 'PRINCIPAL',
+    standard_note: document.getElementById('set-note').value.trim()
   };
   await supabase.from('cert_settings').upsert([certSettings]);
   closeSettings();
@@ -476,8 +485,10 @@ async function generateCertificate() {
       issued_by: issuedBy,
       issued_on: new Date().toISOString().split('T')[0]
     };
-    const { error } = await supabase.from('certificates_issued').insert([record]);
+    const { data: inserted, error } = await supabase.from('certificates_issued').insert([record]).select();
     if (error) { showToast('Could not save: ' + error.message, 'error'); btn.textContent = '✓ Generate & Save to Register'; btn.disabled = false; return; }
+    if (inserted && inserted[0]) record.id = inserted[0].id;
+    currentRec = record;
 
     renderCertificate(record);
     document.getElementById('done-serial').textContent = serial;
@@ -542,6 +553,10 @@ function renderCertificate(rec) {
       '<br>This certificate is issued for the purpose of <b>Income Tax declaration</b> at the request of the parent.';
   }
 
+  const noteHtml = certSettings.standard_note
+    ? '<div style="margin-top:16px;font-size:12.5px;font-style:italic;color:#5C534B">' + escapeHtml(certSettings.standard_note) + '</div>'
+    : '';
+
   document.getElementById('cert-paper').innerHTML =
     '<div class="cp-border"></div>' +
     '<div class="cp-head">' +
@@ -552,7 +567,8 @@ function renderCertificate(rec) {
     '<div class="cp-rule"></div>' +
     '<div class="cp-meta"><span>Serial No: <b>' + escapeHtml(rec.serial_no) + '</b></span><span>Date: <b>' + dateStr + '</b></span></div>' +
     '<div class="cp-title">' + title + '</div>' +
-    '<div class="cp-body">' + body + '</div>' +
+    '<div class="cp-body" id="cp-body-edit">' + ((rec.payload && rec.payload.edited_body) ? rec.payload.edited_body : body) + '</div>' +
+    noteHtml +
     '<div class="cp-sign">' +
       '<div class="sig"><div class="line">Place: ' + escapeHtml(certSettings.place || '') + '</div><div class="line">Date: ' + dateStr + '</div></div>' +
       '<div class="sig"><div class="line" style="margin-bottom:44px">&nbsp;</div>' + escapeHtml(certSettings.signatory || 'PRINCIPAL') + '</div>' +
@@ -581,8 +597,48 @@ async function loadRegister() {
   ).join('');
 }
 
+// ══ Edit-before-print ══
+// The office can adjust this one certificate's wording before printing.
+// Serial number, letterhead and signature stay locked — only the body text.
+let currentRec = null;
+let isEditing = false;
+
+async function toggleEdit() {
+  const body = document.getElementById('cp-body-edit');
+  const btn = document.getElementById('edit-btn');
+  if (!body) return;
+
+  if (!isEditing) {
+    isEditing = true;
+    body.contentEditable = 'true';
+    body.style.outline = '2px dashed #C9A84C';
+    body.style.outlineOffset = '6px';
+    body.focus();
+    btn.textContent = '💾 Save Changes';
+    btn.className = 'btn btn-gold';
+    showToast('Click inside the text and edit — then press Save Changes');
+  } else {
+    isEditing = false;
+    body.contentEditable = 'false';
+    body.style.outline = 'none';
+    btn.textContent = '✏️ Edit Text';
+    btn.className = 'btn btn-secondary';
+
+    // Persist the edited wording so a reprint shows exactly what was issued
+    if (currentRec && currentRec.id) {
+      const newPayload = Object.assign({}, currentRec.payload, { edited_body: body.innerHTML });
+      const { error } = await supabase.from('certificates_issued')
+        .update({ payload: newPayload }).eq('id', currentRec.id);
+      if (error) { showToast('Edit shown but could not be saved to register', 'error'); return; }
+      currentRec.payload = newPayload;
+      showToast('Changes saved ✓ Reprint will show this version');
+    }
+  }
+}
+
 function reprint(jsonStr) {
   const rec = JSON.parse(jsonStr);
+  currentRec = rec;
   showSection('issue');
   renderCertificate(rec);
   document.getElementById('done-serial').textContent = rec.serial_no;
