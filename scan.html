@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Staff Attendance — DigiSmart ERP</title>
+<style>
+  :root { --maroon:#6B1A1A; --gold:#C9A84C; --sandal:#E8C99A; }
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
+  body { min-height:100vh; background:linear-gradient(160deg,#6B1A1A 0%,#4a1010 100%);
+         display:flex; align-items:center; justify-content:center; padding:16px; }
+  .card { background:#FFF9F0; border-radius:18px; padding:26px 20px; width:100%; max-width:400px;
+          box-shadow:0 12px 40px rgba(0,0,0,0.35); text-align:center; }
+  .brand { color:var(--maroon); font-size:20px; font-weight:800; letter-spacing:0.5px; }
+  .school { color:#8a6d3b; font-size:13px; margin-top:4px; min-height:16px; }
+  .divider { height:2px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:14px 0 18px; }
+  .clock { font-size:30px; font-weight:800; color:var(--maroon); font-variant-numeric:tabular-nums; }
+  .date { font-size:12px; color:#7a6a55; margin-bottom:16px; }
+  select, input { width:100%; padding:14px; border:1.5px solid var(--sandal); border-radius:12px;
+          font-size:16px; background:white; color:#333; margin-bottom:12px; }
+  input { text-align:center; letter-spacing:8px; font-weight:700; }
+  .btn { width:100%; padding:16px; border:none; border-radius:12px; font-size:17px; font-weight:700;
+         cursor:pointer; background:var(--maroon); color:var(--gold); }
+  .btn:active { transform:scale(0.98); }
+  .btn:disabled { opacity:0.6; }
+  .hidden { display:none; }
+  .result { border-radius:14px; padding:22px 16px; margin-top:6px; }
+  .result .big { font-size:46px; }
+  .result .name { font-size:19px; font-weight:800; margin-top:6px; }
+  .result .msg { font-size:14px; margin-top:6px; line-height:1.5; }
+  .res-in  { background:#E8F6EC; color:#1E6B32; }
+  .res-out { background:#E8F0FA; color:#1F4E8C; }
+  .res-info{ background:#FFF4DE; color:#8B5E00; }
+  .res-err { background:#FBEAEA; color:#8C1F1F; }
+  .spinner { width:38px; height:38px; border:4px solid var(--sandal); border-top-color:var(--maroon);
+             border-radius:50%; margin:18px auto; animation:spin 0.9s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .small-link { display:inline-block; margin-top:16px; font-size:12px; color:#9a7b3f;
+                text-decoration:underline; cursor:pointer; background:none; border:none; }
+  .step-title { font-size:15px; font-weight:700; color:var(--maroon); margin-bottom:12px; }
+  .footer { margin-top:16px; font-size:10px; color:#b09a78; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">DigiSmart ERP</div>
+  <div class="school" id="school-name">Staff Attendance</div>
+  <div class="divider"></div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="date" id="date"></div>
+
+  <!-- STEP: loading -->
+  <div id="step-loading">
+    <div class="spinner"></div>
+    <div style="font-size:14px;color:#7a6a55" id="loading-text">Please wait...</div>
+  </div>
+
+  <!-- STEP: first-time setup (name + PIN) -->
+  <div id="step-pair" class="hidden">
+    <div class="step-title">First time setup — one time only</div>
+    <select id="staff-select"><option value="">Select your name...</option></select>
+    <input type="tel" id="pin-input" maxlength="4" inputmode="numeric" placeholder="••••" autocomplete="off">
+    <button class="btn" id="btn-pair" onclick="doPair()">Confirm</button>
+  </div>
+
+  <!-- STEP: result -->
+  <div id="step-result" class="hidden">
+    <div class="result" id="result-box">
+      <div class="big" id="result-icon"></div>
+      <div class="name" id="result-name"></div>
+      <div class="msg" id="result-msg"></div>
+    </div>
+    <button class="btn hidden" id="btn-retry" style="margin-top:14px" onclick="startMark()">Try Again</button>
+    <button class="small-link" onclick="switchUser()">Not you? Switch user</button>
+  </div>
+
+  <div class="footer">Powered by DigiSmart ERP</div>
+</div>
+
+<script>
+var API = '/api/qr-attendance';
+var SCHOOL = new URLSearchParams(location.search).get('school') || '';
+var LS_TOKEN = 'dsqr_token', LS_NAME = 'dsqr_name', LS_DEVICE = 'dsqr_device';
+
+// ── Clock ──
+function tick() {
+  var n = new Date();
+  document.getElementById('clock').textContent =
+    n.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  document.getElementById('date').textContent =
+    n.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+}
+tick(); setInterval(tick, 15000);
+
+// ── Device id (created once per phone) ──
+function deviceId() {
+  var d = localStorage.getItem(LS_DEVICE);
+  if (!d) {
+    d = 'dev-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
+    localStorage.setItem(LS_DEVICE, d);
+  }
+  return d;
+}
+
+function show(step) {
+  ['step-loading', 'step-pair', 'step-result'].forEach(function (id) {
+    document.getElementById(id).classList.toggle('hidden', id !== step);
+  });
+}
+
+function showResult(kind, icon, name, msg, retry) {
+  var box = document.getElementById('result-box');
+  box.className = 'result res-' + kind;
+  document.getElementById('result-icon').textContent = icon;
+  document.getElementById('result-name').textContent = name || '';
+  document.getElementById('result-msg').textContent = msg || '';
+  document.getElementById('btn-retry').classList.toggle('hidden', !retry);
+  show('step-result');
+}
+
+async function api(payload) {
+  var r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return r.json();
+}
+
+// ── First-time pairing ──
+async function loadNames() {
+  document.getElementById('loading-text').textContent = 'Loading staff list...';
+  try {
+    var data = await api({ action: 'staff_names', school: SCHOOL });
+    if (!data.ok) { showResult('err', '⚠️', '', data.error, true); return; }
+    if (data.school_name) document.getElementById('school-name').textContent = data.school_name;
+    var sel = document.getElementById('staff-select');
+    data.staff.forEach(function (s) {
+      var o = document.createElement('option');
+      o.value = s.id;
+      o.textContent = s.name + (s.role ? ' — ' + s.role : '');
+      sel.appendChild(o);
+    });
+    show('step-pair');
+  } catch (e) {
+    showResult('err', '📶', '', 'No internet connection. Please try again.', true);
+  }
+}
+
+async function doPair() {
+  var staffId = document.getElementById('staff-select').value;
+  var pin = document.getElementById('pin-input').value.trim();
+  if (!staffId) { alert('Please select your name.'); return; }
+  if (pin.length !== 4) { alert('Please enter your 4-digit PIN.'); return; }
+  var btn = document.getElementById('btn-pair');
+  btn.disabled = true; btn.textContent = 'Checking...';
+  try {
+    var data = await api({ action: 'pair', school: SCHOOL, staff_id: staffId, pin: pin });
+    if (!data.ok) {
+      alert(data.error);
+      btn.disabled = false; btn.textContent = 'Confirm';
+      return;
+    }
+    localStorage.setItem(LS_TOKEN, data.device_token);
+    localStorage.setItem(LS_NAME, data.staff_name);
+    startMark();
+  } catch (e) {
+    alert('No internet connection. Please try again.');
+    btn.disabled = false; btn.textContent = 'Confirm';
+  }
+}
+
+function switchUser() {
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_NAME);
+  document.getElementById('pin-input').value = '';
+  show('step-loading');
+  loadNames();
+}
+
+// ── Marking attendance ──
+function startMark() {
+  show('step-loading');
+  document.getElementById('loading-text').textContent = 'Checking your location...';
+  if (!navigator.geolocation) {
+    showResult('err', '⚠️', '', 'This phone does not support location. Please use another phone.', false);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function (pos) { sendMark(pos.coords.latitude, pos.coords.longitude); },
+    function () {
+      showResult('err', '📍', '',
+        'Location access is needed to mark attendance. Please allow location and try again.', true);
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+async function sendMark(lat, lng) {
+  document.getElementById('loading-text').textContent = 'Marking your attendance...';
+  try {
+    var data = await api({
+      action: 'mark',
+      device_token: localStorage.getItem(LS_TOKEN),
+      lat: lat, lng: lng,
+      device_id: deviceId()
+    });
+    if (!data.ok) {
+      if (data.code === 'REPAIR') { switchUser(); return; }
+      showResult('err', '❌', '', data.error, true);
+      return;
+    }
+    if (data.type === 'in') {
+      showResult('in', '🟢', data.name,
+        'Checked IN at ' + to12(data.time) + (data.late ? ' (Late)' : '') + '. Have a great day!', false);
+    } else if (data.type === 'out') {
+      showResult('out', '🔵', data.name,
+        'Checked OUT at ' + to12(data.time) + '. Working hours: ' + data.hours + '. Good evening!', false);
+    } else {
+      showResult('info', 'ℹ️', data.name, data.message, false);
+    }
+  } catch (e) {
+    showResult('err', '📶', '', 'No internet connection. Please try again.', true);
+  }
+}
+
+function to12(t) {
+  var p = t.split(':'), h = parseInt(p[0], 10);
+  var ap = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + ':' + p[1] + ' ' + ap;
+}
+
+// ── Start ──
+document.addEventListener('DOMContentLoaded', function () {
+  if (!SCHOOL) {
+    showResult('err', '⚠️', '', 'This QR link is incomplete. Please ask the school office for a new poster.', false);
+    return;
+  }
+  if (localStorage.getItem(LS_TOKEN)) {
+    startMark();
+  } else {
+    loadNames();
+  }
+});
+</script>
+</body>
+</html>
