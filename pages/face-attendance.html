@@ -168,6 +168,38 @@
             </div>
             <button class="btn btn-primary w-full" onclick="addStaff()">+ Add Staff</button>
           </div>
+
+          <!-- QR CODE ATTENDANCE (additive) -->
+          <div class="card" style="margin-top:16px">
+            <div class="card-header" style="margin-bottom:12px">
+              <div class="card-title">📱 QR Code Attendance</div>
+            </div>
+            <div style="font-size:12px;color:#8B5E00;background:#FFF8F0;padding:8px 12px;border-radius:8px;margin-bottom:12px">
+              Paste the QR poster in the entrance corridor. Staff scan it with their phone to check in/out. Location is verified automatically.
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Attendance Method</label>
+              <select class="form-control" id="qr-method" style="margin-top:4px">
+                <option value="face">Face Recognition only</option>
+                <option value="qr">QR Code only</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">School Location</label>
+              <div id="qr-location-status" style="font-size:12px;color:var(--text-muted);margin:4px 0 8px">Not set yet</div>
+              <button class="btn btn-secondary w-full" onclick="setSchoolLocation()">📍 Set School Location (stand at entrance)</button>
+            </div>
+            <div class="form-group" style="margin-bottom:12px">
+              <label class="form-label">Allowed Distance (metres)</label>
+              <input type="number" class="form-control" id="qr-radius" value="100" min="30" max="1000" style="margin-top:4px">
+            </div>
+            <button class="btn btn-primary w-full" onclick="saveQrSettings()" style="margin-bottom:8px">💾 Save QR Settings</button>
+            <button class="btn btn-gold w-full" onclick="generateQrPoster()" style="margin-bottom:8px">🖨️ Generate QR Poster</button>
+            <button class="btn btn-secondary w-full" onclick="showStaffPins()">🔑 Staff PINs</button>
+            <div id="qr-pins-area" style="margin-top:10px"></div>
+            <div id="qr-hidden" style="display:none"></div>
+          </div>
         </div>
 
         <!-- RIGHT: LOG & REPORT -->
@@ -200,6 +232,7 @@
 </div>
 
 <script src="../js/config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
 const CHECKIN_CUTOFF = '08:30';
@@ -546,6 +579,109 @@ async function loadStaffMonthReport() {
       }).join('')}</tbody>
     </table></div>`;
 }
+
+// ══════════ QR CODE ATTENDANCE (additive) ══════════
+const QR_API = '/api/qr-attendance';
+function qrToken(){ return sessionStorage.getItem('digismart_session_token') || ''; }
+
+async function qrApi(payload){
+  const r = await fetch(QR_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return r.json();
+}
+
+async function loadQrSettings(){
+  try{
+    const data = await qrApi({action:'get_settings',token:qrToken()});
+    if(!data.ok) return;
+    const s = data.settings;
+    if(s.name) window._qrSchoolName = s.name;
+    if(s.attendance_method) document.getElementById('qr-method').value = s.attendance_method;
+    if(s.qr_radius) document.getElementById('qr-radius').value = s.qr_radius;
+    if(s.qr_lat!==null && s.qr_lat!==undefined){
+      document.getElementById('qr-location-status').innerHTML =
+        '<span style="color:#2D7A3A;font-weight:600">✓ Location saved</span> ('+Number(s.qr_lat).toFixed(5)+', '+Number(s.qr_lng).toFixed(5)+')';
+    }
+  }catch(e){ /* silent */ }
+}
+
+function setSchoolLocation(){
+  if(!navigator.geolocation){ showToast('This browser does not support location.','error'); return; }
+  document.getElementById('qr-location-status').textContent = 'Getting location... please wait';
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    const data = await qrApi({action:'save_settings',token:qrToken(),lat:lat,lng:lng});
+    if(data.ok){
+      document.getElementById('qr-location-status').innerHTML =
+        '<span style="color:#2D7A3A;font-weight:600">✓ Location saved</span> ('+lat.toFixed(5)+', '+lng.toFixed(5)+')';
+      showToast('School location saved.','success');
+    } else showToast(data.error||'Could not save location.','error');
+  },()=>{ 
+    document.getElementById('qr-location-status').textContent = 'Location permission denied. Please allow and retry.';
+    showToast('Please allow location access.','error');
+  },{enableHighAccuracy:true,timeout:15000});
+}
+
+async function saveQrSettings(){
+  const data = await qrApi({action:'save_settings',token:qrToken(),
+    radius:document.getElementById('qr-radius').value,
+    method:document.getElementById('qr-method').value});
+  if(data.ok) showToast('QR settings saved.','success');
+  else showToast(data.error||'Could not save settings.','error');
+}
+
+function generateQrPoster(){
+  const url = location.origin + '/scan.html?school=' + encodeURIComponent(SCHOOL_ID);
+  const holder = document.getElementById('qr-hidden');
+  holder.innerHTML = '';
+  new QRCode(holder,{text:url,width:260,height:260,correctLevel:QRCode.CorrectLevel.M});
+  setTimeout(()=>{
+    const img = holder.querySelector('img') || holder.querySelector('canvas');
+    const src = img.tagName==='IMG' ? img.src : img.toDataURL();
+    const schoolName = window._qrSchoolName || sessionStorage.getItem('digismart_school_name') || 'Our School';
+    const w = window.open('','_blank');
+    w.document.write('<html><head><title>QR Attendance Poster</title></head>'+
+      '<body style="font-family:Segoe UI,sans-serif;text-align:center;padding:40px">'+
+      '<div style="border:6px double #6B1A1A;border-radius:20px;padding:40px;max-width:520px;margin:auto">'+
+      '<div style="color:#6B1A1A;font-size:30px;font-weight:800">'+schoolName+'</div>'+
+      '<div style="color:#8B5E00;font-size:20px;margin:8px 0 22px">Staff Attendance / ஊழியர் வருகைப் பதிவு</div>'+
+      '<img src="'+src+'" style="width:260px;height:260px">'+
+      '<div style="font-size:18px;margin-top:22px;color:#333;font-weight:600">📱 Scan with your phone camera</div>'+
+      '<div style="font-size:15px;color:#666;margin-top:6px">உங்கள் போன் கேமராவில் ஸ்கேன் செய்யவும்</div>'+
+      '<div style="font-size:12px;color:#999;margin-top:20px">Powered by DigiSmart ERP</div>'+
+      '</div><script>window.print()<\/script></body></html>');
+    w.document.close();
+  },300);
+}
+
+async function showStaffPins(){
+  const area = document.getElementById('qr-pins-area');
+  area.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">Loading PINs...</div>';
+  const data = await qrApi({action:'pins',token:qrToken()});
+  if(!data.ok){ area.innerHTML=''; showToast(data.error||'Could not load PINs.','error'); return; }
+  area.innerHTML = '<div class="table-wrap"><table style="font-size:12px">'+
+    '<thead><tr><th>Staff</th><th>Role</th><th>PIN</th></tr></thead><tbody>'+
+    data.staff.map(s=>'<tr><td style="font-weight:600">'+s.name+'</td><td style="color:var(--text-muted)">'+(s.role||'')+'</td><td style="font-weight:700;letter-spacing:2px">'+s.qr_pin+'</td></tr>').join('')+
+    '</tbody></table></div>'+
+    '<button class="btn btn-secondary btn-sm w-full" style="margin-top:8px" onclick="printPinSlips()">🖨️ Print PIN Slips</button>';
+  window._qrPinList = data.staff;
+}
+
+function printPinSlips(){
+  const list = window._qrPinList || [];
+  const w = window.open('','_blank');
+  w.document.write('<html><head><title>Staff PIN Slips</title></head><body style="font-family:Segoe UI,sans-serif;padding:20px">'+
+    '<div style="display:flex;flex-wrap:wrap;gap:12px">'+
+    list.map(s=>'<div style="border:2px dashed #6B1A1A;border-radius:10px;padding:14px 18px;width:220px">'+
+      '<div style="font-weight:700;color:#6B1A1A">'+s.name+'</div>'+
+      '<div style="font-size:11px;color:#666">'+(s.role||'')+'</div>'+
+      '<div style="margin-top:8px;font-size:12px">Attendance PIN:</div>'+
+      '<div style="font-size:24px;font-weight:800;letter-spacing:6px">'+s.qr_pin+'</div>'+
+      '<div style="font-size:10px;color:#999;margin-top:6px">Keep this private. Needed only once.</div></div>').join('')+
+    '</div><script>window.print()<\/script></body></html>');
+  w.document.close();
+}
+
+document.addEventListener('DOMContentLoaded', loadQrSettings);
 </script>
 </body>
 </html>
