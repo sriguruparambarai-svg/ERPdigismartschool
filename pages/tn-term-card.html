@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TN Term Card — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.marks-input{width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;text-align:center;background:var(--white);color:var(--text)}
+.marks-input:focus{outline:none;border-color:var(--gold)}
+.grade-select{padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--white);color:var(--text)}
+.info-band{display:flex;gap:12px;background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--maroon)}
+.rc-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px}
+.rc-table th{background:var(--maroon);color:var(--sandal);padding:8px 10px;text-align:left;font-size:12px}
+.rc-table td{padding:7px 10px;border-bottom:1px solid #eee}
+.rc-table tr:nth-child(even) td{background:#fafafa}
+.report-card{background:#fff;max-width:640px;margin:0 auto;padding:24px;border:1px solid var(--border);border-radius:12px}
+.rc-header{text-align:center;border-bottom:3px double var(--maroon);padding-bottom:14px;margin-bottom:16px}
+.grade-pill{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.board-warn{background:#FFF6E5;border:1px solid #F0D699;border-radius:10px;padding:14px 18px;font-size:13px;color:#7a5c15;margin-bottom:18px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">TN Term Card</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academic → State Board Assessment</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <div id="board-warn" class="board-warn hidden"></div>
+
+      <div class="info-band">
+        <b>&#127482;&#127475; Tamil Nadu State Board (Samacheer / Matriculation)</b>
+        <span>&#8226; 3 Terms &#8226; each Term = Formative (FA 40) + Summative (SA 60) = 100</span>
+        <span>&#8226; Scholastic: 9-point grade &#8226; Co-scholastic: 5-point grade</span>
+      </div>
+
+      <div id="page-alert" class="hidden"></div>
+
+      <!-- TABS -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('fa',this)">&#9997;&#65039; FA Entry (40)</div>
+        <div class="tab" onclick="switchTab('co',this)">&#127917; Co-Scholastic</div>
+        <div class="tab" onclick="switchTab('card',this)">&#128196; Term Card</div>
+      </div>
+
+      <!-- ══ FA ENTRY ══ -->
+      <div id="tab-fa">
+        <div class="filter-row">
+          <div><label class="form-label">Term</label><br>
+            <select id="fa-term" class="form-control" style="width:130px"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
+          <div><label class="form-label">Class</label><br>
+            <select id="fa-class" class="form-control" style="width:130px"></select></div>
+          <div><label class="form-label">Subject</label><br>
+            <input id="fa-subject" class="form-control" style="width:150px" placeholder="e.g. Maths"></div>
+          <div><label class="form-label">FA Max</label><br>
+            <input id="fa-max" class="form-control" style="width:80px" type="number" value="40"></div>
+          <button class="btn btn-primary" onclick="loadFA()">Load Students</button>
+          <button class="btn btn-gold hidden" id="fa-save" onclick="saveFA()">&#128190; Save FA Marks</button>
+        </div>
+        <div id="fa-content"><div class="empty-state"><div class="icon">&#9997;&#65039;</div><p>Select term, class and subject, then Load Students.</p></div></div>
+      </div>
+
+      <!-- ══ CO-SCHOLASTIC ══ -->
+      <div id="tab-co" class="hidden">
+        <div class="filter-row">
+          <div><label class="form-label">Term</label><br>
+            <select id="co-term" class="form-control" style="width:130px"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
+          <div><label class="form-label">Class</label><br>
+            <select id="co-class" class="form-control" style="width:130px"></select></div>
+          <button class="btn btn-primary" onclick="loadCo()">Load Students</button>
+          <button class="btn btn-gold hidden" id="co-save" onclick="saveCo()">&#128190; Save Grades</button>
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Areas graded A&ndash;E (5-point): Art Education, Physical Education, Music, Work Experience, Health.</div>
+        <div id="co-content"><div class="empty-state"><div class="icon">&#127917;</div><p>Select term and class, then Load Students.</p></div></div>
+      </div>
+
+      <!-- ══ TERM CARD ══ -->
+      <div id="tab-card" class="hidden">
+        <div class="filter-row">
+          <div><label class="form-label">Term</label><br>
+            <select id="card-term" class="form-control" style="width:130px"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>
+          <div><label class="form-label">Class</label><br>
+            <select id="card-class" class="form-control" style="width:130px"></select></div>
+          <div><label class="form-label">Student</label><br>
+            <select id="card-student" class="form-control" style="width:200px"></select></div>
+          <button class="btn btn-primary" onclick="generateTermCard()">Generate</button>
+        </div>
+        <div id="card-area"><div class="empty-state card"><div class="icon">&#128196;</div><p>Select term, class and student to build the term card.<br><small>FA marks come from this page; SA marks from the Exam module (a Term Exam matching the term).</small></p></div></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+var YEAR = (new Date().getMonth() >= 5)
+  ? (new Date().getFullYear() + '-' + (new Date().getFullYear() + 1))
+  : ((new Date().getFullYear() - 1) + '-' + new Date().getFullYear());
+var CO_AREAS = ['Art Education','Physical Education','Music','Work Experience','Health'];
+var CO_GRADES = ['A','B','C','D','E'];
+var faStudents = [], coStudents = [];
+
+function tok(){ return sessionStorage.getItem('digismart_session_token') || ''; }
+
+// ── secure gateway to fa_marks / co_scholastic_grades ──
+async function tnsb(reqObj){
+  var r = await fetch('/api/tnsb-data', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ token: tok(), req: reqObj })
+  });
+  var d = await r.json();
+  if (!d.ok) throw new Error(d.error || 'request failed');
+  return d.data;
+}
+
+function alertMsg(msg, ok){
+  var el = document.getElementById('page-alert');
+  el.className = ''; el.style.cssText = 'padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;'
+    + (ok ? 'background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0'
+          : 'background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0');
+  el.textContent = msg;
+  setTimeout(function(){ el.className = 'hidden'; }, 4000);
+}
+
+function switchTab(t, el){
+  ['fa','co','card'].forEach(function(x){ document.getElementById('tab-'+x).classList.toggle('hidden', x!==t); });
+  document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); });
+  if (el) el.classList.add('active');
+}
+
+// ── classes list (distinct from students) ──
+async function loadClasses(){
+  var { data } = await supabase.from('students').select('class').eq('school_id', SCHOOL_ID).eq('status','active');
+  var set = {};
+  (data||[]).forEach(function(s){ if (s.class) set[s.class]=1; });
+  var opts = Object.keys(set).sort().map(function(c){ return '<option>'+c+'</option>'; }).join('');
+  ['fa-class','co-class','card-class'].forEach(function(id){ document.getElementById(id).innerHTML = opts; });
+}
+
+async function studentsOf(cls){
+  var { data } = await supabase.from('students').select('id,full_name,admission_no')
+    .eq('school_id', SCHOOL_ID).eq('class', cls).eq('status','active').order('full_name');
+  return data || [];
+}
+
+// ══ FA ENTRY ══
+async function loadFA(){
+  var cls = document.getElementById('fa-class').value;
+  var subj = document.getElementById('fa-subject').value.trim();
+  var term = document.getElementById('fa-term').value;
+  if (!cls || !subj){ alertMsg('Pick class and subject.'); return; }
+  faStudents = await studentsOf(cls);
+  if (!faStudents.length){ document.getElementById('fa-content').innerHTML = '<div class="empty-state"><p>No active students in '+cls+'.</p></div>'; return; }
+  // existing marks
+  var existing = await tnsb({ table:'fa_marks', action:'select', select:'student_id,fa_marks',
+    filters:[{col:'academic_year',op:'eq',val:YEAR},{col:'term',op:'eq',val:term},{col:'class',op:'eq',val:cls},{col:'subject',op:'eq',val:subj}] });
+  var map = {}; (existing||[]).forEach(function(m){ map[m.student_id]=m.fa_marks; });
+  var rows = faStudents.map(function(s){
+    var v = (map[s.id]!=null) ? map[s.id] : '';
+    return '<tr><td>'+ (s.admission_no||'') +'</td><td>'+ s.full_name +'</td>'
+      + '<td><input class="marks-input" type="number" min="0" data-sid="'+s.id+'" value="'+v+'"></td></tr>';
+  }).join('');
+  document.getElementById('fa-content').innerHTML =
+    '<table class="rc-table"><thead><tr><th>Adm No</th><th>Student</th><th>FA Marks</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  document.getElementById('fa-save').classList.remove('hidden');
+}
+
+async function saveFA(){
+  var cls = document.getElementById('fa-class').value;
+  var subj = document.getElementById('fa-subject').value.trim();
+  var term = document.getElementById('fa-term').value;
+  var faMax = parseFloat(document.getElementById('fa-max').value) || 40;
+  var inputs = document.querySelectorAll('#fa-content .marks-input');
+  var byId = {}; faStudents.forEach(function(s){ byId[s.id]=s; });
+  var saved = 0;
+  try{
+    for (var i=0;i<inputs.length;i++){
+      var sid = inputs[i].getAttribute('data-sid');
+      var val = inputs[i].value.trim();
+      if (val === '') continue;
+      var s = byId[sid];
+      // delete-then-insert keeps the UNIQUE row current (same idea as exam saveMarks)
+      await tnsb({ table:'fa_marks', action:'delete',
+        filters:[{col:'academic_year',op:'eq',val:YEAR},{col:'term',op:'eq',val:term},{col:'class',op:'eq',val:cls},{col:'subject',op:'eq',val:subj},{col:'student_id',op:'eq',val:sid}] });
+      await tnsb({ table:'fa_marks', action:'insert', values:{
+        academic_year:YEAR, term:term, class:cls, subject:subj,
+        student_id:sid, student_name:s.full_name, admission_no:s.admission_no,
+        fa_marks:parseFloat(val), fa_max:faMax } });
+      saved++;
+    }
+    alertMsg('Saved FA marks for '+saved+' students.', true);
+  }catch(e){ alertMsg('Save failed — '+e.message); }
+}
+
+// ══ CO-SCHOLASTIC ══
+async function loadCo(){
+  var cls = document.getElementById('co-class').value;
+  var term = document.getElementById('co-term').value;
+  if (!cls){ alertMsg('Pick a class.'); return; }
+  coStudents = await studentsOf(cls);
+  if (!coStudents.length){ document.getElementById('co-content').innerHTML = '<div class="empty-state"><p>No active students.</p></div>'; return; }
+  var existing = await tnsb({ table:'co_scholastic_grades', action:'select', select:'student_id,area,grade',
+    filters:[{col:'academic_year',op:'eq',val:YEAR},{col:'term',op:'eq',val:term},{col:'class',op:'eq',val:cls}] });
+  var map = {}; (existing||[]).forEach(function(g){ map[g.student_id+'|'+g.area]=g.grade; });
+  var head = '<th>Student</th>' + CO_AREAS.map(function(a){ return '<th>'+a+'</th>'; }).join('');
+  var rows = coStudents.map(function(s){
+    var cells = CO_AREAS.map(function(a){
+      var cur = map[s.id+'|'+a] || '';
+      var opts = '<option value=""></option>' + CO_GRADES.map(function(g){ return '<option'+(g===cur?' selected':'')+'>'+g+'</option>'; }).join('');
+      return '<td><select class="grade-select" data-sid="'+s.id+'" data-area="'+a+'">'+opts+'</select></td>';
+    }).join('');
+    return '<tr><td>'+s.full_name+'</td>'+cells+'</tr>';
+  }).join('');
+  document.getElementById('co-content').innerHTML =
+    '<table class="rc-table"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table>';
+  document.getElementById('co-save').classList.remove('hidden');
+}
+
+async function saveCo(){
+  var cls = document.getElementById('co-class').value;
+  var term = document.getElementById('co-term').value;
+  var sels = document.querySelectorAll('#co-content .grade-select');
+  var byId = {}; coStudents.forEach(function(s){ byId[s.id]=s; });
+  var saved = 0;
+  try{
+    for (var i=0;i<sels.length;i++){
+      var sid = sels[i].getAttribute('data-sid');
+      var area = sels[i].getAttribute('data-area');
+      var grade = sels[i].value;
+      if (!grade) continue;
+      var s = byId[sid];
+      await tnsb({ table:'co_scholastic_grades', action:'delete',
+        filters:[{col:'academic_year',op:'eq',val:YEAR},{col:'term',op:'eq',val:term},{col:'class',op:'eq',val:cls},{col:'student_id',op:'eq',val:sid},{col:'area',op:'eq',val:area}] });
+      await tnsb({ table:'co_scholastic_grades', action:'insert', values:{
+        academic_year:YEAR, term:term, class:cls, student_id:sid, student_name:s.full_name, area:area, grade:grade } });
+      saved++;
+    }
+    alertMsg('Saved co-scholastic grades.', true);
+  }catch(e){ alertMsg('Save failed — '+e.message); }
+}
+
+// ══ TERM CARD ══
+document.getElementById('card-class').addEventListener('change', async function(){
+  var cls = this.value;
+  var list = await studentsOf(cls);
+  document.getElementById('card-student').innerHTML = list.map(function(s){ return '<option value="'+s.id+'">'+s.full_name+'</option>'; }).join('');
+});
+
+// 9-point scholastic grade from percentage (TN scale)
+function scholasticGrade(pct){
+  if (pct>=91) return {g:'A1',c:'#2D7A3A'}; if (pct>=81) return {g:'A2',c:'#2D7A3A'};
+  if (pct>=71) return {g:'B1',c:'#3A7A2D'}; if (pct>=61) return {g:'B2',c:'#5E7A00'};
+  if (pct>=51) return {g:'C1',c:'#8B5E00'}; if (pct>=41) return {g:'C2',c:'#8B5E00'};
+  if (pct>=33) return {g:'D',c:'#A35A00'};  return {g:'E',c:'#A32D2D'};
+}
+
+async function generateTermCard(){
+  var cls = document.getElementById('card-class').value;
+  var term = document.getElementById('card-term').value;
+  var sid = document.getElementById('card-student').value;
+  var sName = document.getElementById('card-student').selectedOptions[0].text;
+  if (!sid){ alertMsg('Pick a student.'); return; }
+  var area = document.getElementById('card-area');
+  area.innerHTML = '<div class="empty-state"><p>Building&hellip;</p></div>';
+
+  // FA marks for this student/term (all subjects)
+  var fa = await tnsb({ table:'fa_marks', action:'select', select:'subject,fa_marks,fa_max',
+    filters:[{col:'academic_year',op:'eq',val:YEAR},{col:'term',op:'eq',val:term},{col:'class',op:'eq',val:cls},{col:'student_id',op:'eq',val:sid}] });
+  var faBySub = {}; (fa||[]).forEach(function(f){ faBySub[f.subject]={m:f.fa_marks,max:f.fa_max||40}; });
+
+  // SA marks from the Exam module — the Term Exam matching this term (public tables via config supabase)
+  var { data: exams } = await supabase.from('exams').select('id,name').eq('school_id', SCHOOL_ID).eq('academic_year', YEAR);
+  var termExam = (exams||[]).find(function(e){ return (e.name||'').toLowerCase().indexOf(term.toLowerCase()) !== -1; });
+  var saBySub = {};
+  if (termExam){
+    var { data: sa } = await supabase.from('exam_marks').select('subject,marks_obtained,max_marks,is_absent')
+      .eq('exam_id', termExam.id).eq('student_id', sid);
+    (sa||[]).forEach(function(m){ saBySub[m.subject]={m:m.is_absent?0:m.marks_obtained, max:m.max_marks, abs:m.is_absent}; });
+  }
+
+  // Co-scholastic
+  var co = await tnsb({ table:'co_scholastic_grades', action:'select', select:'area,grade',
+    filters:[{col:'academic_year',op:'eq',val:YEAR},{col:'term',op:'eq',val:term},{col:'class',op:'eq',val:cls},{col:'student_id',op:'eq',val:sid}] });
+
+  // union of subjects across FA and SA
+  var subs = {}; Object.keys(faBySub).forEach(function(s){subs[s]=1;}); Object.keys(saBySub).forEach(function(s){subs[s]=1;});
+  var subList = Object.keys(subs).sort();
+
+  if (subList.length === 0){
+    area.innerHTML = '<div class="board-warn">No FA or SA marks found for '+sName+' in '+term+'.<br>Enter FA marks on this page, and create a Term Exam named with "'+term+'" in the Exam module for SA marks.</div>';
+    return;
+  }
+
+  var rows = '', gotTotal = 0, maxTotal = 0;
+  subList.forEach(function(sub){
+    var faM = faBySub[sub] ? Number(faBySub[sub].m||0) : 0;
+    var faMax = faBySub[sub] ? Number(faBySub[sub].max||40) : 40;
+    // scale FA to 40
+    var fa40 = faBySub[sub] ? (faM/faMax*40) : 0;
+    var saM = saBySub[sub] ? Number(saBySub[sub].m||0) : 0;
+    var saMax = saBySub[sub] ? Number(saBySub[sub].max||60) : 60;
+    // scale SA to 60
+    var sa60 = saBySub[sub] ? (saM/saMax*60) : 0;
+    var total = Math.round(fa40 + sa60);
+    var g = scholasticGrade(total);
+    gotTotal += total; maxTotal += 100;
+    rows += '<tr><td>'+sub+'</td><td>'+ (faBySub[sub]? Math.round(fa40):'&mdash;') +'</td><td>'
+      + (saBySub[sub]? Math.round(sa60):'&mdash;') +'</td><td><b>'+total+'</b></td>'
+      + '<td><span class="grade-pill" style="background:'+g.c+';color:#fff">'+g.g+'</span></td></tr>';
+  });
+  var overallPct = maxTotal? Math.round(gotTotal/maxTotal*100) : 0;
+  var og = scholasticGrade(overallPct);
+
+  var coRows = (co&&co.length)
+    ? co.map(function(c){ return '<tr><td>'+c.area+'</td><td><span class="grade-pill" style="background:#8B5E00;color:#fff">'+c.grade+'</span></td></tr>'; }).join('')
+    : '<tr><td colspan="2" style="color:var(--text-muted)">No co-scholastic grades entered.</td></tr>';
+
+  area.innerHTML =
+    '<div class="report-card" id="rc-print">'
+    + '<div class="rc-header"><div style="font-family:Cinzel,serif;font-size:20px;color:var(--maroon);font-weight:700">'+ (SCHOOL_CODE||'School') +'</div>'
+    + '<div style="font-size:13px;color:var(--text-muted)">Tamil Nadu State Board &middot; '+term+' &middot; '+YEAR+'</div></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:14px"><div><b>'+sName+'</b></div><div>Class: '+cls+'</div></div>'
+    + '<table class="rc-table"><thead><tr><th>Subject</th><th>FA (40)</th><th>SA (60)</th><th>Total (100)</th><th>Grade</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--sandal-light);border-radius:8px;padding:10px 14px;margin-bottom:14px">'
+    + '<div style="font-size:13px">Overall: <b>'+overallPct+'%</b></div>'
+    + '<div>Grade <span class="grade-pill" style="background:'+og.c+';color:#fff">'+og.g+'</span></div></div>'
+    + '<div style="font-size:12px;font-weight:700;color:var(--maroon);margin-bottom:6px">Co-Scholastic (5-point)</div>'
+    + '<table class="rc-table"><thead><tr><th>Area</th><th>Grade</th></tr></thead><tbody>'+coRows+'</tbody></table>'
+    + '</div>'
+    + '<div style="text-align:center;margin-top:14px"><button class="btn btn-primary" onclick="window.print()">&#128424;&#65039; Print / Save PDF</button></div>';
+}
+
+// ── init ──
+(async function(){
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
+  // board guard: warn if this school isn't set to TN State Board
+  try{
+    var { data } = await supabase.from('schools').select('assessment_board').eq('school_id', SCHOOL_ID).single();
+    var board = (data && data.assessment_board) || 'tnsb';
+    if (board !== 'tnsb'){
+      var w = document.getElementById('board-warn');
+      w.classList.remove('hidden');
+      w.innerHTML = '&#9888;&#65039; This school is set to <b>'+board.toUpperCase()+'</b>, not TN State Board. You can still use this page, but the term card follows the TN 40+60 pattern. Change the board in school settings if needed.';
+    }
+  }catch(e){}
+  await loadClasses();
+})();
+</script>
+</body>
+</html>
