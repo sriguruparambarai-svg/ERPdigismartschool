@@ -21,6 +21,7 @@ async function renderSidebar(activePage) {
     { group: 'Academic', items: [
       { id: 'admission', icon: '📝', label: 'Admission', href: 'admission.html' },
       { id: 'exam', icon: '📄', label: 'Exam Management', href: 'exam.html' },
+      { id: 'exam', icon: '📝', label: 'TN Term Card', href: 'tn-term-card.html' },
       { id: 'icard', icon: '🪪', label: 'I-Card & Timetable', href: 'icard.html' },
       { id: 'certificates', icon: '📜', label: 'Certificates', href: 'certificates.html' },
     ]},
