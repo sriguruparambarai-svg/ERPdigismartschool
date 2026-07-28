@@ -37,6 +37,23 @@
 .icard-staff .icard-footer{border-top:2px solid #1a3a6b}
 .icard-staff .icard-admno{color:#1a3a6b}
 
+/* ── CARD BACK SIDE & PAIRS ── */
+.icard-pair{display:flex;flex-direction:column;align-items:center;gap:8px;page-break-inside:avoid}
+.icard-pair-cards{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.icard-back-top{padding:10px 14px;text-align:center;color:#fff}
+.icard-back-title{font-size:11px;font-weight:700;letter-spacing:.04em;line-height:1.3}
+.icard-back-sub{font-size:9px;opacity:.85;margin-top:2px}
+.icard-terms{margin:0;padding:10px 14px 4px 26px;font-size:9px;color:#444;line-height:1.5;text-align:left}
+.icard-terms li{margin-bottom:3px}
+.icard-contact{padding:4px 14px 0;font-size:9px;color:#555;line-height:1.7;text-align:left}
+.icard-found{padding:6px 14px 0;font-size:8.5px;color:#888;font-style:italic;text-align:left}
+.icard-sign{padding:12px 14px 6px;text-align:right}
+.icard-sign-line{border-top:1px solid #999;width:90px;margin-left:auto;margin-bottom:3px}
+.icard-sign-name{font-size:9px;font-weight:600;color:#333}
+.icard-sign-role{font-size:8px;color:#888}
+.icard-logo{width:34px;height:34px;border-radius:50%;object-fit:cover;background:#fff;margin:0 auto 5px;display:block;border:2px solid rgba(255,255,255,.5)}
+@media print{ .icard-pair-cards{gap:8px} }
+
 /* ── TIMETABLE STYLES ── */
 .tt-grid{border-collapse:collapse;width:100%;font-size:12px}
 .tt-grid th{background:var(--maroon);color:var(--sandal);padding:8px 10px;text-align:center;font-size:11px;font-weight:600;border:1px solid #8B2A2A}
@@ -248,6 +265,25 @@
                 <option value="no">Hide Blood Group</option>
               </select>
             </div>
+            <div class="form-group">
+              <label class="form-label">School Logo on Card</label>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+                <img id="cs-logo-thumb" src="" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid var(--border);display:none">
+                <button class="btn btn-secondary btn-sm" onclick="uploadLogo()">📷 Upload Logo</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Principal Name (back side)</label>
+              <input type="text" id="cs-principal" class="form-control" placeholder="Principal name">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label class="form-label">Student Card Terms — one rule per line (back side)</label>
+              <textarea id="cs-terms-student" class="form-control" rows="3" placeholder="Leave empty to use standard terms" style="margin-top:4px"></textarea>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label class="form-label">Staff Card Terms — one rule per line (back side)</label>
+              <textarea id="cs-terms-staff" class="form-control" rows="3" placeholder="Leave empty to use standard terms" style="margin-top:4px"></textarea>
+            </div>
           </div>
           <!-- Live Preview -->
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
@@ -430,7 +466,76 @@ let cardSettings = {
   studentColor: '#6B1A1A',
   staffColor: '#1a3a6b',
   showBlood: true,
+  logo_url: '',
+  principal_name: '',
+  terms_student: '',
+  terms_staff: '',
 };
+
+// ── I-Card photo system ──
+let PHOTO_V = Date.now();
+function photoUrl(folder, id) {
+  return `${SUPABASE_URL}/storage/v1/object/public/icard-photos/${SCHOOL_ID}/${folder}/${id}.jpg?v=${PHOTO_V}`;
+}
+function iphFallback(img, initials) {
+  const p = img.parentElement;
+  if (p) p.textContent = initials;
+}
+function pickAndResize(maxDim, mime, quality) {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => {
+      const f = inp.files[0]; if (!f) return resolve(null);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale);
+        c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL(mime, quality));
+      };
+      img.onerror = () => resolve(null);
+      img.src = URL.createObjectURL(f);
+    };
+    inp.click();
+  });
+}
+async function uploadPhoto(folder, id) {
+  const dataUrl = await pickAndResize(400, 'image/jpeg', 0.85);
+  if (!dataUrl) return;
+  const token = sessionStorage.getItem('digismart_session_token') || '';
+  const r = await fetch('/api/icard-photo', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ token, target: folder, record_id: id, image: dataUrl }) });
+  const j = await r.json().catch(() => ({ ok:false, error:'Upload failed' }));
+  if (!j.ok) { showToast(j.error || 'Upload failed', 'error'); return; }
+  PHOTO_V = Date.now();
+  showToast('Photo saved!', 'success');
+  if (folder === 'students') loadStudentCards(); else loadStaffCards();
+}
+async function uploadLogo() {
+  const dataUrl = await pickAndResize(240, 'image/png');
+  if (!dataUrl) return;
+  const token = sessionStorage.getItem('digismart_session_token') || '';
+  const r = await fetch('/api/icard-photo', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ token, target: 'logo', image: dataUrl }) });
+  const j = await r.json().catch(() => ({ ok:false, error:'Upload failed' }));
+  if (!j.ok) { showToast(j.error || 'Upload failed', 'error'); return; }
+  cardSettings.logo_url = j.url;
+  const t = document.getElementById('cs-logo-thumb');
+  t.src = j.url + '?v=' + Date.now(); t.style.display = 'block';
+  await saveCardSettings();
+}
+function cardLogoHtml() {
+  return cardSettings.logo_url
+    ? `<img class="icard-logo" src="${cardSettings.logo_url}" onerror="this.style.display='none'">`
+    : '';
+}
+function termsListHtml(text, defaults) {
+  const lines = (text || '').split('\n').map(t => t.trim()).filter(Boolean);
+  return (lines.length ? lines : defaults).map(t => `<li>${t}</li>`).join('');
+}
 
 let periods = [
   {label:'Period 1', start:'08:30', end:'09:15', isBreak:false},
@@ -485,6 +590,13 @@ async function loadCardSettings() {
     document.getElementById('cs-website').value = data.website || '';
     document.getElementById('cs-acyear').value = data.acyear || '2026-27';
     document.getElementById('cs-bloodgroup').value = data.showBlood ? 'yes' : 'no';
+    document.getElementById('cs-principal').value = data.principal_name || '';
+    document.getElementById('cs-terms-student').value = data.terms_student || '';
+    document.getElementById('cs-terms-staff').value = data.terms_staff || '';
+    if (data.logo_url) {
+      const t = document.getElementById('cs-logo-thumb');
+      t.src = data.logo_url; t.style.display = 'block';
+    }
   }
 }
 
@@ -497,6 +609,9 @@ async function saveCardSettings() {
   cardSettings.website = document.getElementById('cs-website').value.trim();
   cardSettings.acyear = document.getElementById('cs-acyear').value;
   cardSettings.showBlood = document.getElementById('cs-bloodgroup').value === 'yes';
+  cardSettings.principal_name = document.getElementById('cs-principal').value.trim();
+  cardSettings.terms_student = document.getElementById('cs-terms-student').value;
+  cardSettings.terms_staff = document.getElementById('cs-terms-staff').value;
 
   const { data: existing } = await supabase.from('icard_settings').select('id').eq('school_id',SCHOOL_ID).single();
   const payload = { school_id: SCHOOL_ID, ...cardSettings };
@@ -521,9 +636,9 @@ function selectCardColor(el, type) {
 
 function updateSettingsPreview() {
   const s = { full_name:'Sample Student', admission_no:'2025-0001', class:'Class 6', section:'A', father_name:'Parent Name', mobile:'9876543210', blood_group:'O+', dob:'2012-04-15' };
-  document.getElementById('preview-student-card').innerHTML = buildStudentCard(s);
+  document.getElementById('preview-student-card').innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap">${buildStudentCard(s)}${buildStudentCardBack(s)}</div>`;
   const staff = { name:'Sample Teacher', employee_id:'EMP-001', role:'Mathematics Teacher', department:'Teaching', mobile:'9876543210' };
-  document.getElementById('preview-staff-card').innerHTML = buildStaffCard(staff);
+  document.getElementById('preview-staff-card').innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap">${buildStaffCard(staff)}${buildStaffCardBack(staff)}</div>`;
 }
 
 function buildStudentCard(s) {
@@ -534,9 +649,10 @@ function buildStudentCard(s) {
   return `
     <div class="icard">
       <div class="icard-top" style="background:${color}">
+        ${cardLogoHtml()}
         <div class="icard-school-name" style="color:#F5E6C8">${cardSettings.name1||'School Name'}</div>
         ${cardSettings.name2?`<div class="icard-tagline" style="color:rgba(245,230,200,.75)">${cardSettings.name2}</div>`:''}
-        <div class="icard-photo-wrap" style="border-color:rgba(255,255,255,.4)">${getInitials(s.full_name||s.name||'?')}</div>
+        <div class="icard-photo-wrap" style="border-color:rgba(255,255,255,.4)"><img src="${photoUrl('students', s.id)}" onerror="iphFallback(this,'${getInitials(s.full_name||s.name||'?')}')"></div>
         <div class="icard-name" style="color:#fff">${s.full_name||s.name||'Student Name'}</div>
         <div class="icard-class" style="color:rgba(255,255,255,.85)">${s.class||''}${s.section?' – '+s.section:''}</div>
       </div>
@@ -563,9 +679,10 @@ function buildStaffCard(s) {
   return `
     <div class="icard icard-staff">
       <div class="icard-top" style="background:${color}">
+        ${cardLogoHtml()}
         <div class="icard-school-name" style="color:#E8D8FF">${cardSettings.name1||'School Name'}</div>
         ${cardSettings.name2?`<div class="icard-tagline" style="color:rgba(232,216,255,.7)">${cardSettings.name2}</div>`:''}
-        <div class="icard-photo-wrap" style="border-color:rgba(255,255,255,.4)">${getInitials(s.name||'?')}</div>
+        <div class="icard-photo-wrap" style="border-color:rgba(255,255,255,.4)"><img src="${photoUrl('staff', s.id)}" onerror="iphFallback(this,'${getInitials(s.name||'?')}')"></div>
         <div class="icard-name" style="color:#fff">${s.name||'Staff Name'}</div>
         <div class="icard-class" style="color:rgba(255,255,255,.85)">${s.role||s.designation||'Teacher'}</div>
       </div>
@@ -581,6 +698,88 @@ function buildStaffCard(s) {
         <div class="icard-year">Staff Identity Card · ${cardSettings.acyear||'2026-27'}</div>
         <div class="icard-barcode">${bars}</div>
       </div>
+    </div>
+  `;
+}
+
+function buildStudentCardBack(s) {
+  const color = cardSettings.studentColor || '#6B1A1A';
+  const bars = Array.from({length:18},(_,i)=>`<div class="bar" style="width:${1+Math.random()*2}px;height:${10+Math.random()*8}px"></div>`).join('');
+  const defaults = [
+    'This card must be carried while in school.',
+    'If lost, report to the school office immediately.',
+    'This card is not transferable.'
+  ];
+  return `
+    <div class="icard">
+      <div class="icard-back-top" style="background:${color}">
+        <div class="icard-back-title">${cardSettings.name1||'School Name'}</div>
+        <div class="icard-back-sub">Student Identity Card — Terms & Instructions</div>
+      </div>
+      <ul class="icard-terms">${termsListHtml(cardSettings.terms_student, defaults)}</ul>
+      <div class="icard-contact">
+        ${cardSettings.address?`📍 ${cardSettings.address}<br>`:''}
+        ${cardSettings.phone?`📞 ${cardSettings.phone}<br>`:''}
+        ${cardSettings.email?`✉️ ${cardSettings.email}<br>`:''}
+        ${cardSettings.website?`🌐 ${cardSettings.website}`:''}
+      </div>
+      <div class="icard-found">If found, please return this card to the school at the above address.</div>
+      <div class="icard-sign">
+        <div class="icard-sign-line"></div>
+        ${cardSettings.principal_name?`<div class="icard-sign-name">${cardSettings.principal_name}</div>`:''}
+        <div class="icard-sign-role">Principal Signature</div>
+      </div>
+      <div class="icard-footer">
+        <div class="icard-admno" style="color:${color}">${s.admission_no||''}</div>
+        <div class="icard-barcode">${bars}</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildStaffCardBack(s) {
+  const color = cardSettings.staffColor || '#1a3a6b';
+  const bars = Array.from({length:18},(_,i)=>`<div class="bar" style="width:${1+Math.random()*2}px;height:${10+Math.random()*8}px"></div>`).join('');
+  const defaults = [
+    'This card is the property of the school.',
+    'Must be worn at all times during working hours.',
+    'Return this card to the office upon leaving service.'
+  ];
+  return `
+    <div class="icard">
+      <div class="icard-back-top" style="background:${color}">
+        <div class="icard-back-title">${cardSettings.name1||'School Name'}</div>
+        <div class="icard-back-sub">Staff Identity Card — Terms & Conditions</div>
+      </div>
+      <ul class="icard-terms">${termsListHtml(cardSettings.terms_staff, defaults)}</ul>
+      <div class="icard-contact">
+        ${cardSettings.address?`📍 ${cardSettings.address}<br>`:''}
+        ${cardSettings.phone?`📞 ${cardSettings.phone}<br>`:''}
+        ${cardSettings.email?`✉️ ${cardSettings.email}<br>`:''}
+        ${cardSettings.website?`🌐 ${cardSettings.website}`:''}
+      </div>
+      <div class="icard-found">If found, please return this card to the school at the above address.</div>
+      <div class="icard-sign">
+        <div class="icard-sign-line"></div>
+        ${cardSettings.principal_name?`<div class="icard-sign-name">${cardSettings.principal_name}</div>`:''}
+        <div class="icard-sign-role">Principal Signature</div>
+      </div>
+      <div class="icard-footer">
+        <div class="icard-admno" style="color:${color}">${s.employee_id||''}</div>
+        <div class="icard-barcode">${bars}</div>
+      </div>
+    </div>
+  `;
+}
+
+function buildCardPair(s, type) {
+  const front = type === 'student' ? buildStudentCard(s) : buildStaffCard(s);
+  const back  = type === 'student' ? buildStudentCardBack(s) : buildStaffCardBack(s);
+  const folder = type === 'student' ? 'students' : 'staff';
+  return `
+    <div class="icard-pair">
+      <div class="icard-pair-cards">${front}${back}</div>
+      <button class="btn btn-secondary btn-sm no-print" onclick="uploadPhoto('${folder}','${s.id}')">📷 Upload Photo</button>
     </div>
   `;
 }
@@ -603,7 +802,7 @@ async function loadStudentCards() {
   }
 
   document.getElementById('si-count').textContent = data.length;
-  document.getElementById('student-cards-area').innerHTML = data.map(s => buildStudentCard(s)).join('');
+  document.getElementById('student-cards-area').innerHTML = data.map(s => buildCardPair(s,'student')).join('');
 }
 
 async function loadStaffCards() {
@@ -622,7 +821,7 @@ async function loadStaffCards() {
   }
 
   document.getElementById('stf-count').textContent = data.length;
-  document.getElementById('staff-cards-area').innerHTML = data.map(s => buildStaffCard(s)).join('');
+  document.getElementById('staff-cards-area').innerHTML = data.map(s => buildCardPair(s,'staff')).join('');
 }
 
 // ═══════════════════════════════
