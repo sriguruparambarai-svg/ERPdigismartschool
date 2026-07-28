@@ -6,6 +6,7 @@
 <title>I-Card & Timetable — DigiSmart ERP</title>
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 .tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
 .tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
@@ -147,6 +148,8 @@
             <div style="display:flex;flex-direction:column;gap:8px">
               <button class="btn btn-gold w-full" onclick="loadStudentCards()">🔄 Load Cards</button>
               <button class="btn btn-primary w-full" onclick="window.print()">🖨 Print All Cards</button>
+              <button class="btn btn-secondary w-full no-print" onclick="bulkUploadPhotos('student')">📦 Bulk Upload Photos (ZIP)</button>
+              <div id="si-bulk-status" style="font-size:11px;color:var(--text-muted);word-break:break-word"></div>
             </div>
           </div>
 
@@ -190,6 +193,8 @@
             <div style="display:flex;flex-direction:column;gap:8px">
               <button class="btn btn-gold w-full" onclick="loadStaffCards()">🔄 Load Cards</button>
               <button class="btn btn-primary w-full" onclick="window.print()">🖨 Print All Cards</button>
+              <button class="btn btn-secondary w-full no-print" onclick="bulkUploadPhotos('staff')">📦 Bulk Upload Photos (ZIP)</button>
+              <div id="stf-bulk-status" style="font-size:11px;color:var(--text-muted);word-break:break-word"></div>
             </div>
           </div>
           <div class="card">
@@ -527,6 +532,99 @@ async function uploadLogo() {
   t.src = j.url + '?v=' + Date.now(); t.style.display = 'block';
   await saveCardSettings();
 }
+function resizeBlobToDataUrl(blob, maxDim, mime, quality) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objUrl = URL.createObjectURL(blob);
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale);
+      c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(objUrl);
+      resolve(c.toDataURL(mime, quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objUrl); resolve(null); };
+    img.src = objUrl;
+  });
+}
+
+async function bulkUploadPhotos(type) {
+  const statusEl = document.getElementById(type === 'student' ? 'si-bulk-status' : 'stf-bulk-status');
+
+  // 1. Ask for the zip file
+  const zipFile = await new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.zip';
+    inp.onchange = () => resolve(inp.files[0] || null);
+    inp.click();
+  });
+  if (!zipFile) return;
+
+  statusEl.textContent = 'Reading zip file...';
+  let zip;
+  try { zip = await JSZip.loadAsync(zipFile); }
+  catch (e) { statusEl.textContent = ''; showToast('Could not read the zip file.', 'error'); return; }
+
+  // 2. Build the matching map from the database
+  const idMap = {};
+  if (type === 'student') {
+    const { data } = await supabase.from('students').select('id,admission_no').eq('school_id',SCHOOL_ID).eq('status','active');
+    (data || []).forEach(s => { if (s.admission_no) idMap[String(s.admission_no).trim().toLowerCase()] = s.id; });
+  } else {
+    const { data } = await supabase.from('staff').select('id,employee_id').eq('school_id',SCHOOL_ID).eq('status','active');
+    (data || []).forEach(s => { if (s.employee_id) idMap[String(s.employee_id).trim().toLowerCase()] = s.id; });
+  }
+
+  // 3. Collect image files from the zip (ignore folders and Mac junk files)
+  const entries = [];
+  zip.forEach((path, file) => {
+    if (file.dir) return;
+    if (path.indexOf('__MACOSX') !== -1) return;
+    const base = path.split('/').pop();
+    if (base.startsWith('.')) return;
+    const m = base.match(/^(.+)\.(jpg|jpeg|png)$/i);
+    if (!m) return;
+    entries.push({ key: m[1].trim().toLowerCase(), name: base, file: file });
+  });
+  if (entries.length === 0) {
+    statusEl.textContent = '';
+    showToast('No photo files (.jpg / .png) found in the zip.', 'error');
+    return;
+  }
+
+  // 4. Upload one by one through the secure API
+  const token = sessionStorage.getItem('digismart_session_token') || '';
+  const folder = type === 'student' ? 'students' : 'staff';
+  const unmatched = [], failed = [];
+  let done = 0, uploaded = 0;
+  for (const e of entries) {
+    done++;
+    statusEl.textContent = 'Uploading ' + done + ' of ' + entries.length + '...';
+    const id = idMap[e.key];
+    if (!id) { unmatched.push(e.name); continue; }
+    const blob = await e.file.async('blob');
+    const dataUrl = await resizeBlobToDataUrl(blob, 400, 'image/jpeg', 0.85);
+    if (!dataUrl) { failed.push(e.name); continue; }
+    try {
+      const r = await fetch('/api/icard-photo', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token, target: folder, record_id: id, image: dataUrl }) });
+      const j = await r.json().catch(() => ({ ok:false }));
+      if (j.ok) uploaded++; else failed.push(e.name);
+    } catch (err) { failed.push(e.name); }
+  }
+
+  // 5. Final report
+  PHOTO_V = Date.now();
+  let msg = uploaded + ' photo' + (uploaded === 1 ? '' : 's') + ' uploaded.';
+  if (unmatched.length) msg += ' ' + unmatched.length + ' did not match any ' + (type === 'student' ? 'admission number' : 'employee ID') + ': ' + unmatched.join(', ');
+  if (failed.length) msg += ' ' + failed.length + ' failed: ' + failed.join(', ');
+  statusEl.textContent = msg;
+  showToast('Bulk upload finished — ' + uploaded + ' of ' + entries.length + ' photos saved.', uploaded > 0 ? 'success' : 'error');
+  if (type === 'student') loadStudentCards(); else loadStaffCards();
+}
+
 function cardLogoHtml() {
   return cardSettings.logo_url
     ? `<img class="icard-logo" src="${cardSettings.logo_url}" onerror="this.style.display='none'">`
