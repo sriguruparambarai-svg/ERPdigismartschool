@@ -306,7 +306,7 @@
             <label class="form-label">Class</label>
             <select class="form-control" id="def-class" style="width:150px;margin-top:4px">
               <option value="">All Classes</option>
-              <option>LKG</option><option>UKG</option>
+              <option>PreKG</option><option>LKG</option><option>UKG</option>
               <option>Class 1</option><option>Class 2</option><option>Class 3</option>
               <option>Class 4</option><option>Class 5</option><option>Class 6</option>
               <option>Class 7</option><option>Class 8</option><option>Class 9</option>
@@ -325,7 +325,31 @@
           <div style="margin-top:20px">
             <button class="btn btn-secondary" onclick="printDefaulters()">🖨 Print List</button>
           </div>
+          <div style="margin-top:20px">
+            <button class="btn btn-gold no-print" onclick="toggleReminderPanel()">📱 Reminder Message</button>
+          </div>
         </div>
+
+        <!-- Reminder message template -->
+        <div class="card hidden no-print" id="reminder-panel">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Reminder Message</div>
+              <div class="card-subtitle">This wording is sent to every parent. Edit it to suit your school.</div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+            Use these placeholders and the ERP fills them in for each family:
+            <b>{student}</b> · <b>{class}</b> · <b>{amount}</b> · <b>{school}</b> · <b>{link}</b>
+          </div>
+          <textarea id="reminder-template" class="form-control" rows="8"
+            style="font-family:inherit;font-size:13px;line-height:1.6"></textarea>
+          <div class="flex gap-2" style="margin-top:10px">
+            <button class="btn btn-primary btn-sm" onclick="saveReminderTemplate()">Save Message</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetReminderTemplate()">Reset to Default</button>
+          </div>
+        </div>
+
         <div class="card">
           <div id="defaulters-list"><div class="empty-state"><div class="icon">⚠️</div><p>Click Load Defaulters to view pending fee list</p></div></div>
         </div>
@@ -627,6 +651,8 @@ function schoolHeaderLines() {
 async function loadSettings() {
   const { data } = await secureFee.from('fee_settings').select('*').eq('school_id', SCHOOL_ID).single();
   if (data) {
+    const tplBox = document.getElementById('reminder-template');
+    if (tplBox) tplBox.value = data.reminder_template || DEFAULT_REMINDER_TEMPLATE;
     collectionMode = data.collection_mode || 'term';
     termConfig = data.term_config || getDefaultTermConfig();
     document.getElementById('mode-' + collectionMode).checked = true;
@@ -1697,6 +1723,8 @@ async function loadDefaulters() {
   });
 
   defaulters.sort((a,b)=>b.totalDue-a.totalDue);
+  currentDefaulters = defaulters;
+  await loadReminderLog();
 
   if (defaulters.length===0) {
     document.getElementById('defaulters-list').innerHTML = '<div class="empty-state"><div class="icon">✅</div><p>No defaulters! All fees are paid.</p></div>';
@@ -1707,7 +1735,7 @@ async function loadDefaulters() {
     <div style="font-size:13px;font-weight:600;color:var(--danger);margin-bottom:12px">${defaulters.length} student${defaulters.length!==1?'s':''} with pending dues</div>
     <div class="table-wrap" id="defaulters-print-area">
     <table>
-      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th style="text-align:right">Amount Due</th></tr></thead>
+      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th style="text-align:right">Amount Due</th><th class="no-print">Reminder</th></tr></thead>
       <tbody>
         ${defaulters.map((s,i)=>`
           <tr>
@@ -1718,11 +1746,21 @@ async function loadDefaulters() {
             <td>${s.father_name||'—'}</td>
             <td>${s.mobile||'—'}</td>
             <td style="text-align:right;font-weight:700;color:#A32D2D">₹${s.totalDue.toLocaleString('en-IN')}</td>
+            <td class="no-print">
+              <div class="flex gap-2" style="align-items:center">
+                ${s.mobile
+                  ? `<button class="btn btn-gold btn-sm" title="Send on WhatsApp" onclick="sendReminder('${s.id}')">📱</button>`
+                  : '<span style="font-size:11px;color:var(--text-muted)">no mobile</span>'}
+                <button class="btn btn-secondary btn-sm" title="Copy message" onclick="copyReminder('${s.id}')">📋</button>
+                <span id="rem-lbl-${s.id}" style="font-size:10px;color:var(--text-muted)">${reminderAgeLabel(s.id)}</span>
+              </div>
+            </td>
           </tr>
         `).join('')}
         <tr style="border-top:2px solid var(--border);font-weight:700">
           <td colspan="6">Total Pending</td>
           <td style="text-align:right;color:var(--maroon)">₹${defaulters.reduce((s,d)=>s+d.totalDue,0).toLocaleString('en-IN')}</td>
+          <td class="no-print"></td>
         </tr>
       </tbody>
     </table>
@@ -1732,6 +1770,150 @@ async function loadDefaulters() {
 }
 
 function printDefaulters() { window.print(); }
+
+// ══════════════════════════════════════
+// FEE DUES REMINDERS
+// Builds a personal WhatsApp message for each family with pending
+// fees, opens WhatsApp with the parent's number already filled in,
+// and records that the reminder was sent.
+// ══════════════════════════════════════
+let currentDefaulters = [];
+let reminderLog = {};          // student_id -> most recent sent_at
+
+const DEFAULT_REMINDER_TEMPLATE =
+  'Dear Parent,\n\n' +
+  'This is a gentle reminder from *{school}*.\n\n' +
+  'Student: *{student}*\n' +
+  'Class: {class}\n' +
+  'Pending Fee: *\u20b9{amount}*\n\n' +
+  'Kindly clear the pending amount at your earliest convenience. ' +
+  'You may pay at the school office during working hours.\n\n' +
+  'You can check the full fee details in the Parent Portal:\n{link}\n\n' +
+  'If you have already paid, please ignore this message.\n\n' +
+  'Thank you,\n{school}';
+
+function getReminderTemplate() {
+  const box = document.getElementById('reminder-template');
+  const typed = box ? box.value.trim() : '';
+  return typed || DEFAULT_REMINDER_TEMPLATE;
+}
+
+function toggleReminderPanel() {
+  const p = document.getElementById('reminder-panel');
+  p.classList.toggle('hidden');
+  if (!p.classList.contains('hidden') && !document.getElementById('reminder-template').value) {
+    document.getElementById('reminder-template').value = DEFAULT_REMINDER_TEMPLATE;
+  }
+}
+
+function resetReminderTemplate() {
+  document.getElementById('reminder-template').value = DEFAULT_REMINDER_TEMPLATE;
+  showToast('Reset to the default wording. Click Save to keep it.', 'success');
+}
+
+async function saveReminderTemplate() {
+  const text = document.getElementById('reminder-template').value.trim();
+  const { data: existing } = await secureFee.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  let error;
+  if (existing) {
+    ({ error } = await secureFee.from('fee_settings').update({ reminder_template: text }).eq('school_id', SCHOOL_ID));
+  } else {
+    ({ error } = await secureFee.from('fee_settings').insert([{ school_id: SCHOOL_ID, reminder_template: text }]));
+  }
+  if (error) { showToast('Could not save the message: ' + error.message, 'error'); return; }
+  showToast('Reminder message saved.', 'success');
+}
+
+// Fill one family's details into the template
+function buildReminderMessage(stu) {
+  const link = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+  return getReminderTemplate()
+    .split('{school}').join(schoolHeaderName())
+    .split('{student}').join(stu.full_name || '')
+    .split('{class}').join((stu.class || '') + (stu.section ? ' ' + stu.section : ''))
+    .split('{amount}').join(Number(stu.totalDue || 0).toLocaleString('en-IN'))
+    .split('{link}').join(link);
+}
+
+// Indian mobile numbers, cleaned for wa.me
+function waNumber(mobile) {
+  let n = String(mobile || '').replace(/\D/g, '');
+  if (n.length === 10) n = '91' + n;
+  if (n.length === 11 && n.charAt(0) === '0') n = '91' + n.slice(1);
+  return n.length >= 11 ? n : '';
+}
+
+function findDefaulter(id) {
+  return currentDefaulters.filter(function (d) { return String(d.id) === String(id); })[0];
+}
+
+async function sendReminder(studentId) {
+  const stu = findDefaulter(studentId);
+  if (!stu) return;
+
+  const num = waNumber(stu.mobile);
+  if (!num) { showToast('This parent has no valid mobile number saved.', 'error'); return; }
+
+  window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(buildReminderMessage(stu)), '_blank');
+  await logReminder(stu, 'whatsapp');
+}
+
+async function copyReminder(studentId) {
+  const stu = findDefaulter(studentId);
+  if (!stu) return;
+  const msg = buildReminderMessage(stu);
+  try {
+    await navigator.clipboard.writeText(msg);
+    showToast('Message copied for ' + stu.full_name, 'success');
+  } catch (e) {
+    alert(msg);
+  }
+  await logReminder(stu, 'copied');
+}
+
+async function logReminder(stu, channel) {
+  await secureFee.from('fee_reminders').insert([{
+    school_id: SCHOOL_ID,
+    student_id: stu.id,
+    student_name: stu.full_name,
+    student_class: (stu.class || '') + (stu.section ? ' ' + stu.section : ''),
+    mobile: stu.mobile || '',
+    amount_due: stu.totalDue || 0,
+    channel: channel,
+    sent_by: STAFF_NAME || 'School Office'
+  }]);
+  reminderLog[stu.id] = new Date().toISOString();
+  refreshReminderLabel(stu.id);
+}
+
+async function loadReminderLog() {
+  const { data } = await secureFee.from('fee_reminders')
+    .select('student_id,sent_at').eq('school_id', SCHOOL_ID)
+    .order('sent_at', { ascending: false }).limit(500);
+  reminderLog = {};
+  (data || []).forEach(function (r) {
+    if (r.student_id && !reminderLog[r.student_id]) reminderLog[r.student_id] = r.sent_at;
+  });
+}
+
+function reminderAgeLabel(studentId) {
+  const last = reminderLog[studentId];
+  if (!last) return '';
+  const days = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+  if (days <= 0) return 'sent today';
+  if (days === 1) return 'sent yesterday';
+  return 'sent ' + days + 'd ago';
+}
+
+function refreshReminderLabel(studentId) {
+  const el = document.getElementById('rem-lbl-' + studentId);
+  if (el) {
+    el.textContent = reminderAgeLabel(studentId);
+    el.style.color = '#2D7A3A';
+    el.style.fontWeight = '600';
+  }
+}
+
 
 // ── STATS ──
 async function loadStats() {
