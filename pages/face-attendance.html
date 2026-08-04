@@ -558,26 +558,86 @@ async function loadTodayStats() {
 }
 
 // ── Monthly Report ──
+// Working days are counted from the attendance data itself: any date on which
+// at least one staff member punched in was a day the school actually ran.
+// Sundays, holidays and vacations therefore drop out on their own.
+let staffMonthCache = null;
+
 async function loadStaffMonthReport() {
-  const month=document.getElementById('staff-month').value;
-  if(!month){showToast('Please select a month.','error');return;}
-  const{data}=await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).gte('date',month+'-01').lte('date',month+'-31').order('staff_name').order('date');
-  if(!data||data.length===0){
-    document.getElementById('staff-month-report').innerHTML='<div class="empty-state"><div class="icon">📊</div><p>No records found.</p></div>';
+  const month = document.getElementById('staff-month').value;
+  if (!month) { showToast('Please select a month.', 'error'); return; }
+
+  const { data } = await supabase.from('staff_attendance').select('*')
+    .eq('school_id', SCHOOL_ID)
+    .gte('date', month + '-01').lte('date', month + '-31')
+    .order('staff_name').order('date');
+
+  if (!data || data.length === 0) {
+    staffMonthCache = null;
+    document.getElementById('staff-month-report').innerHTML =
+      '<div class="empty-state"><div class="icon">📊</div><p>No records found.</p></div>';
     return;
   }
-  const byStaff={};
-  data.forEach(r=>{if(!byStaff[r.staff_id])byStaff[r.staff_id]={name:r.staff_name,role:r.staff_role,records:[]};byStaff[r.staff_id].records.push(r);});
-  document.getElementById('staff-month-report').innerHTML=`
-    <div class="table-wrap"><table>
-      <thead><tr><th>Staff</th><th>Role</th><th>Days Present</th><th>Late</th><th>%</th></tr></thead>
-      <tbody>${Object.values(byStaff).map(s=>{
-        const present=s.records.filter(r=>r.status==='present').length;
-        const late=s.records.filter(r=>r.status==='late').length;
-        const pct=Math.round(((present+late)/26)*100);
-        return`<tr><td style="font-weight:600">${s.name}</td><td style="color:var(--text-muted)">${s.role}</td><td style="color:#2D7A3A;font-weight:600">${present+late}</td><td style="color:#8B5E00">${late}</td><td><span class="badge ${pct>=90?'badge-green':pct>=75?'badge-amber':'badge-red'}">${pct}%</span></td></tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
+
+  // Distinct dates with any punch = actual working days
+  const dayset = {};
+  data.forEach(r => { if (r.date) dayset[String(r.date).slice(0, 10)] = true; });
+  const workingDays = Object.keys(dayset).length;
+
+  // Group by staff, and include active staff who never punched at all
+  const byStaff = {};
+  data.forEach(r => {
+    if (!byStaff[r.staff_id]) byStaff[r.staff_id] = { name: r.staff_name, role: r.staff_role, records: [] };
+    byStaff[r.staff_id].records.push(r);
+  });
+  (staffList || []).forEach(st => {
+    if (!byStaff[st.id]) byStaff[st.id] = { name: st.name, role: st.role, records: [] };
+  });
+
+  staffMonthCache = { month: month, workingDays: workingDays, byStaff: byStaff };
+  renderStaffMonthReport(workingDays);
+}
+
+function renderStaffMonthReport(divisor) {
+  if (!staffMonthCache) return;
+  const auto = staffMonthCache.workingDays;
+  const days = Math.max(1, parseInt(divisor, 10) || auto);
+  const monthLabel = new Date(staffMonthCache.month + '-01T00:00:00')
+    .toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+  const rows = Object.values(staffMonthCache.byStaff).map(s => {
+    const present = s.records.filter(r => r.status === 'present').length;
+    const late    = s.records.filter(r => r.status === 'late').length;
+    const attended = present + late;
+    const absent  = Math.max(0, days - attended);
+    const pct = Math.round((attended / days) * 100);
+    return '<tr>' +
+      '<td style="font-weight:600">' + (s.name || '') + '</td>' +
+      '<td style="color:var(--text-muted)">' + (s.role || '') + '</td>' +
+      '<td style="color:#2D7A3A;font-weight:600">' + attended + '</td>' +
+      '<td style="color:#8B5E00">' + (late || '—') + '</td>' +
+      '<td style="color:#A32D2D">' + (absent || '—') + '</td>' +
+      '<td><span class="badge ' +
+        (pct >= 90 ? 'badge-green' : pct >= 75 ? 'badge-amber' : 'badge-red') +
+      '">' + pct + '%</span></td>' +
+    '</tr>';
+  }).join('');
+
+  document.getElementById('staff-month-report').innerHTML =
+    '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;' +
+      'color:var(--text-muted);margin-bottom:10px;padding:8px 10px;background:var(--sandal-light);border-radius:8px">' +
+      '<span>Working days in ' + monthLabel + ':</span>' +
+      '<input type="number" min="1" max="31" value="' + days + '" id="staff-wd-input" ' +
+        'onchange="renderStaffMonthReport(this.value)" ' +
+        'style="width:58px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;' +
+        'font-family:inherit;font-size:12px;font-weight:700;color:var(--maroon)">' +
+      '<span>counted from days the school actually ran' +
+        (days !== auto ? ' (auto: ' + auto + ')' : '') + '. Adjust if a day was missed.</span>' +
+    '</div>' +
+    '<div class="table-wrap"><table>' +
+      '<thead><tr><th>Staff</th><th>Role</th><th>Days Present</th><th>Late</th><th>Absent</th><th>%</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+    '</table></div>';
 }
 
 // ══════════ QR CODE ATTENDANCE (additive) ══════════
