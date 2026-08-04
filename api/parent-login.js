@@ -2,7 +2,8 @@
 // Verifies the parent's password on the SERVER. Passwords are stored
 // hashed; the browser never sees hashes, other children's data, or DOBs.
 // Default password remains the child's DOB (DDMMYYYY, or YYYYMMDD).
-// POST { admission_no, password, school_id? }
+// POST { roll_no, password, school_id? }
+// (admission_no is still accepted for older saved links)
 
 const crypto = require('crypto');
 
@@ -59,22 +60,27 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    const admNo = String(body.admission_no || '').trim().toUpperCase();
+    const loginId = String(body.roll_no || body.admission_no || '').trim().toUpperCase();
     const password = String(body.password || '');
     const schoolId = String(body.school_id || '').trim();
 
-    if (!admNo || !password) {
-      return res.status(400).json({ ok: false, error: 'Please enter admission number and password.' });
+    if (!loginId || !password) {
+      return res.status(400).json({ ok: false, error: 'Please enter roll number and password.' });
     }
 
-    // 1. Find the student
-    let path = 'students?admission_no=eq.' + encodeURIComponent(admNo) +
-      '&select=id,full_name,class,section,school_id,parent_password_hash,dob,status';
-    if (schoolId) path += '&school_id=eq.' + encodeURIComponent(schoolId);
-    const students = await sbGet(path);
+    // 1. Find the student — by roll number first, then admission number
+    const SELECT = '&select=id,full_name,class,section,school_id,roll_no,admission_no,parent_password_hash,dob,status';
+    const scope = schoolId ? '&school_id=eq.' + encodeURIComponent(schoolId) : '';
+
+    let students = await sbGet('students?roll_no=eq.' + encodeURIComponent(loginId) + SELECT + scope);
+
+    // Fall back to admission number so older logins keep working
+    if (!students || students.length === 0) {
+      students = await sbGet('students?admission_no=eq.' + encodeURIComponent(loginId) + SELECT + scope);
+    }
 
     if (!students || students.length === 0) {
-      return res.status(401).json({ ok: false, error: 'Admission number not found. Please check and try again.' });
+      return res.status(401).json({ ok: false, error: 'Roll number not found. Please check and try again.' });
     }
     if (students.length > 1) {
       return res.status(400).json({ ok: false, error: 'Please open the portal using the link shared by your school.' });
@@ -113,7 +119,8 @@ module.exports = async (req, res) => {
         student_name: student.full_name,
         class: student.class,
         section: student.section,
-        admission_no: admNo,
+        roll_no: student.roll_no || '',
+        admission_no: student.admission_no || '',
         school_id: student.school_id,
         school_name: school.name || ''
       }
