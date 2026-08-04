@@ -69,11 +69,11 @@
           <div class="flex gap-2">
             <div class="search-bar">
               <span style="color:#9B928A; font-size:14px">🔍</span>
-              <input type="text" id="search-input" placeholder="Search by name, admission no, class..." oninput="filterStudents()">
+              <input type="text" id="search-input" placeholder="Search by name, roll no, admission no..." oninput="filterStudents()">
             </div>
             <select class="form-control" id="filter-class" onchange="filterStudents()" style="width:130px; padding:7px 10px">
               <option value="">All Classes</option>
-              <option>LKG</option><option>UKG</option>
+              <option>PreKG</option><option>LKG</option><option>UKG</option>
               <option>Class 1</option><option>Class 2</option><option>Class 3</option>
               <option>Class 4</option><option>Class 5</option><option>Class 6</option>
               <option>Class 7</option><option>Class 8</option><option>Class 9</option>
@@ -83,6 +83,7 @@
               <option value="">All Years</option>
               <option>2026-27</option><option>2024-25</option><option>2023-24</option>
             </select>
+            <button class="btn btn-secondary" onclick="openRollModal()">🔢 Roll Numbers</button>
             <button class="btn btn-primary" onclick="openAddModal()">+ New Admission</button>
           </div>
         </div>
@@ -98,6 +99,7 @@
               <tr>
                 <th style="width:40px"></th>
                 <th>Admission No</th>
+                <th>Roll No</th>
                 <th>Student Name</th>
                 <th>Class</th>
                 <th>Father's Name</th>
@@ -278,12 +280,20 @@
             <label class="form-label">Applying for Class <span class="req">*</span></label>
             <select id="f-class" class="form-control">
               <option value="">Select Class</option>
-              <option>LKG</option><option>UKG</option>
+              <option>PreKG</option><option>LKG</option><option>UKG</option>
               <option>Class 1</option><option>Class 2</option><option>Class 3</option>
               <option>Class 4</option><option>Class 5</option><option>Class 6</option>
               <option>Class 7</option><option>Class 8</option><option>Class 9</option>
               <option>Class 10</option><option>Class 11</option><option>Class 12</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Roll Number <span style="font-weight:400;color:var(--text-muted);font-size:11px">(optional)</span></label>
+            <input type="text" id="f-rollno" class="form-control" placeholder="e.g. 26LK01" maxlength="12">
+          </div>
+          <div class="form-group">
+            <label class="form-label">EMIS Id <span style="font-weight:400;color:var(--text-muted);font-size:11px">(optional)</span></label>
+            <input type="text" id="f-emis" class="form-control" placeholder="e.g. 2033155317" maxlength="20">
           </div>
           <div class="form-group">
             <label class="form-label">Section</label>
@@ -371,6 +381,52 @@
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
       <button class="btn btn-danger" id="confirm-delete-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ROLL NUMBER GENERATOR MODAL -->
+<div class="modal-overlay" id="roll-modal">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <div class="modal-title">Generate Roll Numbers</div>
+      <button class="modal-close" onclick="closeRollModal()">&#10005;</button>
+    </div>
+    <div id="roll-alert" class="hidden"></div>
+    <p style="font-size:13px; color:#6B6560; line-height:1.65; margin-bottom:14px">
+      Roll numbers are built as <b>Year + Class + Serial</b> &mdash; for example
+      <b style="font-family:monospace">26LK01</b> for LKG, or
+      <b style="font-family:monospace">260201</b> for Class&nbsp;2.
+      Students are numbered in register order: boys A&ndash;Z first, then girls A&ndash;Z.
+    </p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Class <span class="req">*</span></label>
+        <select id="roll-class" class="form-control" onchange="previewRollNumbers()">
+          <option value="">Select Class</option>
+          <option>PreKG</option><option>LKG</option><option>UKG</option>
+          <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+          <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+          <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+          <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Academic Year</label>
+        <select id="roll-year" class="form-control" onchange="previewRollNumbers()">
+          <option>2026-27</option><option>2024-25</option><option>2023-24</option>
+        </select>
+      </div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0 14px; cursor:pointer">
+      <input type="checkbox" id="roll-overwrite" onchange="previewRollNumbers()">
+      <span>Also replace roll numbers that are already filled</span>
+    </label>
+    <div id="roll-preview" style="max-height:250px; overflow:auto; border:1px solid #E6DFD4; border-radius:8px; padding:6px; font-size:13px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeRollModal()">Cancel</button>
+      <button class="btn btn-primary" id="roll-apply-btn" onclick="applyRollNumbers()">Apply Roll Numbers</button>
     </div>
   </div>
 </div>
@@ -467,6 +523,7 @@ function renderTable(students) {
       <tr>
         <td><div class="avatar">${getInitials(s.full_name)}</div></td>
         <td><span class="fw-600 text-maroon">${s.admission_no || '—'}</span></td>
+        <td><span class="fw-600" style="font-family:monospace">${s.roll_no || '—'}</span></td>
         <td>
           <div class="fw-600">${s.full_name || '—'}</div>
           ${s.full_name_tamil ? `<div class="text-small text-muted">${s.full_name_tamil}</div>` : ''}
@@ -497,6 +554,8 @@ function filterStudents() {
   const filtered = allStudents.filter(s => {
     const matchSearch = !search ||
       (s.full_name || '').toLowerCase().includes(search) ||
+      (s.roll_no || '').toLowerCase().includes(search) ||
+      (s.emis_id || '').toLowerCase().includes(search) ||
       (s.admission_no || '').toLowerCase().includes(search) ||
       (s.father_name || '').toLowerCase().includes(search) ||
       (s.mobile || '').includes(search);
@@ -612,6 +671,8 @@ function editStudent(id) {
   document.getElementById('f-pincode').value = s.pincode || '';
   document.getElementById('f-class').value = s.class || '';
   document.getElementById('f-section').value = s.section || '';
+  document.getElementById('f-rollno').value = s.roll_no || '';
+  document.getElementById('f-emis').value = s.emis_id || '';
   document.getElementById('f-acyear').value = s.academic_year || '2026-27';
   document.getElementById('f-admdate').value = s.admission_date || '';
   document.getElementById('f-prevschool').value = s.prev_school || '';
@@ -659,6 +720,8 @@ async function saveStudent() {
     pincode: document.getElementById('f-pincode').value.trim(),
     class: document.getElementById('f-class').value,
     section: document.getElementById('f-section').value,
+    roll_no: document.getElementById('f-rollno').value.trim() || null,
+    emis_id: document.getElementById('f-emis').value.trim() || null,
     academic_year: document.getElementById('f-acyear').value,
     admission_date: document.getElementById('f-admdate').value,
     prev_school: document.getElementById('f-prevschool').value.trim(),
@@ -708,6 +771,8 @@ function viewStudent(id) {
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:13px">
       ${row('Class', (s.class || '') + (s.section ? ' – ' + s.section : ''))}
+      ${row('Roll Number', s.roll_no)}
+      ${row('EMIS Id', s.emis_id)}
       ${row('Academic Year', s.academic_year)}
       ${row('Date of Birth', formatDate(s.dob))}
       ${row('Gender', s.gender)}
@@ -771,7 +836,7 @@ function clearForm() {
   ['f-name','f-name-tamil','f-dob','f-gender','f-blood','f-aadhar','f-religion','f-caste','f-tongue',
    'f-father','f-mother','f-occupation','f-mobile','f-whatsapp','f-email','f-address','f-city',
    'f-district','f-pincode','f-class','f-section','f-acyear','f-admdate','f-prevschool','f-tc',
-   'f-transport','f-status'].forEach(id => {
+   'f-transport','f-status','f-rollno','f-emis'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = el.tagName === 'SELECT' ? el.options[0]?.value || '' : '';
   });
@@ -803,6 +868,152 @@ document.getElementById('view-modal').addEventListener('click', function(e) {
 document.getElementById('delete-modal').addEventListener('click', function(e) {
   if (e.target === this) closeDeleteModal();
 });
+
+// ══════════════════════════════════════════
+// ROLL NUMBER GENERATOR
+// Format: 2-digit year + class code + 2-digit serial
+//   PreKG=PK  LKG=LK  UKG=UK  Class 1=01 ... Class 12=12
+//   e.g. 26LK01 (LKG, 2026-27)   260201 (Class 2, 2026-27)
+// ══════════════════════════════════════════
+var rollPlan = [];
+
+function rollClassCode(cls) {
+  var c = String(cls || '').trim().toUpperCase().replace(/[\s\-_]/g, '');
+  if (c === 'PREKG') return 'PK';
+  if (c === 'LKG') return 'LK';
+  if (c === 'UKG') return 'UK';
+  var m = c.match(/(\d+)/);
+  if (m) return String(parseInt(m[1], 10)).padStart(2, '0');
+  return '';
+}
+
+function rollYearCode(acyear) {
+  var m = String(acyear || '').match(/(\d{4})/);
+  return m ? m[1].slice(2) : String(new Date().getFullYear()).slice(2);
+}
+
+// Register order: section, then boys A-Z, then girls A-Z
+function rollSortOrder(a, b) {
+  var sa = (a.section || '').toUpperCase(), sb = (b.section || '').toUpperCase();
+  if (sa !== sb) return sa < sb ? -1 : 1;
+  var rank = function (g) {
+    var x = String(g || '').trim().toLowerCase();
+    if (x === 'male' || x === 'm' || x === 'boy') return 0;
+    if (x === 'female' || x === 'f' || x === 'girl') return 1;
+    return 2;
+  };
+  var ra = rank(a.gender), rb = rank(b.gender);
+  if (ra !== rb) return ra - rb;
+  var na = (a.full_name || '').trim().toUpperCase();
+  var nb = (b.full_name || '').trim().toUpperCase();
+  return na < nb ? -1 : na > nb ? 1 : 0;
+}
+
+function openRollModal() {
+  document.getElementById('roll-class').value = '';
+  document.getElementById('roll-year').value = '2026-27';
+  document.getElementById('roll-overwrite').checked = false;
+  document.getElementById('roll-alert').className = 'hidden';
+  document.getElementById('roll-preview').innerHTML =
+    '<div style="padding:18px; text-align:center; color:#9B928A">Select a class to see the roll numbers.</div>';
+  rollPlan = [];
+  document.getElementById('roll-modal').classList.add('open');
+}
+
+function closeRollModal() {
+  document.getElementById('roll-modal').classList.remove('open');
+}
+
+function previewRollNumbers() {
+  var cls = document.getElementById('roll-class').value;
+  var acyear = document.getElementById('roll-year').value;
+  var overwrite = document.getElementById('roll-overwrite').checked;
+  var box = document.getElementById('roll-preview');
+  rollPlan = [];
+
+  if (!cls) {
+    box.innerHTML = '<div style="padding:18px; text-align:center; color:#9B928A">Select a class to see the roll numbers.</div>';
+    return;
+  }
+
+  var code = rollClassCode(cls);
+  var yy = rollYearCode(acyear);
+
+  var list = allStudents.filter(function (s) {
+    return s.class === cls
+      && (s.academic_year || '') === acyear
+      && (s.status || 'active') === 'active';
+  });
+  list.sort(rollSortOrder);
+
+  if (list.length === 0) {
+    box.innerHTML = '<div style="padding:18px; text-align:center; color:#9B928A">No active students found in ' +
+      cls + ' for ' + acyear + '.</div>';
+    return;
+  }
+
+  var rows = '';
+  list.forEach(function (s, i) {
+    var newRoll = yy + code + String(i + 1).padStart(2, '0');
+    var keep = !overwrite && s.roll_no;
+    if (!keep && s.roll_no !== newRoll) {
+      rollPlan.push({ id: s.id, roll_no: newRoll });
+    }
+    rows += '<div style="display:flex; justify-content:space-between; gap:10px; padding:6px 8px; border-bottom:1px solid #F0EBE3">' +
+      '<span>' + (i + 1) + '. ' + (s.full_name || '') +
+      (s.section ? ' <span style="color:#9B928A">(' + s.section + ')</span>' : '') + '</span>' +
+      '<span style="font-family:monospace; font-weight:600; color:' + (keep ? '#9B928A' : '#6B1A1A') + '">' +
+      (keep ? s.roll_no + ' (kept)' : newRoll) + '</span></div>';
+  });
+
+  box.innerHTML = rows +
+    '<div style="padding:8px; font-size:12px; color:#6B6560">' +
+    rollPlan.length + ' student' + (rollPlan.length === 1 ? '' : 's') + ' will be updated.</div>';
+}
+
+async function applyRollNumbers() {
+  if (!rollPlan.length) {
+    showRollAlert('Nothing to update. Choose a class, or tick the replace option.', 'danger');
+    return;
+  }
+
+  var btn = document.getElementById('roll-apply-btn');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+
+  var failed = 0;
+  for (var i = 0; i < rollPlan.length; i++) {
+    var r = await supabase.from('students')
+      .update({ roll_no: rollPlan[i].roll_no })
+      .eq('id', rollPlan[i].id)
+      .eq('school_id', SCHOOL_ID);
+    if (r.error) failed++;
+  }
+
+  btn.textContent = 'Apply Roll Numbers';
+  btn.disabled = false;
+
+  if (failed) {
+    showRollAlert(failed + ' of ' + rollPlan.length + ' could not be saved. A roll number may already be in use.', 'danger');
+    await loadStudents();
+    return;
+  }
+
+  closeRollModal();
+  showToast(rollPlan.length + ' roll numbers updated.', 'success');
+  await loadStudents();
+}
+
+function showRollAlert(msg, type) {
+  var el = document.getElementById('roll-alert');
+  el.className = 'alert alert-' + type;
+  el.textContent = msg;
+}
+
+document.getElementById('roll-modal').addEventListener('click', function (e) {
+  if (e.target === this) closeRollModal();
+});
+
 </script>
 </body>
 </html>

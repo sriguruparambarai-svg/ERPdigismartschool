@@ -900,12 +900,12 @@ async function searchResetStudent() {
   const q = document.getElementById('pw-reset-search').value.trim();
   const res = document.getElementById('pw-reset-results');
   if (q.length < 2) { res.style.display='none'; return; }
-  const { data } = await supabase.from('students').select('id,full_name,admission_no,class,dob').eq('school_id',SCHOOL_ID).or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(5);
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,roll_no,class,dob').eq('school_id',SCHOOL_ID).or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%,roll_no.ilike.%${q}%`).limit(5);
   if (!data||data.length===0) { res.style.display='none'; return; }
   res.style.display='block';
   res.innerHTML = data.map(s=>`
-    <div onclick="selectResetStudent('${s.id}','${s.full_name.replace(/'/g,"\\'")}','${s.admission_no}','${s.class}','${s.dob||''}')" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
-      <b>${s.full_name}</b> · ${s.admission_no} · ${s.class}
+    <div onclick="selectResetStudent('${s.id}','${s.full_name.replace(/'/g,"\\'")}','${s.roll_no || s.admission_no || ''}','${s.class}','${s.dob||''}')" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <b>${s.full_name}</b> · ${s.roll_no || s.admission_no || ''} · ${s.class}
     </div>
   `).join('');
 }
