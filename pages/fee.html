@@ -362,6 +362,55 @@
             <div id="ledger-content"></div>
           </div>
 
+          <!-- Tally / accounts export -->
+          <div class="card" style="grid-column:1 / -1">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Export to Tally &amp; Accounts</div>
+                <div class="card-subtitle">Hand your accountant a file instead of a printout. Cancelled receipts are left out automatically.</div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+              <div class="form-group">
+                <label class="form-label">From date</label>
+                <input type="date" id="tx-from" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">To date</label>
+                <input type="date" id="tx-to" class="form-control">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Company name in Tally</label>
+                <input type="text" id="tx-company" class="form-control" placeholder="Exactly as it appears in Tally">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cash ledger</label>
+                <input type="text" id="tx-cash" class="form-control" value="Cash">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Bank ledger</label>
+                <input type="text" id="tx-bank" class="form-control" value="Bank Account">
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">Used for UPI, transfer, cheque, DD</div>
+              </div>
+            </div>
+
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.7;margin-bottom:12px">
+              Each receipt becomes one <b>Receipt voucher</b>. The cash or bank ledger is debited, and each fee head
+              is credited to an income ledger of the same name &mdash; so a fee head called
+              <b>Tuition Fee</b> needs a ledger called <b>Tuition Fee</b> in Tally.
+              Create any missing ledgers in Tally first, or the import will report them as errors.
+            </div>
+
+            <div class="flex gap-2" style="flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="exportTallyXml()">Download Tally XML</button>
+              <button class="btn btn-secondary btn-sm" onclick="exportDayBookCsv()">Download Day Book (CSV)</button>
+              <button class="btn btn-secondary btn-sm" onclick="saveTallySettings()">Save These Settings</button>
+            </div>
+
+            <div id="tx-result" style="margin-top:12px"></div>
+          </div>
+
         </div>
       </div>
 
@@ -673,6 +722,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('day-report-date').value = today;
   document.getElementById('mode-month-filter').value = today.slice(0,7);
   document.getElementById('pay-date').value = today;
+  document.getElementById('tx-from').value = today.slice(0,7) + '-01';
+  document.getElementById('tx-to').value = today;
   await loadSchoolInfo();
   await loadSettings();
   await loadFeeHeads();
@@ -720,6 +771,12 @@ async function loadSettings() {
     const tplBox = document.getElementById('reminder-template');
     if (tplBox) tplBox.value = data.reminder_template || DEFAULT_REMINDER_TEMPLATE;
     if (data.late_fee_config) lateFeeConfig = Object.assign({}, lateFeeConfig, data.late_fee_config);
+    if (data.tally_config) {
+      const tc2 = data.tally_config;
+      if (tc2.company)     document.getElementById('tx-company').value = tc2.company;
+      if (tc2.cash_ledger) document.getElementById('tx-cash').value = tc2.cash_ledger;
+      if (tc2.bank_ledger) document.getElementById('tx-bank').value = tc2.bank_ledger;
+    }
     collectionMode = data.collection_mode || 'term';
     termConfig = data.term_config || getDefaultTermConfig();
     document.getElementById('mode-' + collectionMode).checked = true;
@@ -977,6 +1034,218 @@ function lateFeeForPeriod(period, pendingAmount, lateFeePaidMap) {
   const fine = computeLateFee(lateFeeConfig, overdue, pendingAmount);
   const alreadyPaid = (lateFeePaidMap && lateFeePaidMap[period]) || 0;
   return Math.max(0, fine - alreadyPaid);
+}
+
+
+// ══════════════════════════════════════
+// EXPORT TO TALLY & ACCOUNTS
+// Every receipt becomes one Receipt voucher: the cash or bank
+// ledger is debited, each fee head credited to its own income
+// ledger. Cancelled receipts are never exported.
+// In Tally, debits carry a minus sign — that is Tally's own
+// convention, not an error.
+// ══════════════════════════════════════
+
+// XML will not accept these characters raw
+function xmlSafe(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Tally wants dates as YYYYMMDD
+function tallyDate(d) {
+  const clean = String(d || '').slice(0, 10);
+  return clean.split('-').join('');
+}
+
+function tallyLedgerForMode(mode) {
+  const cash = document.getElementById('tx-cash').value.trim() || 'Cash';
+  const bank = document.getElementById('tx-bank').value.trim() || 'Bank Account';
+  return (String(mode || '').toLowerCase() === 'cash') ? cash : bank;
+}
+
+function txShowResult(msg, type) {
+  const el = document.getElementById('tx-result');
+  el.className = 'alert alert-' + (type || 'success');
+  el.textContent = msg;
+}
+
+function downloadFile(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+// Pull the receipts for the chosen dates, grouped by receipt number
+async function fetchExportRows() {
+  const from = document.getElementById('tx-from').value;
+  const to   = document.getElementById('tx-to').value;
+  if (!from || !to) { txShowResult('Please choose both a From and a To date.', 'danger'); return null; }
+  if (from > to)    { txShowResult('The From date cannot be after the To date.', 'danger'); return null; }
+
+  const { data: raw } = await secureFee.from('fee_payments').select('*')
+    .eq('school_id', SCHOOL_ID)
+    .gte('payment_date', from).lte('payment_date', to)
+    .order('payment_date');
+
+  const rows = live(raw);
+  if (!rows || rows.length === 0) {
+    txShowResult('No receipts found between those dates.', 'danger');
+    return null;
+  }
+
+  const byReceipt = {};
+  rows.forEach(function (r) {
+    if (!byReceipt[r.receipt_no]) {
+      byReceipt[r.receipt_no] = {
+        receipt_no: r.receipt_no,
+        date: r.payment_date,
+        mode: r.payment_mode,
+        student: r.student_name,
+        student_class: r.student_class,
+        admission_no: r.admission_no,
+        reference_no: r.reference_no,
+        lines: [],
+        total: 0
+      };
+    }
+    byReceipt[r.receipt_no].lines.push({ head: r.fee_head_name || 'Fee', period: r.period, amount: r.amount_paid });
+    byReceipt[r.receipt_no].total += Number(r.amount_paid) || 0;
+  });
+
+  return { from: from, to: to, receipts: Object.values(byReceipt) };
+}
+
+// ── Tally XML ──
+async function exportTallyXml() {
+  const out = await fetchExportRows();
+  if (!out) return;
+
+  const company = document.getElementById('tx-company').value.trim() || schoolHeaderName();
+  let vouchers = '';
+
+  out.receipts.forEach(function (rc) {
+    const bankLedger = tallyLedgerForMode(rc.mode);
+    const narration = 'Fee received from ' + rc.student +
+      (rc.student_class ? ' (' + rc.student_class + ')' : '') +
+      (rc.admission_no ? ' · Adm ' + rc.admission_no : '') +
+      (rc.reference_no ? ' · Ref ' + rc.reference_no : '');
+
+    // Debit: money in. Tally writes debits as negative.
+    let entries =
+      '<ALLLEDGERENTRIES.LIST>' +
+        '<LEDGERNAME>' + xmlSafe(bankLedger) + '</LEDGERNAME>' +
+        '<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>' +
+        '<AMOUNT>-' + rc.total.toFixed(2) + '</AMOUNT>' +
+      '</ALLLEDGERENTRIES.LIST>';
+
+    // Credit: one income ledger per fee head
+    rc.lines.forEach(function (ln) {
+      entries +=
+        '<ALLLEDGERENTRIES.LIST>' +
+          '<LEDGERNAME>' + xmlSafe(ln.head) + '</LEDGERNAME>' +
+          '<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>' +
+          '<AMOUNT>' + Number(ln.amount).toFixed(2) + '</AMOUNT>' +
+        '</ALLLEDGERENTRIES.LIST>';
+    });
+
+    vouchers +=
+      '<TALLYMESSAGE xmlns:UDF="TallyUDF">' +
+        '<VOUCHER VCHTYPE="Receipt" ACTION="Create" OBJVIEW="Accounting Voucher View">' +
+          '<DATE>' + tallyDate(rc.date) + '</DATE>' +
+          '<EFFECTIVEDATE>' + tallyDate(rc.date) + '</EFFECTIVEDATE>' +
+          '<VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>' +
+          '<VOUCHERNUMBER>' + xmlSafe(rc.receipt_no) + '</VOUCHERNUMBER>' +
+          '<PARTYLEDGERNAME>' + xmlSafe(bankLedger) + '</PARTYLEDGERNAME>' +
+          '<NARRATION>' + xmlSafe(narration) + '</NARRATION>' +
+          '<PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>' +
+          entries +
+        '</VOUCHER>' +
+      '</TALLYMESSAGE>';
+  });
+
+  const xml =
+    '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<ENVELOPE>' +
+      '<HEADER>' +
+        '<TALLYREQUEST>Import Data</TALLYREQUEST>' +
+      '</HEADER>' +
+      '<BODY>' +
+        '<IMPORTDATA>' +
+          '<REQUESTDESC>' +
+            '<REPORTNAME>Vouchers</REPORTNAME>' +
+            '<STATICVARIABLES>' +
+              '<SVCURRENTCOMPANY>' + xmlSafe(company) + '</SVCURRENTCOMPANY>' +
+            '</STATICVARIABLES>' +
+          '</REQUESTDESC>' +
+          '<REQUESTDATA>' + vouchers + '</REQUESTDATA>' +
+        '</IMPORTDATA>' +
+      '</BODY>' +
+    '</ENVELOPE>';
+
+  const grand = out.receipts.reduce(function (a, r) { return a + r.total; }, 0);
+  downloadFile('tally-receipts-' + out.from + '-to-' + out.to + '.xml', xml, 'application/xml;charset=utf-8');
+  txShowResult(out.receipts.length + ' receipt voucher' + (out.receipts.length === 1 ? '' : 's') +
+    ' exported, total ₹' + grand.toLocaleString('en-IN') +
+    '. In Tally: Gateway of Tally → Import → Vouchers, then choose this file.', 'success');
+}
+
+// ── Plain day book, for accountants who prefer Excel ──
+function csvCell(v) {
+  const t = String(v == null ? '' : v);
+  return '"' + t.split('"').join('""') + '"';
+}
+
+async function exportDayBookCsv() {
+  const out = await fetchExportRows();
+  if (!out) return;
+
+  const rows = [['Date','Receipt No','Student','Class','Admission No','Fee Head','Period','Payment Mode','Reference','Amount']];
+  let grand = 0;
+
+  out.receipts.sort(function (a, b) { return String(a.date).localeCompare(String(b.date)); });
+  out.receipts.forEach(function (rc) {
+    rc.lines.forEach(function (ln) {
+      grand += Number(ln.amount) || 0;
+      rows.push([
+        formatDate(rc.date), rc.receipt_no, rc.student, rc.student_class || '',
+        rc.admission_no || '', ln.head, ln.period || '',
+        String(rc.mode || '').split('_').join(' '), rc.reference_no || '',
+        Number(ln.amount).toFixed(2)
+      ]);
+    });
+  });
+  rows.push(['','','','','','','','','Total', grand.toFixed(2)]);
+
+  const csv = rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n');
+  downloadFile('day-book-' + out.from + '-to-' + out.to + '.csv', '\ufeff' + csv, 'text/csv;charset=utf-8');
+  txShowResult('Day book exported — ' + (rows.length - 2) + ' lines, total ₹' +
+    grand.toLocaleString('en-IN') + '.', 'success');
+}
+
+async function saveTallySettings() {
+  const cfg = {
+    company: document.getElementById('tx-company').value.trim(),
+    cash_ledger: document.getElementById('tx-cash').value.trim(),
+    bank_ledger: document.getElementById('tx-bank').value.trim()
+  };
+  const { data: existing } = await secureFee.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  let error;
+  if (existing) {
+    ({ error } = await secureFee.from('fee_settings').update({ tally_config: cfg }).eq('school_id', SCHOOL_ID));
+  } else {
+    ({ error } = await secureFee.from('fee_settings').insert([{ school_id: SCHOOL_ID, tally_config: cfg }]));
+  }
+  if (error) { showToast('Could not save: ' + error.message, 'error'); return; }
+  showToast('Export settings saved.', 'success');
 }
 
 // ══ STUDENT FEE OVERRIDES (custom per-student amounts, e.g. route-based van fee) ══
