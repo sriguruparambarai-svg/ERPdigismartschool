@@ -426,6 +426,35 @@
   </div>
 </div>
 
+<!-- ══ CANCEL RECEIPT MODAL ══ -->
+<div class="modal-overlay" id="cancel-modal">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-title" style="color:#A32D2D">Cancel Receipt</div>
+      <button class="modal-close" onclick="closeCancelModal()">&#10005;</button>
+    </div>
+    <div id="cancel-alert" class="hidden"></div>
+    <p style="font-size:13px;color:#6B6560;margin-bottom:10px">
+      The receipt stays on record and can still be printed, but it will be marked
+      <b>CANCELLED</b> and will no longer count towards collections or clear the
+      student's dues.
+    </p>
+    <div style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:14px">
+      <div id="cancel-receipt-no" style="font-weight:700;color:var(--maroon)"></div>
+      <div id="cancel-student-info" style="color:var(--text-muted);font-size:12px;margin-top:2px"></div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Reason for cancelling <span class="req">*</span></label>
+      <input type="text" id="cancel-reason" class="form-control" maxlength="120"
+             placeholder="e.g. Wrong amount entered, duplicate receipt, cheque bounced">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCancelModal()">Keep Receipt</button>
+      <button class="btn btn-danger" id="cancel-confirm-btn" onclick="confirmCancelReceipt()">Cancel This Receipt</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ RECEIPT MODAL ══ -->
 <div class="modal-overlay" id="receipt-modal">
   <div class="modal" style="max-width:520px">
@@ -505,6 +534,15 @@ const secureFee = {
     return b;
   }
 };
+
+// ── Cancelled receipts ──
+// A cancelled receipt stays in the database for audit, but must never
+// count towards collections or clear a student's dues. Every place that
+// adds up payments passes its rows through live() first.
+function live(rows) {
+  if (!rows) return rows;
+  return rows.filter(function (r) { return !r.is_cancelled; });
+}
 
 let feeHeads = [];
 let feeStructure = {};
@@ -1008,7 +1046,8 @@ async function selectStudentForFee(studentId) {
   const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
 
   // Load all payments for this student
-  const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+  const { data: rawPayments1 } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+  const payments = live(rawPayments1);
 
   const periods = getPeriods();
   const activeScheme = await getActiveScheme(studentId);
@@ -1146,7 +1185,8 @@ async function openCollectModal(studentId) {
   if (!student) return;
 
   const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
-  const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+  const { data: rawPayments2 } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+  const payments = live(rawPayments2);
 
   // Apply this student's custom fee amounts here too
   const { data: ovData2 } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
@@ -1315,11 +1355,19 @@ async function processPayment() {
   await loadReceipts();
 }
 
-function showReceipt(receiptNo, student, items, total, mode, date, ref) {
+function showReceipt(receiptNo, student, items, total, mode, date, ref, row) {
+  const cancelBanner = (row && row.is_cancelled)
+    ? '<div style="border:2px solid #A32D2D;color:#A32D2D;text-align:center;font-weight:800;' +
+      'letter-spacing:2px;padding:6px;border-radius:6px;margin-bottom:12px">CANCELLED' +
+      (row.cancel_reason ? '<div style="font-size:10px;font-weight:600;letter-spacing:0;margin-top:2px">' +
+        row.cancel_reason + '</div>' : '') +
+      '</div>'
+    : '';
   const school = schoolHeaderName();
   const schoolLines = schoolHeaderLines();
   document.getElementById('receipt-content').innerHTML = `
     <div class="receipt-box" id="printable-receipt">
+      ${cancelBanner}
       <div class="receipt-header">
         <div style="font-size:16px;font-weight:700;color:var(--maroon)">${school}</div>
         ${schoolLines}
@@ -1392,15 +1440,26 @@ async function loadReceipts() {
       <thead><tr><th>Receipt No</th><th>Student</th><th>Class</th><th>Items</th><th>Mode</th><th>Date</th><th style="text-align:right">Amount</th><th>Action</th></tr></thead>
       <tbody>
         ${Object.values(byReceipt).map(r=>`
-          <tr>
-            <td style="font-weight:700;color:var(--maroon)">${r.receipt_no}</td>
+          <tr${r.is_cancelled ? ' style="opacity:.55"' : ''}>
+            <td style="font-weight:700;color:var(--maroon)">${r.receipt_no}
+              ${r.is_cancelled ? '<div><span class="badge badge-red" style="font-size:9px">CANCELLED</span></div>' : ''}
+            </td>
             <td style="font-weight:500">${r.student_name}</td>
             <td>${r.student_class}</td>
-            <td style="font-size:11px;color:var(--text-muted)">${r.items.map(i=>i.fee_head_name+' ('+i.period+')').join(', ')}</td>
+            <td style="font-size:11px;color:var(--text-muted)">${r.items.map(i=>i.fee_head_name+' ('+i.period+')').join(', ')}
+              ${r.is_cancelled && r.cancel_reason ? `<div style="color:#A32D2D;margin-top:3px">Reason: ${r.cancel_reason}</div>` : ''}
+            </td>
             <td><span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${r.payment_mode.replace('_',' ')}</span></td>
             <td>${formatDate(r.payment_date)}</td>
-            <td style="text-align:right;font-weight:700;color:#2D7A3A">₹${r.total.toLocaleString('en-IN')}</td>
-            <td><button class="btn btn-secondary btn-sm" onclick="reprintReceipt('${r.receipt_no}')">🖨</button></td>
+            <td style="text-align:right;font-weight:700;color:${r.is_cancelled ? '#9B928A' : '#2D7A3A'}${r.is_cancelled ? ';text-decoration:line-through' : ''}">₹${r.total.toLocaleString('en-IN')}</td>
+            <td>
+              <div class="flex gap-2">
+                <button class="btn btn-secondary btn-sm" title="Print" onclick="reprintReceipt('${r.receipt_no}')">🖨</button>
+                ${(!r.is_cancelled && !isFeeCollectionOnly())
+                  ? `<button class="btn btn-danger btn-sm" title="Cancel receipt" onclick="askCancelReceipt('${r.receipt_no}', '${(r.student_name||'').replace(/'/g,"\\'")}', ${r.total})">✕</button>`
+                  : ''}
+              </div>
+            </td>
           </tr>
         `).join('')}
       </tbody>
@@ -1413,16 +1472,83 @@ async function reprintReceipt(receiptNo) {
   const { data } = await secureFee.from('fee_payments').select('*').eq('receipt_no', receiptNo).eq('school_id',SCHOOL_ID);
   if (!data || data.length===0) return;
   const total = data.reduce((s,r)=>s+r.amount_paid,0);
-  const student = { full_name: data[0].student_name, admission_no: data[0].admission_no, class: data[0].student_class, section: '', father_name: '' };
+  const student = { full_name: data[0].student_name, admission_no: data[0].admission_no, roll_no: data[0].roll_no, class: data[0].student_class, section: '', father_name: '' };
   const items = data.map(r=>({ fee_head_name: r.fee_head_name, period: r.period, amount: r.amount_paid }));
-  showReceipt(receiptNo, student, items, total, data[0].payment_mode, data[0].payment_date, data[0].reference_no);
+  showReceipt(receiptNo, student, items, total, data[0].payment_mode, data[0].payment_date, data[0].reference_no, data[0]);
 }
+
+// ══════════════════════════════════════
+// CANCEL A RECEIPT
+// The row is kept for audit — only flagged. Nothing is deleted.
+// ══════════════════════════════════════
+let cancellingReceiptNo = null;
+
+function askCancelReceipt(receiptNo, studentName, total) {
+  cancellingReceiptNo = receiptNo;
+  document.getElementById('cancel-receipt-no').textContent = receiptNo;
+  document.getElementById('cancel-student-info').textContent =
+    studentName + '  ·  ₹' + Number(total || 0).toLocaleString('en-IN');
+  document.getElementById('cancel-reason').value = '';
+  document.getElementById('cancel-alert').className = 'hidden';
+  document.getElementById('cancel-modal').classList.add('open');
+}
+
+function closeCancelModal() {
+  cancellingReceiptNo = null;
+  document.getElementById('cancel-modal').classList.remove('open');
+}
+
+function showCancelAlert(msg) {
+  const el = document.getElementById('cancel-alert');
+  el.className = 'alert alert-danger';
+  el.textContent = '⚠️ ' + msg;
+}
+
+async function confirmCancelReceipt() {
+  if (!cancellingReceiptNo) return;
+
+  const reason = document.getElementById('cancel-reason').value.trim();
+  if (reason.length < 4) {
+    showCancelAlert('Please write a short reason — this is kept for the audit record.');
+    return;
+  }
+
+  const btn = document.getElementById('cancel-confirm-btn');
+  btn.textContent = 'Cancelling...';
+  btn.disabled = true;
+
+  const { error } = await secureFee.from('fee_payments').update({
+    is_cancelled: true,
+    cancelled_at: new Date().toISOString(),
+    cancelled_by: (STAFF_NAME || sessionStorage.getItem('school_name') || 'School Office'),
+    cancel_reason: reason
+  }).eq('receipt_no', cancellingReceiptNo).eq('school_id', SCHOOL_ID);
+
+  btn.textContent = 'Cancel This Receipt';
+  btn.disabled = false;
+
+  if (error) {
+    showCancelAlert(error.message || 'Could not cancel this receipt.');
+    return;
+  }
+
+  const doneNo = cancellingReceiptNo;
+  closeCancelModal();
+  showToast('Receipt ' + doneNo + ' cancelled. It is still on record.', 'success');
+  await loadReceipts();
+  await loadStats();
+}
+
+document.getElementById('cancel-modal').addEventListener('click', function (e) {
+  if (e.target === this) closeCancelModal();
+});
 
 // ── REPORTS ──
 async function loadDayReport() {
   const date = document.getElementById('day-report-date').value;
   if (!date) return;
-  const { data } = await secureFee.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
+  const { data: rawDay } = await secureFee.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
+  const data = live(rawDay);
   if (!data || data.length===0) {
     document.getElementById('day-report').innerHTML = '<div class="empty-state"><div class="icon">📅</div><p>No collections on this date.</p></div>';
     return;
@@ -1446,7 +1572,8 @@ async function loadDayReport() {
 }
 
 async function loadClassReport() {
-  const { data } = await secureFee.from('fee_payments').select('student_class,amount_paid').eq('school_id',SCHOOL_ID);
+  const { data: rawClass } = await secureFee.from('fee_payments').select('student_class,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID);
+  const data = live(rawClass);
   if (!data || data.length===0) { document.getElementById('class-report').innerHTML = '<div class="empty-state"><div class="icon">🏫</div><p>No data.</p></div>'; return; }
 
   const byClass = {};
@@ -1466,7 +1593,8 @@ async function loadClassReport() {
 async function loadModeReport() {
   const month = document.getElementById('mode-month-filter').value;
   if (!month) return;
-  const { data } = await secureFee.from('fee_payments').select('payment_mode,amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-31');
+  const { data: rawMode } = await secureFee.from('fee_payments').select('payment_mode,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-31');
+  const data = live(rawMode);
   if (!data || data.length===0) { document.getElementById('mode-report').innerHTML = '<div class="empty-state"><div class="icon">💳</div><p>No data for this month.</p></div>'; return; }
 
   const byMode = {};
@@ -1503,7 +1631,8 @@ async function searchLedgerStudent() {
 
 async function loadLedger(studentId) {
   document.getElementById('ledger-results').innerHTML = '';
-  const { data: payments } = await secureFee.from('fee_payments').select('*').eq('student_id',studentId).order('payment_date');
+  const { data: rawLedger } = await secureFee.from('fee_payments').select('*').eq('student_id',studentId).order('payment_date');
+  const payments = live(rawLedger);
   const { data: student } = await supabase.from('students').select('full_name,admission_no,class').eq('id',studentId).single();
   if (!payments || payments.length===0) { document.getElementById('ledger-content').innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:12px 0">No payments found for this student.</div>'; return; }
   const total = payments.reduce((s,r)=>s+r.amount_paid,0);
@@ -1532,7 +1661,8 @@ async function loadDefaulters() {
   if (!students || students.length===0) { document.getElementById('defaulters-list').innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No students found.</p></div>'; return; }
 
   // Get all payments
-  const { data: payments } = await secureFee.from('fee_payments').select('student_id,fee_head_id,period,amount_paid').eq('school_id',SCHOOL_ID);
+  const { data: rawDef } = await secureFee.from('fee_payments').select('student_id,fee_head_id,period,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID);
+  const payments = live(rawDef);
   const paidMap = {};
   if (payments) payments.forEach(p => {
     const key = p.student_id + '_' + p.fee_head_id + '_' + p.period;
@@ -1605,7 +1735,8 @@ function printDefaulters() { window.print(); }
 
 // ── STATS ──
 async function loadStats() {
-  const { data: payments } = await secureFee.from('fee_payments').select('amount_paid,payment_date').eq('school_id',SCHOOL_ID);
+  const { data: rawStats } = await secureFee.from('fee_payments').select('amount_paid,payment_date,is_cancelled').eq('school_id',SCHOOL_ID);
+  const payments = live(rawStats);
   if (!payments) return;
 
   const total = payments.reduce((s,r)=>s+r.amount_paid,0);
