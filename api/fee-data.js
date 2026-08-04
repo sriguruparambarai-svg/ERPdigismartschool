@@ -18,7 +18,8 @@ const ALLOWED_TABLES = [
   'fee_heads',
   'fee_structure',
   'fee_payments',
-  'student_fee_overrides'
+  'student_fee_overrides',
+  'fee_reminders'
 ];
 const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete'];
 const ALLOWED_FILTER_OPS = ['eq', 'in', 'gte', 'lte'];
