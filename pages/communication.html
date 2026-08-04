@@ -389,7 +389,7 @@
               1. Copy the portal link above<br>
               2. Send it to parents via WhatsApp class group<br>
               3. Parents tap the link → opens Parent Portal<br>
-              4. They log in with: <b style="color:var(--maroon)">Admission No + DOB as password</b><br>
+              4. They log in with: <b style="color:var(--maroon)">Roll No + DOB as password</b><br>
               5. They install it as an app on their phone<br><br>
               <b style="color:var(--maroon)">Default Password Format:</b><br>
               Date of birth as DDMMYYYY<br>
@@ -860,7 +860,7 @@ function openPortalLink() {
 
 function buildPortalWAMsg(url) {
   const schoolName = sessionStorage.getItem('school_name') || 'Our School';
-  return `📱 *${schoolName} — Parent Portal*\n\nDear Parents,\n\nWe are happy to introduce our new *DigiSmart ERP Parent Portal* — where you can view:\n✅ Daily Homework\n📢 School Notices & Circulars\n🏖 Holiday Announcements\n🗓 Upcoming Events\n📋 Consent Forms\n\n*How to access:*\n1. Tap this link: ${url}\n2. Enter your child's Admission Number\n3. Password: Child's Date of Birth (DDMMYYYY)\n   Example: 15 April 2012 → 15042012\n4. Install as app on your phone for easy access\n\nFor any help, contact the school office.\n\n_Powered by DigiSmart ERP_`;
+  return `📱 *${schoolName} — Parent Portal*\n\nDear Parents,\n\nWe are happy to introduce our new *DigiSmart ERP Parent Portal* — where you can view:\n✅ Daily Homework\n📢 School Notices & Circulars\n🏖 Holiday Announcements\n🗓 Upcoming Events\n📋 Consent Forms\n\n*How to access:*\n1. Tap this link: ${url}\n2. Enter your child's Roll Number\n3. Password: Child's Date of Birth (DDMMYYYY)\n   Example: 15 April 2012 → 15042012\n4. Install as app on your phone for easy access\n\nFor any help, contact the school office.\n\n_Powered by DigiSmart ERP_`;
 }
 
 function copyPortalWAMsg() {
@@ -870,11 +870,11 @@ function copyPortalWAMsg() {
 async function loadStudentPortalLinks() {
   const cls = document.getElementById('plink-class').value;
   if (!cls) return;
-  const { data } = await supabase.from('students').select('full_name,admission_no,class').eq('school_id',SCHOOL_ID).eq('class',cls).eq('status','active').order('full_name').limit(50);
+  const { data } = await supabase.from('students').select('full_name,admission_no,roll_no,class').eq('school_id',SCHOOL_ID).eq('class',cls).eq('status','active').order('roll_no').order('full_name').limit(50);
   if (!data||data.length===0) { document.getElementById('student-portal-links').innerHTML='<div class="empty-state"><div class="icon">👥</div><p>No students found.</p></div>'; return; }
   const baseUrl = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
   document.getElementById('student-portal-links').innerHTML = `
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${data.length} students · share admission no + DOB as password</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${data.length} students · share roll no + DOB as password</div>
     <table style="font-size:12px;width:100%;border-collapse:collapse">
       <thead><tr><th style="text-align:left;padding:6px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Student</th><th style="text-align:left;padding:6px 8px;background:var(--bg);border-bottom:1px solid var(--border)">Login ID</th></tr></thead>
       <tbody>
@@ -882,7 +882,7 @@ async function loadStudentPortalLinks() {
           <tr>
             <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-weight:500">${s.full_name}</td>
             <td style="padding:7px 8px;border-bottom:1px solid var(--border)">
-              <span style="font-family:monospace;color:var(--maroon);font-weight:600">${s.admission_no}</span>
+              <span style="font-family:monospace;color:var(--maroon);font-weight:600">${s.roll_no || s.admission_no || '—'}</span>
             </td>
           </tr>
         `).join('')}
