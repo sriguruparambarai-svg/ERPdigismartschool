@@ -545,11 +545,45 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('day-report-date').value = today;
   document.getElementById('mode-month-filter').value = today.slice(0,7);
   document.getElementById('pay-date').value = today;
+  await loadSchoolInfo();
   await loadSettings();
   await loadFeeHeads();
   await loadStats();
   await loadReceipts();
 });
+
+// ── SCHOOL DETAILS (for the receipt header) ──
+// Falls back to the login session, then to a neutral label, so the
+// receipt always prints something sensible even if a field is missing.
+let schoolInfo = null;
+
+async function loadSchoolInfo() {
+  try {
+    const { data } = await supabase.from('schools').select('*')
+      .eq('school_id', SCHOOL_ID).single();
+    if (data) schoolInfo = data;
+  } catch (e) { schoolInfo = null; }
+}
+
+function schoolHeaderName() {
+  return (schoolInfo && schoolInfo.name)
+    || sessionStorage.getItem('school_name')
+    || 'School Fee Receipt';
+}
+
+function schoolHeaderLines() {
+  if (!schoolInfo) return '';
+  const addr = [schoolInfo.address, schoolInfo.city, schoolInfo.pincode]
+    .filter(Boolean).join(', ');
+  const contact = [
+    schoolInfo.phone || schoolInfo.mobile,
+    schoolInfo.email
+  ].filter(Boolean).join('  \u00b7  ');
+  let html = '';
+  if (addr) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:3px">' + addr + '</div>';
+  if (contact) html += '<div style="font-size:11px;color:var(--text-muted);margin-top:1px">' + contact + '</div>';
+  return html;
+}
 
 // ── LOAD SETTINGS ──
 async function loadSettings() {
@@ -935,7 +969,7 @@ async function searchStudents() {
   const q = document.getElementById('search-student').value.trim();
   if (q.length < 2) { document.getElementById('search-results').innerHTML = ''; return; }
 
-  const { data } = await supabase.from('students').select('id,full_name,admission_no,class,section,father_name,mobile').eq('school_id',SCHOOL_ID).eq('status','active')
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,father_name,mobile').eq('school_id',SCHOOL_ID).eq('status','active')
     .or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%`).limit(8);
 
   if (!data || data.length === 0) {
@@ -1282,12 +1316,14 @@ async function processPayment() {
 }
 
 function showReceipt(receiptNo, student, items, total, mode, date, ref) {
-  const school = 'DigiSmart ERP School';
+  const school = schoolHeaderName();
+  const schoolLines = schoolHeaderLines();
   document.getElementById('receipt-content').innerHTML = `
     <div class="receipt-box" id="printable-receipt">
       <div class="receipt-header">
         <div style="font-size:16px;font-weight:700;color:var(--maroon)">${school}</div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Fee Receipt</div>
+        ${schoolLines}
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px;font-weight:600;letter-spacing:.5px">FEE RECEIPT</div>
         <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px">
           <span><b>Receipt No:</b> <span style="color:var(--maroon);font-weight:700">${receiptNo}</span></span>
           <span><b>Date:</b> ${formatDate(date)}</span>
@@ -1295,7 +1331,8 @@ function showReceipt(receiptNo, student, items, total, mode, date, ref) {
       </div>
       <div style="margin-bottom:12px;font-size:13px">
         <div class="receipt-row"><span>Student Name</span><span style="font-weight:600">${student.full_name}</span></div>
-        <div class="receipt-row"><span>Admission No</span><span>${student.admission_no}</span></div>
+        <div class="receipt-row"><span>Admission No</span><span>${student.admission_no || '\u2014'}</span></div>
+        ${student.roll_no ? `<div class="receipt-row"><span>Roll No</span><span>${student.roll_no}</span></div>` : ''}
         <div class="receipt-row"><span>Class</span><span>${student.class}${student.section?' '+student.section:''}</span></div>
         <div class="receipt-row"><span>Father's Name</span><span>${student.father_name||'—'}</span></div>
       </div>
@@ -1488,7 +1525,7 @@ async function loadDefaulters() {
   const period = document.getElementById('def-period').value;
 
   // Get all active students
-  let studentQuery = supabase.from('students').select('id,full_name,admission_no,class,section,mobile,father_name').eq('school_id',SCHOOL_ID).eq('status','active');
+  let studentQuery = supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,mobile,father_name').eq('school_id',SCHOOL_ID).eq('status','active');
   if (cls) studentQuery = studentQuery.eq('class',cls);
   const { data: students } = await studentQuery;
 
