@@ -150,7 +150,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div>
         <div class="stu-name" id="stu-name">Loading...</div>
         <div class="stu-class" id="stu-class">Class —</div>
-        <div class="stu-adm" id="stu-adm">Adm No: —</div>
+        <div class="stu-adm" id="stu-adm">Roll No: —</div>
       </div>
     </div>
 
@@ -421,7 +421,9 @@ function setupUI() {
   document.getElementById('stu-avatar').textContent = initials;
   document.getElementById('stu-name').textContent = session.student_name;
   document.getElementById('stu-class').textContent = 'Class ' + session.class + (session.section?' – '+session.section:'');
-  document.getElementById('stu-adm').textContent = 'Adm No: ' + session.admission_no;
+  document.getElementById('stu-adm').textContent = session.roll_no
+    ? 'Roll No: ' + session.roll_no
+    : 'Adm No: ' + (session.admission_no || '');
   document.getElementById('set-avatar').textContent = initials;
   document.getElementById('set-name').textContent = session.student_name;
   document.getElementById('set-class').textContent = session.class + (session.section?' – '+session.section:'');

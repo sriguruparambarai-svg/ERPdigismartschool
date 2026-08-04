@@ -79,10 +79,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div id="login-alert" class="alert-box"></div>
 
     <div class="input-group">
-      <label class="input-label">Admission Number</label>
+      <label class="input-label">Roll Number</label>
       <div class="input-wrap">
         <span class="input-icon">🎫</span>
-        <input type="text" id="adm-no" class="inp" placeholder="e.g. 2025-0042" autocomplete="username" autocapitalize="characters">
+        <input type="text" id="adm-no" class="inp" placeholder="e.g. 26LK01" autocomplete="username" autocapitalize="characters">
       </div>
     </div>
 
@@ -104,7 +104,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
   <div class="help-text">
     <b>First time login?</b><br>
-    Admission No: Found on your child's I-Card<br>
+    Roll No: Found on your child's I-Card or ask the class teacher<br>
     Default Password: Child's date of birth (DDMMYYYY)<br>
     Example: 15042012 for 15 April 2012
   </div>
@@ -169,13 +169,13 @@ async function loadSchoolInfo(sid) {
 }
 
 async function doParentLogin() {
-  const admNo = document.getElementById('adm-no').value.trim().toUpperCase();
+  const admNo = document.getElementById('adm-no').value.trim().toUpperCase();  // roll number
   const pw = document.getElementById('parent-pw').value;
   const btn = document.getElementById('login-btn');
   const alertEl = document.getElementById('login-alert');
   alertEl.className = 'alert-box';
 
-  if (!admNo || !pw) { showAlert('⚠️ Please enter admission number and password.'); return; }
+  if (!admNo || !pw) { showAlert('⚠️ Please enter roll number and password.'); return; }
 
   btn.textContent = 'Signing in...'; btn.disabled = true;
 
@@ -185,7 +185,7 @@ async function doParentLogin() {
     const res = await fetch('/api/parent-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ admission_no: admNo, password: pw, school_id: schoolId || '' })
+      body: JSON.stringify({ roll_no: admNo, password: pw, school_id: schoolId || '' })
     });
     const result = await res.json();
     btn.textContent = 'Sign In →'; btn.disabled = false;
