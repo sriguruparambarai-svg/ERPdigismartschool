@@ -187,6 +187,72 @@
           </div>
         </div>
 
+
+        <!-- Late Fee Rules -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Late Fee Rules</div>
+              <div class="card-subtitle">Charged automatically once a fee passes its due date. Leave switched off if your school does not charge fines.</div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer">
+              <input type="checkbox" id="lf-enabled" onchange="toggleLateFeeUI()" style="width:16px;height:16px;cursor:pointer">
+              <span>Enable late fee</span>
+            </label>
+          </div>
+
+          <div id="lf-body" class="hidden">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
+              <div class="form-group">
+                <label class="form-label">Charge type</label>
+                <select id="lf-mode" class="form-control" onchange="updateLateFeeHint()">
+                  <option value="fixed">Fixed amount (₹)</option>
+                  <option value="percent">Percentage of pending amount</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" id="lf-amount-label">Amount (₹)</label>
+                <input type="number" id="lf-amount" class="form-control" min="0" step="1" value="0" oninput="updateLateFeeHint()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Grace period (days)</label>
+                <input type="number" id="lf-grace" class="form-control" min="0" step="1" value="0" oninput="updateLateFeeHint()">
+              </div>
+              <div class="form-group">
+                <label class="form-label">How often</label>
+                <select id="lf-frequency" class="form-control" onchange="updateLateFeeHint()">
+                  <option value="once">One time only</option>
+                  <option value="daily">Per day late</option>
+                  <option value="weekly">Per week late</option>
+                  <option value="monthly">Per month late</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Maximum fine (₹)</label>
+                <input type="number" id="lf-max" class="form-control" min="0" step="1" value="0" oninput="updateLateFeeHint()">
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">0 means no upper limit</div>
+              </div>
+              <div class="form-group" id="lf-dueday-group">
+                <label class="form-label">Monthly fee due on day</label>
+                <input type="number" id="lf-dueday" class="form-control" min="1" max="28" step="1" value="10" oninput="updateLateFeeHint()">
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">Used only for month-wise collection</div>
+              </div>
+            </div>
+
+            <div id="lf-hint" style="margin-top:6px;padding:10px 12px;background:var(--sandal-light);border-radius:8px;font-size:12px;color:var(--text)"></div>
+
+            <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.7">
+              A fine is only worked out for periods that have a <b>due date</b> set above.
+              Term dates come from Term Names &amp; Due Dates; month-wise fees use the day of the month you set here.
+              The office can always untick a fine while collecting, so genuine cases can be excused.
+            </div>
+
+            <div style="margin-top:12px">
+              <button class="btn btn-gold btn-sm" onclick="saveLateFeeRules()">Save Late Fee Rules</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Fee Heads -->
         <div class="card" style="margin-bottom:16px">
           <div class="card-header">
@@ -653,6 +719,7 @@ async function loadSettings() {
   if (data) {
     const tplBox = document.getElementById('reminder-template');
     if (tplBox) tplBox.value = data.reminder_template || DEFAULT_REMINDER_TEMPLATE;
+    if (data.late_fee_config) lateFeeConfig = Object.assign({}, lateFeeConfig, data.late_fee_config);
     collectionMode = data.collection_mode || 'term';
     termConfig = data.term_config || getDefaultTermConfig();
     document.getElementById('mode-' + collectionMode).checked = true;
@@ -672,6 +739,7 @@ async function loadSettings() {
   }
   updateModeUI();
   populateDefPeriod();
+  fillLateFeeForm(lateFeeConfig);
 }
 
 function getDefaultTermConfig() {
@@ -753,6 +821,162 @@ function getPeriods() {
     const custom = document.getElementById('custom-periods').value;
     return custom ? custom.split(',').map(s=>s.trim()).filter(Boolean) : [];
   }
+}
+
+
+// ══════════════════════════════════════
+// LATE FEE RULES
+// A fine is worked out only for periods that have a due date and
+// still have money outstanding. Nothing is charged automatically
+// in the background — the fine appears while collecting, and the
+// office can untick it to excuse a family.
+// ══════════════════════════════════════
+
+// A fixed id so late-fee rows are easy to find in reports.
+// It is not a real fee head and never appears in Fee Structure.
+const LATE_FEE_ID = '00000000-0000-4000-8000-0000000000fe';
+const LATE_FEE_NAME = 'Late Fee';
+
+let lateFeeConfig = {
+  enabled: false, mode: 'fixed', amount: 0,
+  grace_days: 0, frequency: 'once', max_amount: 0, due_day: 10
+};
+
+function toggleLateFeeUI() {
+  const on = document.getElementById('lf-enabled').checked;
+  document.getElementById('lf-body').classList.toggle('hidden', !on);
+  if (on) updateLateFeeHint();
+}
+
+function readLateFeeForm() {
+  return {
+    enabled: document.getElementById('lf-enabled').checked,
+    mode: document.getElementById('lf-mode').value,
+    amount: parseFloat(document.getElementById('lf-amount').value) || 0,
+    grace_days: parseInt(document.getElementById('lf-grace').value, 10) || 0,
+    frequency: document.getElementById('lf-frequency').value,
+    max_amount: parseFloat(document.getElementById('lf-max').value) || 0,
+    due_day: parseInt(document.getElementById('lf-dueday').value, 10) || 10
+  };
+}
+
+function fillLateFeeForm(c) {
+  document.getElementById('lf-enabled').checked = !!c.enabled;
+  document.getElementById('lf-mode').value = c.mode || 'fixed';
+  document.getElementById('lf-amount').value = c.amount || 0;
+  document.getElementById('lf-grace').value = c.grace_days || 0;
+  document.getElementById('lf-frequency').value = c.frequency || 'once';
+  document.getElementById('lf-max').value = c.max_amount || 0;
+  document.getElementById('lf-dueday').value = c.due_day || 10;
+  toggleLateFeeUI();
+}
+
+// Plain-English preview so the school can see what the rule means
+function updateLateFeeHint() {
+  const c = readLateFeeForm();
+  document.getElementById('lf-amount-label').textContent =
+    c.mode === 'percent' ? 'Percentage (%)' : 'Amount (\u20b9)';
+  document.getElementById('lf-dueday-group').style.display =
+    (collectionMode === 'month') ? '' : 'none';
+
+  const unit = c.mode === 'percent'
+    ? c.amount + '% of the pending amount'
+    : '\u20b9' + Number(c.amount).toLocaleString('en-IN');
+  const how = { once: 'once', daily: 'for every day late',
+                weekly: 'for every week late', monthly: 'for every month late' }[c.frequency];
+  let txt = 'A parent paying late is charged ' + unit + ' ' + how + '.';
+  if (c.grace_days > 0) txt += ' Nothing is charged for the first ' + c.grace_days + ' day' + (c.grace_days > 1 ? 's' : '') + ' after the due date.';
+  if (c.max_amount > 0) txt += ' The fine never goes above \u20b9' + Number(c.max_amount).toLocaleString('en-IN') + ' per period.';
+
+  // A worked example makes the rule concrete
+  const example = computeLateFee(c, 30, 5000);
+  if (example > 0) {
+    txt += ' Example: a \u20b95,000 fee paid 30 days late would carry a fine of \u20b9' +
+           example.toLocaleString('en-IN') + '.';
+  }
+  document.getElementById('lf-hint').textContent = txt;
+}
+
+async function saveLateFeeRules() {
+  const cfg = readLateFeeForm();
+  if (cfg.enabled && cfg.amount <= 0) {
+    showToast('Please enter the fine amount before saving.', 'error');
+    return;
+  }
+  const { data: existing } = await secureFee.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  let error;
+  if (existing) {
+    ({ error } = await secureFee.from('fee_settings').update({ late_fee_config: cfg }).eq('school_id', SCHOOL_ID));
+  } else {
+    ({ error } = await secureFee.from('fee_settings').insert([{ school_id: SCHOOL_ID, late_fee_config: cfg }]));
+  }
+  if (error) { showToast('Could not save: ' + error.message, 'error'); return; }
+  lateFeeConfig = cfg;
+  showToast(cfg.enabled ? 'Late fee rules saved.' : 'Late fee switched off.', 'success');
+}
+
+// ── The actual sum ──
+function computeLateFee(cfg, daysPastDue, pendingAmount) {
+  if (!cfg || !cfg.enabled) return 0;
+  const late = daysPastDue - (cfg.grace_days || 0);
+  if (late <= 0) return 0;
+
+  const base = cfg.mode === 'percent'
+    ? (pendingAmount * (cfg.amount || 0)) / 100
+    : (cfg.amount || 0);
+  if (base <= 0) return 0;
+
+  let units = 1;
+  if (cfg.frequency === 'daily')   units = late;
+  if (cfg.frequency === 'weekly')  units = Math.ceil(late / 7);
+  if (cfg.frequency === 'monthly') units = Math.ceil(late / 30);
+
+  let fine = Math.round(base * units);
+  if (cfg.max_amount > 0 && fine > cfg.max_amount) fine = cfg.max_amount;
+  return fine;
+}
+
+// ── When is a given period due? ──
+const LF_MONTHS = ['January','February','March','April','May','June',
+                   'July','August','September','October','November','December'];
+
+function periodDueDate(period) {
+  if (collectionMode === 'term') {
+    const t = (termConfig || []).filter(function (x) { return x.name === period; })[0];
+    return (t && t.due) ? t.due : null;
+  }
+  if (collectionMode === 'month') {
+    const mi = LF_MONTHS.indexOf(period);
+    if (mi < 0) return null;
+    // Work out which calendar year this fee month belongs to
+    const now = new Date();
+    let startYear = now.getFullYear();
+    if (now.getMonth() < monthStart) startYear -= 1;
+    const year = (mi >= monthStart) ? startYear : startYear + 1;
+    const day = Math.min(Math.max(lateFeeConfig.due_day || 10, 1), 28);
+    return year + '-' + String(mi + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+  }
+  return null;   // custom schedules have no due dates
+}
+
+function daysPastDue(dueDateStr) {
+  if (!dueDateStr) return 0;
+  const due = new Date(dueDateStr + 'T00:00:00');
+  if (isNaN(due.getTime())) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today - due) / 86400000);
+}
+
+// Fine owed on one period, minus any late fee already collected for it
+function lateFeeForPeriod(period, pendingAmount, lateFeePaidMap) {
+  if (!lateFeeConfig.enabled || pendingAmount <= 0) return 0;
+  const due = periodDueDate(period);
+  if (!due) return 0;
+  const overdue = daysPastDue(due);
+  const fine = computeLateFee(lateFeeConfig, overdue, pendingAmount);
+  const alreadyPaid = (lateFeePaidMap && lateFeePaidMap[period]) || 0;
+  return Math.max(0, fine - alreadyPaid);
 }
 
 // ══ STUDENT FEE OVERRIDES (custom per-student amounts, e.g. route-based van fee) ══
@@ -1219,13 +1443,19 @@ async function openCollectModal(studentId) {
   applyStudentOverrides(structure, ovData2 || [], getPeriods());
 
   const paidMap = {};
+  const lateFeePaid = {};
   if (payments) payments.forEach(p => {
+    if (p.fee_head_id === LATE_FEE_ID) {
+      lateFeePaid[p.period] = (lateFeePaid[p.period] || 0) + p.amount_paid;
+      return;
+    }
     const key = p.fee_head_id + '_' + p.period;
     paidMap[key] = (paidMap[key] || 0) + p.amount_paid;
   });
 
   const periods = getPeriods();
   currentCollectItems = [];
+  const pendingByPeriod = {};
 
   // Build checkboxes for each unpaid item
   let itemsHtml = '<div style="max-height:280px;overflow-y:auto">';
@@ -1252,6 +1482,7 @@ async function openCollectModal(studentId) {
       if (balance <= 0) return; // Already paid
 
       const itemId = `item-${s.fee_head_id}-${p.replace(/\s/g,'_')}`;
+      pendingByPeriod[p] = (pendingByPeriod[p] || 0) + balance;
       currentCollectItems.push({ id: itemId, fee_head_id: s.fee_head_id, fee_head_name: s.fee_head_name, period: p, amount: balance, original: amt, paid });
 
       itemsHtml += `
@@ -1265,6 +1496,31 @@ async function openCollectModal(studentId) {
         </label>
       `;
     });
+  });
+
+  // Late fee lines — one per overdue period, ticked by default but waivable
+  Object.keys(pendingByPeriod).forEach(function (p) {
+    const fine = lateFeeForPeriod(p, pendingByPeriod[p], lateFeePaid);
+    if (fine <= 0) return;
+
+    const due = periodDueDate(p);
+    const overdue = daysPastDue(due);
+    const itemId = 'item-latefee-' + p.replace(/\s/g, '_');
+    currentCollectItems.push({
+      id: itemId, fee_head_id: LATE_FEE_ID, fee_head_name: LATE_FEE_NAME,
+      period: p, amount: fine, original: fine, paid: 0, is_late_fee: true
+    });
+
+    itemsHtml += `
+      <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #E3B7B7;border-radius:8px;cursor:pointer;margin-bottom:6px;background:#FDF6F6">
+        <input type="checkbox" id="${itemId}" value="${fine}" checked onchange="toggleItemAmount('${itemId}')" style="width:16px;height:16px;cursor:pointer">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px;color:#A32D2D">⚠️ ${LATE_FEE_NAME}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${p} · ${overdue} day${overdue === 1 ? '' : 's'} past due (${formatDate(due)}) · untick to waive</div>
+        </div>
+        <input type="number" id="${itemId}-amt" class="form-control" style="width:100px;text-align:right;font-weight:700;color:#A32D2D" value="${fine}" max="${fine}" min="0" step="1" onclick="event.preventDefault();event.stopPropagation()" oninput="clampAndUpdate('${itemId}',${fine})">
+      </label>
+    `;
   });
 
   itemsHtml += '</div>';
@@ -1357,6 +1613,7 @@ async function processPayment() {
     fee_head_name: item.fee_head_name,
     period: item.period,
     amount_paid: item.amount,
+    is_late_fee: !!item.is_late_fee,
     payment_mode: payMode,
     payment_date: payDate,
     reference_no: payRef,
@@ -1690,7 +1947,13 @@ async function loadDefaulters() {
   const { data: rawDef } = await secureFee.from('fee_payments').select('student_id,fee_head_id,period,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID);
   const payments = live(rawDef);
   const paidMap = {};
+  const lfPaid = {};   // student_id -> { period: amount already collected as fine }
   if (payments) payments.forEach(p => {
+    if (p.fee_head_id === LATE_FEE_ID) {
+      if (!lfPaid[p.student_id]) lfPaid[p.student_id] = {};
+      lfPaid[p.student_id][p.period] = (lfPaid[p.student_id][p.period] || 0) + p.amount_paid;
+      return;
+    }
     const key = p.student_id + '_' + p.fee_head_id + '_' + p.period;
     paidMap[key] = (paidMap[key]||0) + p.amount_paid;
   });
@@ -1708,6 +1971,7 @@ async function loadDefaulters() {
     const structs = structMap[student.class] || [];
     const periods = period ? [period] : getPeriods();
     let totalDue = 0;
+    const pendingByPeriod = {};
 
     structs.forEach(s => {
       periods.forEach(p => {
@@ -1715,14 +1979,20 @@ async function loadDefaulters() {
         if (amt <= 0) return;
         const paid = paidMap[student.id + '_' + s.fee_head_id + '_' + p] || 0;
         const bal = amt - paid;
-        if (bal > 0) totalDue += bal;
+        if (bal > 0) { totalDue += bal; pendingByPeriod[p] = (pendingByPeriod[p] || 0) + bal; }
       });
     });
 
-    if (totalDue > 0) defaulters.push({ ...student, totalDue });
+    // Fine owed on each overdue period
+    let lateFee = 0;
+    Object.keys(pendingByPeriod).forEach(function (p) {
+      lateFee += lateFeeForPeriod(p, pendingByPeriod[p], lfPaid[student.id]);
+    });
+
+    if (totalDue > 0) defaulters.push({ ...student, totalDue, lateFee, grandTotal: totalDue + lateFee });
   });
 
-  defaulters.sort((a,b)=>b.totalDue-a.totalDue);
+  defaulters.sort((a,b)=>(b.grandTotal||b.totalDue)-(a.grandTotal||a.totalDue));
   currentDefaulters = defaulters;
   await loadReminderLog();
 
@@ -1735,7 +2005,7 @@ async function loadDefaulters() {
     <div style="font-size:13px;font-weight:600;color:var(--danger);margin-bottom:12px">${defaulters.length} student${defaulters.length!==1?'s':''} with pending dues</div>
     <div class="table-wrap" id="defaulters-print-area">
     <table>
-      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th style="text-align:right">Amount Due</th><th class="no-print">Reminder</th></tr></thead>
+      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th style="text-align:right">Fee Due</th>${lateFeeConfig.enabled ? '<th style="text-align:right">Late Fee</th><th style="text-align:right">Total</th>' : ''}<th class="no-print">Reminder</th></tr></thead>
       <tbody>
         ${defaulters.map((s,i)=>`
           <tr>
@@ -1746,6 +2016,9 @@ async function loadDefaulters() {
             <td>${s.father_name||'—'}</td>
             <td>${s.mobile||'—'}</td>
             <td style="text-align:right;font-weight:700;color:#A32D2D">₹${s.totalDue.toLocaleString('en-IN')}</td>
+            ${lateFeeConfig.enabled ? `
+              <td style="text-align:right;color:${s.lateFee > 0 ? '#8B5E00' : 'var(--text-muted)'};font-weight:${s.lateFee > 0 ? '700' : '400'}">${s.lateFee > 0 ? '₹' + s.lateFee.toLocaleString('en-IN') : '—'}</td>
+              <td style="text-align:right;font-weight:700;color:var(--maroon)">₹${(s.grandTotal || s.totalDue).toLocaleString('en-IN')}</td>` : ''}
             <td class="no-print">
               <div class="flex gap-2" style="align-items:center">
                 ${s.mobile
@@ -1760,6 +2033,9 @@ async function loadDefaulters() {
         <tr style="border-top:2px solid var(--border);font-weight:700">
           <td colspan="6">Total Pending</td>
           <td style="text-align:right;color:var(--maroon)">₹${defaulters.reduce((s,d)=>s+d.totalDue,0).toLocaleString('en-IN')}</td>
+          ${lateFeeConfig.enabled ? `
+            <td style="text-align:right;color:#8B5E00">₹${defaulters.reduce((s,d)=>s+(d.lateFee||0),0).toLocaleString('en-IN')}</td>
+            <td style="text-align:right;color:var(--maroon)">₹${defaulters.reduce((s,d)=>s+(d.grandTotal||d.totalDue),0).toLocaleString('en-IN')}</td>` : ''}
           <td class="no-print"></td>
         </tr>
       </tbody>
@@ -1831,7 +2107,8 @@ function buildReminderMessage(stu) {
     .split('{school}').join(schoolHeaderName())
     .split('{student}').join(stu.full_name || '')
     .split('{class}').join((stu.class || '') + (stu.section ? ' ' + stu.section : ''))
-    .split('{amount}').join(Number(stu.totalDue || 0).toLocaleString('en-IN'))
+    .split('{amount}').join(Number(stu.grandTotal || stu.totalDue || 0).toLocaleString('en-IN'))
+    .split('{latefee}').join(Number(stu.lateFee || 0).toLocaleString('en-IN'))
     .split('{link}').join(link);
 }
 
