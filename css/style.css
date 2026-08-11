@@ -475,3 +475,71 @@ tbody tr:hover { background: var(--sandal-light); }
 @media (max-width: 430px) {
   .stats-row { grid-template-columns: 1fr; gap: 10px; margin-bottom: 16px; }
 }
+
+
+/* ════════════════════════════════════════
+   MOBILE FIX PACK 2 — inline layouts
+   Added below. Nothing above this line was changed.
+
+   Many pages set their column layout directly on the element,
+   e.g. style="grid-template-columns:400px 1fr". A fixed 400px
+   column cannot fit a 360px phone, so those pages were pushed
+   wider than the screen.
+
+   An inline style normally beats a stylesheet. Adding !important
+   is the one way a stylesheet can win, so these rules can fix all
+   15 pages at once without editing any of them.
+   ════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+
+  /* 11 — Any layout written directly on an element becomes a
+          single column on phones.
+          Grids that already say auto-fit / auto-fill are skipped:
+          those shrink correctly on their own. */
+  .main-content [style*="grid-template-columns"]:not([style*="auto-fit"]):not([style*="auto-fill"]),
+  .modal [style*="grid-template-columns"]:not([style*="auto-fit"]):not([style*="auto-fill"]),
+  .modal-overlay [style*="grid-template-columns"]:not([style*="auto-fit"]):not([style*="auto-fill"]) {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 12 — Exception: the small Quick Action icon buttons on the
+          Dashboard look better two across than stacked. */
+  .main-content [style*="grid-template-columns"]:has(> .quick-btn) {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* 13 — Anything with a hard pixel width must be allowed to shrink */
+  .main-content [style*="min-width"] { min-width: 0 !important; }
+  .camera-box { max-width: 100% !important; }
+  .main-content img,
+  .main-content video,
+  .main-content canvas { max-width: 100%; height: auto; }
+
+  /* 14 — Long words and IDs must wrap instead of stretching the page */
+  .main-content { overflow-wrap: break-word; }
+
+  /* 15 — Rows of buttons wrap onto the next line */
+  .card-header > div,
+  .welcome-band { flex-wrap: wrap; }
+
+  /* 16 — Dashboard stat tiles two across */
+  .dash-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 10px; }
+  .dash-card { padding: 13px; gap: 10px; }
+  .dash-icon { width: 40px; height: 40px; font-size: 19px; }
+  .dash-value { font-size: 20px; }
+
+  /* 17 — Face attendance page tidy-up */
+  .live-clock { font-size: 24px; }
+  .att-mode-toggle { flex-wrap: wrap; }
+  .mode-btn { flex: 1 1 30%; font-size: 11.5px; }
+}
+
+/* 18 — Small phones: keep stat cards TWO across, not one.
+        One per row made the page far too tall to scroll. */
+@media (max-width: 430px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr) !important; gap: 9px; }
+  .stat-card { padding: 12px; }
+  .stat-value { font-size: 21px; }
+  .stat-label, .stat-sub { font-size: 10px; }
+}
