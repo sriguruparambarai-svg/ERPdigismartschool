@@ -112,6 +112,80 @@ body{font-family:'Inter',sans-serif;background:#F7F4F0;color:#1A1A1A;min-height:
 .loader-bar{width:40px;height:3px;background:#E8E0D5;border-radius:2px;overflow:hidden}
 .loader-fill{width:100%;height:100%;background:var(--maroon);border-radius:2px;animation:slide 1s ease-in-out infinite}
 @keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+/* ═══════════════════════════════════════
+   MOBILE FIX PACK — added, nothing above changed.
+   This page had no mobile rules at all, so it rendered
+   about 1000px wide on every phone.
+   ═══════════════════════════════════════ */
+@media (max-width:900px){
+  .hero-inner{grid-template-columns:1fr;gap:34px}
+  .feat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .p-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sa-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (max-width:768px){
+  /* never let anything push the page sideways */
+  html,body{overflow-x:hidden;width:100%;max-width:100%}
+  .pg.on{padding:14px}
+
+  /* top nav */
+  .land-nav{padding:0 14px;height:58px}
+  .logo-name{font-size:15px}
+  .logo-sub{font-size:9px}
+  .logo-box{width:34px;height:34px;font-size:13px}
+
+  /* hero: one column, smaller headline */
+  .hero{padding:32px 16px}
+  .hero-inner{grid-template-columns:1fr;gap:28px;max-width:100%}
+  .hero-h1{font-size:29px;line-height:1.18}
+  .hero-p{font-size:14px;margin-bottom:22px}
+  .btn-p,.btn-s{padding:12px 20px;font-size:13.5px;flex:1;min-width:140px;justify-content:center}
+  .hstat-n{font-size:21px}
+  .hstat-l{font-size:10px}
+
+  /* module tiles: 2 across instead of 3 */
+  .mods-card{padding:16px}
+  .mods-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .mod-tile{font-size:10.5px;padding:9px 8px}
+
+  /* sections stack */
+  .section{padding:44px 16px}
+  .section-inner{max-width:100%}
+  .sec-h2{font-size:23px;margin-bottom:26px}
+  .feat-grid{grid-template-columns:1fr;gap:14px}
+  .feat-card{padding:18px}
+  .p-grid{grid-template-columns:1fr;gap:26px;margin-top:34px}
+  .p-card{padding:20px}
+  .p-price{font-size:29px}
+
+  /* footer */
+  .land-footer{padding:26px 16px;font-size:11px}
+
+  /* login / contact boxes */
+  .auth-wrap,.auth-wrap.wide{padding:22px;max-width:100%}
+  .auth-h{font-size:19px}
+  .inp-row{grid-template-columns:1fr}
+
+  /* super admin screen */
+  .sa-top{padding:0 14px}
+  .sa-top-title{font-size:13px}
+  .sa-body{padding:14px}
+  .sa-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .sa-card{padding:15px;overflow-x:auto}
+  .sa-table{min-width:560px}
+
+  /* modals */
+  .modal-bg{padding:12px}
+  .modal-box{padding:20px;max-height:88vh}
+}
+
+@media (max-width:430px){
+  .hero-h1{font-size:25px}
+  .sa-grid{grid-template-columns:1fr}
+  .mods-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
 </style>
 </head>
 <body>
