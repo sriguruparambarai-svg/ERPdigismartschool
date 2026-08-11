@@ -98,7 +98,78 @@ async function renderSidebar(activePage) {
   });
 
   document.getElementById('sidebar').innerHTML = html;
+
+  // Build the mobile menu button + overlay (phones only)
+  mountMobileMenu();
 }
+
+// ══ MOBILE MENU ══
+// On phones the sidebar slides off screen. This adds the ☰ button
+// to the top bar and a dark overlay behind the open menu, then
+// wires up open / close. On desktop both stay hidden by CSS,
+// so nothing about the laptop view changes.
+function mountMobileMenu() {
+  var sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+
+  // 1. Dark overlay behind the drawer (create once)
+  var overlay = document.getElementById('sidebar-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'sidebar-overlay';
+    overlay.className = 'sidebar-overlay';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', closeSidebar);
+  }
+
+  // 2. The ☰ button, placed at the start of the top bar (create once)
+  var bar = document.querySelector('.topbar-left');
+  if (bar && !document.getElementById('mobile-menu-btn')) {
+    var btn = document.createElement('button');
+    btn.id = 'mobile-menu-btn';
+    btn.className = 'mobile-menu-btn';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Open menu');
+    btn.innerHTML = '\u2630';
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleSidebar();
+    });
+    bar.insertBefore(btn, bar.firstChild);
+  }
+
+  // 3. Tapping any menu link closes the drawer before navigating
+  sidebar.addEventListener('click', function (e) {
+    if (e.target.closest('.nav-item')) closeSidebar();
+  });
+}
+
+function openSidebar() {
+  var s = document.getElementById('sidebar');
+  var o = document.getElementById('sidebar-overlay');
+  if (s) s.classList.add('open');
+  if (o) o.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+  var s = document.getElementById('sidebar');
+  var o = document.getElementById('sidebar-overlay');
+  if (s) s.classList.remove('open');
+  if (o) o.classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+function toggleSidebar() {
+  var s = document.getElementById('sidebar');
+  if (s && s.classList.contains('open')) closeSidebar();
+  else openSidebar();
+}
+
+// Back button on Android should close the menu, not leave the page
+window.addEventListener('resize', function () {
+  if (window.innerWidth > 768) closeSidebar();
+});
 
 // ── Logout: clears the session and returns to the login page ──
 async function erpLogout() {
