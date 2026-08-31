@@ -984,6 +984,7 @@ async function loadSalarySheet() {
   if (processed) processed.forEach(p=>{ procMap[p.staff_id]=p; });
 
   const lopMap = await getLopMap(month, ids);
+  salRowCalc = {};
 
   let totalGross=0, totalNet=0, totalPaid=0;
   staffList.forEach(s=>{
@@ -1011,7 +1012,7 @@ async function loadSalarySheet() {
           <th>PF Ded.</th>
           <th>ESI Ded.</th>
           <th>Other Ded.</th>
-          <th>LOP Ded.</th>
+          <th>LOP Days<div style="font-size:10px;font-weight:400;color:var(--text-muted)">editable</div></th>
           <th style="color:var(--maroon)">Net Salary</th>
           <th>Status</th>
           <th style="width:130px">Action</th>
@@ -1038,6 +1039,13 @@ async function loadSalarySheet() {
           const lopDed = lopAmount(gross, lopDays);
           const net = Math.max(0, gross - pfAmt - esiAmt - otherDed - lopDed);
           const status = proc?.status || 'unpaid';
+          salRowCalc[s.id] = { gross: gross, fixedDed: pfAmt + esiAmt + otherDed, lopDays: lopDays };
+          const det = lopDetail[s.id] || {};
+          const lopNote = det.manual
+            ? 'typed by hand'
+            : (det.workingDays > 0
+                ? (det.absent || 0) + ' absent' + (det.paidLeave ? ' \u2212 ' + det.paidLeave + ' paid leave' : '')
+                : 'from unpaid leave');
           return `
             <tr>
               <td><div style="font-weight:600">${s.name}</div><div style="font-size:11px;color:var(--text-muted)">${s.employee_id}</div></td>
@@ -1046,13 +1054,20 @@ async function loadSalarySheet() {
               <td style="color:#A32D2D">${pfAmt>0?'₹'+pfAmt.toLocaleString('en-IN'):'—'}</td>
               <td style="color:#A32D2D">${esiAmt>0?'₹'+esiAmt.toLocaleString('en-IN'):'—'}</td>
               <td style="color:#A32D2D">${otherDed>0?'₹'+otherDed.toLocaleString('en-IN'):'—'}</td>
-              <td style="color:#A32D2D">${lopDed>0?`₹${lopDed.toLocaleString('en-IN')}<div style="font-size:10px">${lopDays} day${lopDays>1?'s':''}</div>`:'—'}</td>
-              <td style="font-weight:700;color:var(--maroon);font-size:14px">₹${net.toLocaleString('en-IN')}</td>
+              <td>
+                <input type="number" min="0" max="31" step="1" value="${lopDays}" id="lop-${s.id}"
+                  onchange="onLopChange('${s.id}','${month}',this.value)"
+                  title="Days to deduct. Type 0 for full pay."
+                  style="width:54px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;font-weight:700;color:#A32D2D;text-align:center">
+                <div id="lopamt-${s.id}" style="font-size:11px;color:#A32D2D;margin-top:3px">${lopDed>0?'₹'+lopDed.toLocaleString('en-IN'):''}</div>
+                <div id="lopnote-${s.id}" style="font-size:10px;color:var(--text-muted)">${lopNote}</div>
+              </td>
+              <td id="net-${s.id}" style="font-weight:700;color:var(--maroon);font-size:14px">₹${net.toLocaleString('en-IN')}</td>
               <td><span class="badge ${status==='paid'?'badge-green':status==='hold'?'badge-amber':'badge-red'}">${status}</span></td>
               <td>
                 <div style="display:flex;gap:4px">
                   ${status!=='paid'
-                    ? `<button class="btn btn-gold btn-sm" onclick="markSalaryPaid('${s.id}','${month}',${net})">Pay</button>`
+                    ? `<button class="btn btn-gold btn-sm" onclick="markSalaryPaid('${s.id}','${month}')">Pay</button>`
                     : '<span style="font-size:11px;color:#2D7A3A">✓ Paid</span>'
                   }
                   <button class="btn btn-secondary btn-sm btn-icon" onclick="showPayslip('${s.id}','${month}')" title="Payslip">📄</button>
@@ -1067,30 +1082,130 @@ async function loadSalarySheet() {
   `;
 }
 
-// ── Loss of Pay (LOP) helpers ──
+// ── Loss of Pay (LOP) ──
 // One day's pay = Gross ÷ 30 (fixed 30 days)
+//
+// How the days are counted, for one staff member in one month:
+//   Working days  = dates in that month on which ANY staff punched in
+//                   (so Sundays, holidays and vacations drop out by themselves)
+//   Absent        = working days − that person's present/late days
+//   LOP days      = absent − approved PAID leave (CL / SL / EL)
+//
+// If the office has typed its own number in the salary sheet, that number wins
+// and is never overwritten by this calculation.
+// Safety net: if no attendance at all was marked that month, working days is 0,
+// so nobody is deducted — it falls back to approved unpaid leave only.
+
+let lopDetail = {};   // staff_id -> { absent, paidLeave, auto, manual, workingDays }
+let salRowCalc = {};  // staff_id -> { gross, fixedDed, lopDays }  (for live editing)
+
 async function getLopMap(month, staffIds) {
+  const ids = staffIds || [];
   const [yr, mo] = month.split('-').map(Number);
   const monthStart = new Date(yr, mo-1, 1);
-  const monthEnd = new Date(yr, mo, 0);
-  const fmt = d => d.toISOString().split('T')[0];
+  const monthEnd   = new Date(yr, mo, 0);
+  const fmt = d => d.getFullYear() + '-' +
+                   String(d.getMonth()+1).padStart(2,'0') + '-' +
+                   String(d.getDate()).padStart(2,'0');
+
+  // 1. Attendance for the month (same table the Staff Attendance page writes to)
+  const { data: att } = await supabase.from('staff_attendance')
+    .select('staff_id,date,status')
+    .eq('school_id', SCHOOL_ID)
+    .gte('date', fmt(monthStart)).lte('date', fmt(monthEnd));
+
+  const dayset = {};
+  (att||[]).forEach(r => { if (r.date) dayset[String(r.date).slice(0,10)] = true; });
+  const workingDays = Object.keys(dayset).length;
+
+  const attendedBy = {};
+  (att||[]).forEach(r => {
+    if (r.status === 'present' || r.status === 'late')
+      attendedBy[r.staff_id] = (attendedBy[r.staff_id] || 0) + 1;
+  });
+
+  // 2. Approved leaves that overlap this month
   const { data: leaves } = await secureHrm.from('staff_leaves')
-    .select('staff_id,from_date,to_date')
-    .eq('school_id', SCHOOL_ID).eq('status','approved').eq('leave_type','unpaid')
+    .select('staff_id,from_date,to_date,leave_type')
+    .eq('school_id', SCHOOL_ID).eq('status','approved')
     .lte('from_date', fmt(monthEnd)).gte('to_date', fmt(monthStart));
-  const map = {};
+
+  const paidLeave = {}, unpaidLeave = {};
   (leaves||[]).forEach(l => {
-    if (staffIds && !staffIds.includes(l.staff_id)) return;
     const s = new Date(Math.max(new Date(l.from_date), monthStart));
     const e = new Date(Math.min(new Date(l.to_date), monthEnd));
-    if (s <= e) {
-      const days = Math.round((e - s) / 86400000) + 1;
-      map[l.staff_id] = (map[l.staff_id] || 0) + days;
+    if (s > e) return;
+    const days = Math.round((e - s) / 86400000) + 1;
+    if (l.leave_type === 'unpaid') unpaidLeave[l.staff_id] = (unpaidLeave[l.staff_id]||0) + days;
+    else                           paidLeave[l.staff_id]   = (paidLeave[l.staff_id]||0)   + days;
+  });
+
+  // 3. Numbers the office typed by hand for this month
+  const manualBy = {};
+  const { data: procRows } = await secureHrm.from('salary_processed')
+    .select('staff_id,lop_days,lop_manual')
+    .eq('school_id', SCHOOL_ID).eq('month', month);
+  (procRows||[]).forEach(p => { if (p.lop_manual) manualBy[p.staff_id] = p.lop_days || 0; });
+
+  lopDetail = {};
+  const map = {};
+  ids.forEach(id => {
+    const pl = paidLeave[id] || 0;
+    let absent = 0, auto = 0;
+    if (workingDays > 0) {
+      absent = Math.max(0, workingDays - (attendedBy[id] || 0));
+      auto   = Math.max(0, absent - pl);
+    } else {
+      auto = unpaidLeave[id] || 0;
     }
+    const isManual = Object.prototype.hasOwnProperty.call(manualBy, id);
+    map[id] = isManual ? manualBy[id] : auto;
+    lopDetail[id] = { absent: absent, paidLeave: pl, auto: auto, manual: isManual, workingDays: workingDays };
   });
   return map;
 }
 function lopAmount(gross, lopDays) { return Math.round((gross / 30) * (lopDays || 0)); }
+
+// ── Office types a different number of deduction days ──
+// Updates the row on screen straight away, then saves it for that month.
+async function onLopChange(staffId, month, val) {
+  const row = salRowCalc[staffId];
+  if (!row) return;
+  let days = parseInt(val, 10);
+  if (isNaN(days) || days < 0) days = 0;
+  if (days > 31) days = 31;
+
+  const ded = lopAmount(row.gross, days);
+  const net = Math.max(0, row.gross - row.fixedDed - ded);
+  row.lopDays = days;
+
+  const box  = document.getElementById('lop-' + staffId);
+  const amt  = document.getElementById('lopamt-' + staffId);
+  const note = document.getElementById('lopnote-' + staffId);
+  const netEl= document.getElementById('net-' + staffId);
+  if (box)  box.value = days;
+  if (amt)  amt.textContent  = ded > 0 ? '₹' + ded.toLocaleString('en-IN') : '';
+  if (note) note.textContent = 'typed by hand';
+  if (netEl) netEl.textContent = '₹' + net.toLocaleString('en-IN');
+
+  await saveLopDays(staffId, month, days, net);
+}
+
+async function saveLopDays(staffId, month, days, net) {
+  const staff = allStaff.find(s => s.id === staffId);
+  const { data: existing } = await secureHrm.from('salary_processed')
+    .select('id').eq('staff_id', staffId).eq('month', month).single();
+  if (existing) {
+    await secureHrm.from('salary_processed')
+      .update({ lop_days: days, lop_manual: true }).eq('id', existing.id);
+  } else {
+    await secureHrm.from('salary_processed').insert([{
+      school_id: SCHOOL_ID, staff_id: staffId, staff_name: staff ? staff.name : null,
+      month: month, net_salary: net, lop_days: days, lop_manual: true, status: 'unpaid'
+    }]);
+  }
+  showToast(days > 0 ? days + ' day deduction saved.' : 'Full pay saved — no deduction.', 'success');
+}
 
 function calcNet(st, lopDays = 0) {
   const gross = st.gross_salary || 0;
@@ -1102,11 +1217,21 @@ function calcNet(st, lopDays = 0) {
 }
 
 async function markSalaryPaid(staffId, month, netSalary) {
+  // Always use whatever is showing in the row right now, so an edited
+  // deduction is what actually gets paid.
+  const row = salRowCalc[staffId];
+  let lopDaysPaid = 0;
+  if (row) {
+    lopDaysPaid = row.lopDays || 0;
+    netSalary = Math.max(0, row.gross - row.fixedDed - lopAmount(row.gross, lopDaysPaid));
+  }
+  if (netSalary === undefined || netSalary === null) { showToast('Please load the salary sheet again.','error'); return; }
+
   const mode = prompt('Payment mode? (cash / bank_transfer / upi)', 'bank_transfer');
   if (!mode) return;
   const staff = allStaff.find(s=>s.id===staffId);
   const { data: existing } = await secureHrm.from('salary_processed').select('id').eq('staff_id',staffId).eq('month',month).single();
-  const record = { school_id:SCHOOL_ID, staff_id:staffId, staff_name:staff?.name, month, net_salary:netSalary, payment_mode:mode, paid_on:new Date().toISOString().split('T')[0], status:'paid' };
+  const record = { school_id:SCHOOL_ID, staff_id:staffId, staff_name:staff?.name, month, net_salary:netSalary, lop_days:lopDaysPaid, payment_mode:mode, paid_on:new Date().toISOString().split('T')[0], status:'paid' };
   if (existing) { await secureHrm.from('salary_processed').update(record).eq('id',existing.id); }
   else { await secureHrm.from('salary_processed').insert([record]); }
   showToast(`Salary paid to ${staff?.name}!`, 'success');
@@ -1127,9 +1252,15 @@ async function processAllSalary() {
   if (structures) structures.forEach(s=>{ structMap[s.staff_id]=s; });
 
   const activeStaff = allStaff.filter(s=>s.status==='active');
+
+  // Same deduction the sheet shows, including any days typed by hand
+  const lopMapAll = await getLopMap(month, activeStaff.map(s=>s.id));
+
   const records = activeStaff.filter(s=>structMap[s.id]).map(s=>{
     const st = structMap[s.id];
-    return { school_id:SCHOOL_ID, staff_id:s.id, staff_name:s.name, month, net_salary:calcNet(st), payment_mode:'bank_transfer', paid_on:new Date().toISOString().split('T')[0], status:'paid' };
+    const lopDays = lopMapAll[s.id] || 0;
+    const wasManual = !!(lopDetail[s.id] && lopDetail[s.id].manual);
+    return { school_id:SCHOOL_ID, staff_id:s.id, staff_name:s.name, month, net_salary:calcNet(st, lopDays), lop_days:lopDays, lop_manual:wasManual, payment_mode:'bank_transfer', paid_on:new Date().toISOString().split('T')[0], status:'paid' };
   });
 
   if (records.length > 0) {
