@@ -1435,7 +1435,16 @@ async function loadFeeStructure() {
           const periodsToShow = h.type === 'per_period' ? periods : ['Amount'];
           return `
             <tr>
-              <td style="font-weight:500">${h.name}</td>
+              <td style="font-weight:500">${h.name}
+                ${h.type === 'per_period' ? `
+                  <div style="margin-top:5px;display:flex;align-items:center;gap:5px">
+                    <input type="number" id="split-${h.id}" placeholder="Year total" min="0" step="1"
+                      style="width:92px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:11px">
+                    <button type="button" class="btn btn-gold btn-sm" style="padding:3px 9px;font-size:11px"
+                      onclick="splitAcrossPeriods('${h.id}')"
+                      title="Divide the year's total evenly across the periods. You can still edit each box after.">Split</button>
+                  </div>` : ''}
+              </td>
               <td><span class="badge badge-blue" style="font-size:10px">${h.type === 'per_period' ? 'Per period' : h.type === 'annual' ? 'Annual' : 'One-time'}</span></td>
               ${h.type === 'per_period'
                 ? periods.map(p=>`<td style="text-align:right"><input type="number" class="amount-input" id="amt-${h.id}-${p.replace(/\s/g,'_')}" value="${amounts[p]||''}" placeholder="0" onchange="calcRowTotal('${h.id}')"></td>`).join('')
@@ -1460,6 +1469,52 @@ async function loadFeeStructure() {
     </table>
     </div>
   `;
+}
+
+// ── How much a fee head charges in one period ──
+// A per-period head (Term 1 / Term 2 / Term 3) carries its own amount for each period.
+// An annual or one-time head is charged ONCE, so it belongs to the first period only.
+// Before this, a Rs.3,000 annual fee was counted in every term and showed as
+// Rs.9,000 outstanding in the dues report and the student ledger.
+function isPerPeriodRow(s) {
+  return !!(s && s.period_amounts && Object.keys(s.period_amounts).length > 0);
+}
+function amountForPeriod(s, p) {
+  if (!s) return 0;
+  if (isPerPeriodRow(s)) return s.period_amounts[p] || 0;
+  const list = getPeriods();
+  return (p === list[0]) ? (s.annual_amount || 0) : 0;
+}
+// Money already received against this fee head for this period.
+// For a once-a-year head we add up every payment made against it, whichever period
+// it happened to be booked under, so receipts taken before this fix still match.
+function paidForPeriod(paidMap, prefix, s, p) {
+  const key = (prefix || '') + s.fee_head_id + '_';
+  if (isPerPeriodRow(s)) return paidMap[key + p] || 0;
+  const list = getPeriods();
+  if (p !== list[0]) return 0;
+  let total = 0;
+  Object.keys(paidMap).forEach(function (k) { if (k.indexOf(key) === 0) total += paidMap[k]; });
+  return total;
+}
+
+// ── Type the year's total once, spread it across the terms ──
+// Any leftover rupees go into the first term. Every box stays editable afterwards,
+// so Term 1 books can be set higher than Term 3 if that's what they cost.
+function splitAcrossPeriods(headId) {
+  const box = document.getElementById('split-' + headId);
+  const total = Math.round(parseFloat(box ? box.value : 0) || 0);
+  if (total <= 0) { showToast('Enter the year total first.', 'error'); return; }
+  const periods = getPeriods();
+  if (!periods.length) return;
+  const base = Math.floor(total / periods.length);
+  const leftover = total - (base * periods.length);
+  periods.forEach(function (p, i) {
+    const el = document.getElementById('amt-' + headId + '-' + p.replace(/\s/g, '_'));
+    if (el) el.value = base + (i === 0 ? leftover : 0);
+  });
+  calcRowTotal(headId);
+  showToast('Rs.' + total.toLocaleString('en-IN') + ' split across ' + periods.length + ' periods. Adjust any box, then Save Structure.', 'success');
 }
 
 function calcRowTotal(headId) {
@@ -1648,9 +1703,9 @@ async function selectStudentForFee(studentId) {
               `;
             }
             let rowPaid = 0;
-            const periodCells = s.fee_head_name === s.fee_head_name && periods.map(p => {
-              const amt = s.period_amounts?.[p] || (s.annual_amount ? s.annual_amount : 0);
-              const paid = paidMap[s.fee_head_id + '_' + p] || 0;
+            const periodCells = periods.map(p => {
+              const amt = amountForPeriod(s, p);
+              const paid = paidForPeriod(paidMap, '', s, p);
               rowPaid += paid;
               const isPaid = paid >= amt && amt > 0;
               return `<td style="text-align:right;font-size:12px">
@@ -1742,11 +1797,11 @@ async function openCollectModal(studentId) {
       `;
       return;
     }
-    const periodsToShow = s.period_amounts ? periods : ['Amount'];
-    periodsToShow.forEach(p => {
-      const amt = s.period_amounts?.[p] || s.annual_amount || 0;
+    periods.forEach(p => {
+      const amt = amountForPeriod(s, p);
       if (amt <= 0) return;
-      const paid = paidMap[s.fee_head_id + '_' + p] || 0;
+      const periodLabel = isPerPeriodRow(s) ? p : 'Full year';
+      const paid = paidForPeriod(paidMap, '', s, p);
       const balance = amt - paid;
       if (balance <= 0) return; // Already paid
 
@@ -1759,7 +1814,7 @@ async function openCollectModal(studentId) {
           <input type="checkbox" id="${itemId}" value="${balance}" checked onchange="toggleItemAmount('${itemId}')" style="width:16px;height:16px;cursor:pointer">
           <div style="flex:1">
             <div style="font-weight:600;font-size:13px">${s.fee_head_name}</div>
-            <div style="font-size:11px;color:var(--text-muted)">${p} · Balance: ₹${balance.toLocaleString('en-IN')} of ₹${amt.toLocaleString('en-IN')}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${periodLabel} · Balance: ₹${balance.toLocaleString('en-IN')} of ₹${amt.toLocaleString('en-IN')}</div>
           </div>
           <input type="number" id="${itemId}-amt" class="form-control" style="width:100px;text-align:right;font-weight:700;color:var(--maroon)" value="${balance}" max="${balance}" min="0" step="1" onclick="event.preventDefault();event.stopPropagation()" oninput="clampAndUpdate('${itemId}',${balance})">
         </label>
@@ -2244,9 +2299,9 @@ async function loadDefaulters() {
 
     structs.forEach(s => {
       periods.forEach(p => {
-        const amt = s.period_amounts?.[p] || s.annual_amount || 0;
+        const amt = amountForPeriod(s, p);
         if (amt <= 0) return;
-        const paid = paidMap[student.id + '_' + s.fee_head_id + '_' + p] || 0;
+        const paid = paidForPeriod(paidMap, student.id + '_', s, p);
         const bal = amt - paid;
         if (bal > 0) { totalDue += bal; pendingByPeriod[p] = (pendingByPeriod[p] || 0) + bal; }
       });
