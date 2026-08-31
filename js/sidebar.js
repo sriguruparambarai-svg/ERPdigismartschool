@@ -15,7 +15,7 @@ async function renderSidebar(activePage) {
       { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard.html' },
     ]},
     { group: 'Attendance', items: [
-      { id: 'face', icon: '📷', label: 'Face Recognition', href: 'face-attendance.html' },
+      { id: 'face', icon: '🧑‍🏫', label: 'Staff Attendance', href: 'face-attendance.html' },
       { id: 'student-att', icon: '✅', label: 'Student Attendance', href: 'student-attendance.html' },
     ]},
     { group: 'Academic', items: [
