@@ -70,7 +70,7 @@
             <div class="dash-sub">Active enrolled</div>
           </div>
         </a>
-        <a href="face-attendance.html" class="dash-card">
+        <a href="student-attendance.html" class="dash-card">
           <div class="dash-icon" style="background:#F0FFF4">✅</div>
           <div>
             <div class="dash-label">Today's Attendance</div>
@@ -139,7 +139,7 @@
           <div class="section-header">⚡ Quick Actions</div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
             <a href="admission.html" class="quick-btn"><span class="qi">📝</span>Add Student</a>
-            <a href="face-attendance.html" class="quick-btn"><span class="qi">✅</span>Attendance</a>
+            <a href="student-attendance.html" class="quick-btn"><span class="qi">✅</span>Attendance</a>
             <a href="fee.html" class="quick-btn"><span class="qi">💰</span>Collect Fee</a>
             <a href="exam.html" class="quick-btn"><span class="qi">📄</span>Exam Marks</a>
             <a href="communication.html" class="quick-btn"><span class="qi">📢</span>Send Notice</a>
@@ -272,7 +272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (IS_STAFF_DASH && typeof hasModuleAccess === 'function') {
     const QA_MODULES = {
       'admission.html': 'admission',
-      'face-attendance.html': 'face',
+      'student-attendance.html': 'student-att',
       'fee.html': 'fee',
       'exam.html': 'exam',
       'communication.html': 'communication',
