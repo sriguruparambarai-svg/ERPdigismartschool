@@ -12,6 +12,9 @@
   .module-check:hover{border-color:#C9A84C;background:#FDFAF4}
   .module-check input{width:16px;height:16px;accent-color:#6B1A1A;cursor:pointer}
   .module-check.checked{border-color:#6B1A1A;background:#FBF5EE}
+  .module-cell{display:flex;flex-direction:column;gap:0}
+  .mod-level{width:100%;margin-top:6px;padding:7px 10px;border:1px solid #C9A84C;border-radius:8px;font-size:12px;color:#6B1A1A;background:#FDFAF4;font-weight:600;cursor:pointer}
+  .mod-level:focus{outline:none;border-color:#6B1A1A}
   .mod-chip{display:inline-block;background:#FBF5EE;border:1px solid #E8C99A;color:#6B1A1A;border-radius:20px;padding:2px 9px;font-size:11px;margin:2px 3px 2px 0;white-space:nowrap}
   .status-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
   .pill-active{background:#E7F4E9;color:#2D7A3A}
@@ -193,8 +196,10 @@
 
 // ── Modules the owner can tick (ids match sidebar.js exactly) ──
 const MODULE_LIST = [
-  { id: 'face',          icon: '🧑‍🏫', label: 'Staff Attendance' },
-  { id: 'student-att',   icon: '✅', label: 'Student Attendance' },
+  { id: 'face',          icon: '🧑‍🏫', label: 'Staff Attendance',
+    levels: [ { v:'full', t:'Full access' }, { v:'mark', t:'Mark attendance only' } ] },
+  { id: 'student-att',   icon: '✅', label: 'Student Attendance',
+    levels: [ { v:'full', t:'Full access' }, { v:'mark', t:'Mark attendance only' } ] },
   { id: 'admission',     icon: '📝', label: 'Admission' },
   { id: 'exam',          icon: '📄', label: 'Exam Management' },
   { id: 'icard',         icon: '🪪', label: 'I-Card & Timetable' },
@@ -332,9 +337,16 @@ function renderStaffTable() {
 
   const tbody = document.getElementById('staff-tbody');
   tbody.innerHTML = allStaff.map(s => {
-    const mods = (s.allowed_modules || []).map(id => {
-      const m = MODULE_LIST.find(x => x.id === id);
-      return m ? '<span class="mod-chip">' + m.icon + ' ' + m.label + '</span>' : '';
+    const mods = (s.allowed_modules || []).map(entry => {
+      const parts = String(entry).split(':');
+      const m = MODULE_LIST.find(x => x.id === parts[0]);
+      if (!m) return '';
+      let suffix = '';
+      if (parts.length > 1 && parts[1] && m.levels) {
+        const lv = m.levels.find(l => l.v === parts[1]);
+        if (lv) suffix = ' · ' + lv.t;
+      }
+      return '<span class="mod-chip">' + m.icon + ' ' + m.label + suffix + '</span>';
     }).join('');
     const statusPill = s.is_active
       ? '<span class="status-pill pill-active">Active</span>'
@@ -364,17 +376,56 @@ function escapeHtml(t) {
 // ── Module checkboxes ──
 function renderModuleGrid(selected) {
   selected = selected || [];
+
+  // Saved values may carry a level, e.g. 'face:mark'. Split them apart.
+  const picked = {};
+  selected.forEach(entry => {
+    const parts = String(entry).split(':');
+    picked[parts[0]] = parts.length > 1 && parts[1] ? parts[1] : 'full';
+  });
+
   document.getElementById('module-grid').innerHTML = MODULE_LIST.map(m => {
-    const checked = selected.indexOf(m.id) !== -1;
-    return '<label class="module-check' + (checked ? ' checked' : '') + '">' +
-      '<input type="checkbox" value="' + m.id + '"' + (checked ? ' checked' : '') + ' onchange="this.parentElement.classList.toggle(\'checked\', this.checked)">' +
-      '<span>' + m.icon + ' ' + m.label + '</span>' +
-    '</label>';
+    const checked = Object.prototype.hasOwnProperty.call(picked, m.id);
+    const level = checked ? picked[m.id] : 'full';
+
+    let dropdown = '';
+    if (m.levels) {
+      const opts = m.levels.map(l =>
+        '<option value="' + l.v + '"' + (l.v === level ? ' selected' : '') + '>' + l.t + '</option>'
+      ).join('');
+      dropdown = '<select class="mod-level" data-mod="' + m.id + '"' +
+                 (checked ? '' : ' style="display:none"') + '>' + opts + '</select>';
+    }
+
+    return '<div class="module-cell">' +
+      '<label class="module-check' + (checked ? ' checked' : '') + '">' +
+        '<input type="checkbox" value="' + m.id + '"' + (checked ? ' checked' : '') + ' onchange="onModuleToggle(this)">' +
+        '<span>' + m.icon + ' ' + m.label + '</span>' +
+      '</label>' + dropdown +
+    '</div>';
   }).join('');
 }
 
+// Tick or untick a module — show/hide its level dropdown
+function onModuleToggle(box) {
+  box.parentElement.classList.toggle('checked', box.checked);
+  const cell = box.closest('.module-cell');
+  if (!cell) return;
+  const sel = cell.querySelector('.mod-level');
+  if (sel) {
+    sel.style.display = box.checked ? '' : 'none';
+    if (!box.checked) sel.value = 'full';
+  }
+}
+
 function getTickedModules() {
-  return Array.from(document.querySelectorAll('#module-grid input:checked')).map(i => i.value);
+  return Array.from(document.querySelectorAll('#module-grid input:checked')).map(box => {
+    const cell = box.closest('.module-cell');
+    const sel = cell ? cell.querySelector('.mod-level') : null;
+    // Full access is stored plainly, so nothing changes for existing logins
+    if (sel && sel.value && sel.value !== 'full') return box.value + ':' + sel.value;
+    return box.value;
+  });
 }
 
 // ── Add / Edit modal ──

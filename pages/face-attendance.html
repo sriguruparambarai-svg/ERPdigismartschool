@@ -40,13 +40,13 @@
       </div>
       <div class="topbar-right">
         <div style="font-size:12px;color:#9B928A" id="today-date"></div>
-        <div class="badge badge-maroon">Admin</div>
+        <div class="badge badge-maroon" id="role-badge">Admin</div>
       </div>
     </div>
 
     <div class="page-body">
       <!-- STATS -->
-      <div class="stats-row">
+      <div class="stats-row" id="stats-row">
         <div class="stat-card stat-accent">
           <div class="stat-label">Present Today</div>
           <div class="stat-value" id="st-present">—</div>
@@ -149,7 +149,7 @@
           </div>
 
           <!-- ADD STAFF -->
-          <div class="card">
+          <div class="card" id="card-add-staff">
             <div class="card-header" style="margin-bottom:12px">
               <div class="card-title">Add New Staff</div>
             </div>
@@ -170,7 +170,7 @@
           </div>
 
           <!-- QR CODE ATTENDANCE (additive) -->
-          <div class="card" style="margin-top:16px">
+          <div class="card" id="card-qr" style="margin-top:16px">
             <div class="card-header" style="margin-bottom:12px">
               <div class="card-title">📱 QR Code Attendance</div>
             </div>
@@ -215,7 +215,7 @@
             <div id="today-log"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
           </div>
 
-          <div class="card">
+          <div class="card" id="card-month-report">
             <div class="card-header">
               <div class="card-title">Monthly Staff Report</div>
               <div style="display:flex;gap:8px">
@@ -241,8 +241,31 @@ let videoStream = null;
 let enrollStream = null;
 let staffList = [];
 
+// ══ Limited access: 'Mark attendance only' ══
+// The staff member can scan faces and see what they marked — nothing else.
+// Enroll, Manual, Add Staff, QR settings, whole-school stats and the
+// monthly report are all removed from the page.
+var FACE_MARK_ONLY = (typeof moduleLevel === 'function') && moduleLevel('face') === 'mark';
+
+function applyFaceLimits() {
+  // Show the real login name instead of the Admin badge
+  var badge = document.getElementById('role-badge');
+  if (badge && typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff') {
+    badge.textContent = (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : 'Staff';
+  }
+
+  if (!FACE_MARK_ONLY) return;
+
+  ['mode-enroll','mode-manual','card-add-staff','card-qr','card-month-report','stats-row']
+    .forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('face');
+  applyFaceLimits();
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
   document.getElementById('log-date').value = today;
@@ -250,7 +273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   startClock();
   await loadStaff();
   await loadTodayLog();
-  await loadTodayStats();
+  if (!FACE_MARK_ONLY) await loadTodayStats();
 });
 
 function startClock() {
@@ -519,7 +542,9 @@ async function recordPunch(staffId, staffName, staffRole, type, method, customTi
 // ── Today's Log ──
 async function loadTodayLog() {
   const date = document.getElementById('log-date').value;
-  const { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).eq('date',date).order('check_in',{ascending:true});
+  let { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).eq('date',date).order('check_in',{ascending:true});
+  // 'Mark attendance only' → hide everyone who checked in by QR
+  if (FACE_MARK_ONLY && data) data = data.filter(r => r.method === 'face');
   if (!data||data.length===0) {
     document.getElementById('today-log').innerHTML='<div class="empty-state"><div class="icon">👤</div><p>No attendance recorded yet.</p></div>';
     return;
