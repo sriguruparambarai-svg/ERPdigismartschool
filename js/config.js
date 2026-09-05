@@ -17,6 +17,34 @@ try {
   if (!Array.isArray(ALLOWED_MODULES)) ALLOWED_MODULES = [];
 } catch (e) { ALLOWED_MODULES = []; }
 
+// ── Access levels (per-module dropdown in Staff Logins) ──
+// A module may be stored as plain 'face' (full access) or as 'face:mark'
+// (limited). We split the level off here so that every existing page
+// keeps working: ALLOWED_MODULES always holds plain module ids.
+var MODULE_LEVELS = {};
+(function () {
+  var normalized = [];
+  for (var i = 0; i < ALLOWED_MODULES.length; i++) {
+    var parts = String(ALLOWED_MODULES[i]).split(':');
+    var base = parts[0];
+    if (parts.length > 1 && parts[1]) MODULE_LEVELS[base] = parts[1];
+    if (normalized.indexOf(base) === -1) normalized.push(base);
+  }
+  ALLOWED_MODULES = normalized;
+})();
+
+// What level of access does this login have on a module?
+// Owner is always 'full'. Staff get whatever the owner picked.
+function moduleLevel(moduleId) {
+  if (USER_ROLE !== 'staff') return 'full';
+  return MODULE_LEVELS[moduleId] || 'full';
+}
+
+// True when the login has a cut-down version of a module
+function isModuleLimited(moduleId) {
+  return moduleLevel(moduleId) !== 'full';
+}
+
 // Can the current user open this module? Owner → always yes.
 // Staff → only ticked modules (Dashboard always allowed as the landing page).
 function hasModuleAccess(moduleId) {
