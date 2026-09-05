@@ -7,6 +7,11 @@
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
+.van-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px}
+.van-pill.van{background:#FBF5EE;color:#6B1A1A;border:1px solid #C9A84C}
+.van-pill.day{background:#F2F4F7;color:#5C534B;border:1px solid #DDD6CC}
+.van-box{margin-top:16px;padding-top:14px;border-top:1px solid #E8E0D5}
+.van-title{font-size:13px;font-weight:700;color:#6B1A1A;margin-bottom:10px}
 .tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px}
 .tab{padding:9px 18px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
@@ -251,6 +256,41 @@
               <button class="btn btn-gold btn-sm" onclick="saveLateFeeRules()">Save Late Fee Rules</button>
             </div>
           </div>
+        </div>
+
+        <!-- Van Fee Months (Phase 1) -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">🚌 Van Fee Months</div>
+              <div class="card-subtitle">Set the run of months your school collects van fee, e.g. June for 11 months.</div>
+            </div>
+            <button class="btn btn-gold btn-sm" onclick="saveVanMonths()">Save Van Months</button>
+          </div>
+          <div style="font-size:12px;color:#8B5E00;background:#FFF8F0;padding:8px 12px;border-radius:8px;margin-bottom:12px">
+            Van fee is charged per student from their boarding point rate, set in
+            <b>Transport &amp; GPS → Student Assignment</b>. A student with no transport
+            assignment is treated as a day scholar and is never charged van fee.
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Start Month</label>
+              <select id="van-start" class="form-control" onchange="updateVanPreview()" style="width:150px;margin-top:4px">
+                <option value="0">January</option><option value="1">February</option>
+                <option value="2">March</option><option value="3">April</option>
+                <option value="4">May</option><option value="5">June</option>
+                <option value="6">July</option><option value="7">August</option>
+                <option value="8">September</option><option value="9">October</option>
+                <option value="10">November</option><option value="11">December</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Number of Months</label>
+              <input type="number" id="van-count" class="form-control" min="1" max="12" value="11"
+                     onchange="updateVanPreview()" oninput="updateVanPreview()" style="width:120px;margin-top:4px">
+            </div>
+          </div>
+          <div id="van-preview" style="font-size:12px;color:var(--maroon);font-weight:600;margin-top:10px"></div>
         </div>
 
         <!-- Fee Heads -->
@@ -689,6 +729,14 @@ let collectionMode = 'term';
 let termConfig = [];
 let monthStart = 5;
 let monthCount = 11;
+// ── Van fee (Phase 1) ──
+// Van fee runs as a straight run of months, e.g. June to April (11 months).
+// vanMonths holds the resolved list, already in the order it is charged.
+const VAN_CAL_MONTHS = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+let vanMonths = [];
+let vanStart = 5;   // June
+let vanCount = 11;
 let currentCollectStudent = null;
 let currentCollectItems = [];
 let currentActiveScheme = null;
@@ -791,9 +839,19 @@ async function loadSettings() {
     monthCount = data.month_count || 11;
     document.getElementById('month-start').value = monthStart;
     document.getElementById('month-count').value = monthCount;
+    try {
+      vanMonths = Array.isArray(data.van_months) ? data.van_months
+                : (data.van_months ? JSON.parse(data.van_months) : []);
+    } catch (e) { vanMonths = []; }
+    if (!Array.isArray(vanMonths)) vanMonths = [];
+    if (vanMonths.length) {
+      const si = VAN_CAL_MONTHS.indexOf(vanMonths[0]);
+      if (si !== -1) { vanStart = si; vanCount = vanMonths.length; }
+    }
   } else {
     document.getElementById('mode-term').checked = true;
   }
+  renderVanMonthsGrid();
   updateModeUI();
   populateDefPeriod();
   fillLateFeeForm(lateFeeConfig);
@@ -1576,6 +1634,177 @@ async function saveFeeStructure() {
   await loadFeeStructure();
 }
 
+// ══ VAN FEE MONTHS (Phase 1) ══
+// Built the same way as month-wise school fees: a start month and a count,
+// so a run like June → April wraps across the year end correctly.
+function vanMonthList(startIdx, count) {
+  const list = [];
+  for (let i = 0; i < count; i++) list.push(VAN_CAL_MONTHS[(startIdx + i) % 12]);
+  return list;
+}
+
+function renderVanMonthsGrid() {
+  const sel = document.getElementById('van-start');
+  const cnt = document.getElementById('van-count');
+  if (!sel || !cnt) return;
+  sel.value = String(vanStart);
+  cnt.value = String(vanCount);
+  updateVanPreview();
+}
+
+function updateVanPreview() {
+  const el = document.getElementById('van-preview');
+  if (!el) return;
+  const s = parseInt(document.getElementById('van-start').value) || 0;
+  let c = parseInt(document.getElementById('van-count').value) || 0;
+  if (c < 1) c = 1;
+  if (c > 12) c = 12;
+  el.textContent = 'Van fee months: ' + vanMonthList(s, c).join(' → ');
+}
+
+async function saveVanMonths() {
+  const s = parseInt(document.getElementById('van-start').value) || 0;
+  let c = parseInt(document.getElementById('van-count').value) || 0;
+  if (c < 1) c = 1;
+  if (c > 12) c = 12;
+  const ordered = vanMonthList(s, c);
+
+  const { data: existing } = await secureFee.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  if (existing) {
+    await secureFee.from('fee_settings').update({ van_months: ordered }).eq('school_id', SCHOOL_ID);
+  } else {
+    await secureFee.from('fee_settings').insert([{ school_id: SCHOOL_ID, van_months: ordered }]);
+  }
+  vanMonths = ordered;
+  vanStart = s;
+  vanCount = c;
+  updateVanPreview();
+  showToast('Van fee saved — ' + ordered.length + ' months, ' +
+            ordered[0] + ' to ' + ordered[ordered.length - 1] + '.', 'success');
+}
+
+// ══ VAN FEE PER STUDENT (Phase 1 — view only) ══
+// The van fee comes from the student's transport assignment, not the class
+// structure. No assignment means day scholar, and no van rows are drawn.
+async function getStudentVan(studentId) {
+  try {
+    const { data } = await supabase.from('student_transport').select('*').eq('student_id', studentId).single();
+    return data || null;
+  } catch (e) { return null; }
+}
+
+// Which fee head represents van fee? The one categorised as Transport.
+function getVanFeeHead() {
+  return feeHeads.find(h => h.category === 'transport') || null;
+}
+
+// Months this student is actually charged for — a mid-year joiner starts
+// from the month they were admitted, not from the start of the year.
+function vanMonthsForStudent(student) {
+  if (!vanMonths.length) return [];
+  if (!student || !student.admission_date) return vanMonths.slice();
+
+  const adm = new Date(student.admission_date);
+  if (isNaN(adm.getTime())) return vanMonths.slice();
+
+  // Where did the current van year begin? At the first van month.
+  const now = new Date();
+  const startIdx = VAN_CAL_MONTHS.indexOf(vanMonths[0]);
+  if (startIdx === -1) return vanMonths.slice();
+  let yearStart = new Date(now.getFullYear(), startIdx, 1);
+  if (yearStart > now) yearStart = new Date(now.getFullYear() - 1, startIdx, 1);
+
+  // Joined before this year started → charged for the whole run
+  if (adm < yearStart) return vanMonths.slice();
+
+  // Joined partway through → charged from their joining month onwards
+  const pos = vanMonths.indexOf(adm.toLocaleString('en-US', { month: 'long' }));
+  return pos > 0 ? vanMonths.slice(pos) : vanMonths.slice();
+}
+
+// Builds the whole van block: header badge and month table.
+function buildVanSection(student, van, vanHead, paidMap, activeScheme) {
+  if (!van) {
+    return { badge: '<span class="van-pill day">🚶 Day Scholar</span>', html: '', due: 0, paid: 0 };
+  }
+
+  const rate = parseFloat(van.monthly_fee) || 0;
+  const stop = van.boarding_stop || '—';
+  const badge = '<span class="van-pill van">🚌 Van · ' + escapeAttr(stop) +
+                ' · ₹' + rate.toLocaleString('en-IN') + '/month</span>';
+
+  if (activeScheme && activeScheme.free_van) {
+    return {
+      badge: badge,
+      html: '<div class="van-box"><div class="van-title">🚌 Van Fee</div>' +
+            '<div class="alert alert-success" style="margin:0">🎓 Free — 5-Year Scheme' +
+            (van.route_name ? ' · Route: ' + escapeAttr(van.route_name) : '') + '</div></div>',
+      due: 0, paid: 0
+    };
+  }
+
+  if (!vanHead) {
+    return {
+      badge: badge,
+      html: '<div class="van-box"><div class="van-title">🚌 Van Fee</div>' +
+            '<div class="alert alert-info" style="margin:0">No fee head is categorised as ' +
+            '<b>Transport / Van</b> yet. Add one under Fee Heads so van fee can be tracked.</div></div>',
+      due: 0, paid: 0
+    };
+  }
+
+  const months = vanMonthsForStudent(student);
+  if (!months.length) {
+    return {
+      badge: badge,
+      html: '<div class="van-box"><div class="van-title">🚌 Van Fee</div>' +
+            '<div class="alert alert-info" style="margin:0">No van fee months ticked yet. ' +
+            'Set them under <b>Fee Structure → Van Fee Months</b>.</div></div>',
+      due: 0, paid: 0
+    };
+  }
+
+  let due = 0, paid = 0;
+  const rows = months.map(m => {
+    const key = vanHead.id + '_' + m;
+    const mPaid = paidMap[key] || 0;
+    due += rate;
+    paid += mPaid;
+    const settled = mPaid >= rate && rate > 0;
+    return '<tr>' +
+      '<td style="font-weight:500">' + m + '</td>' +
+      '<td style="text-align:right">₹' + rate.toLocaleString('en-IN') + '</td>' +
+      '<td style="text-align:right;color:#2D7A3A">₹' + mPaid.toLocaleString('en-IN') + '</td>' +
+      '<td style="text-align:right;font-weight:600;color:' + (settled ? '#2D7A3A' : '#A32D2D') + '">' +
+        (settled ? '✓ Paid' : 'Unpaid') +
+      '</td></tr>';
+  }).join('');
+
+  const bal = due - paid;
+  const html =
+    '<div class="van-box">' +
+      '<div class="van-title">🚌 Van Fee' +
+        '<span style="font-weight:400;font-size:12px;color:var(--text-muted)"> — ' +
+        escapeAttr(stop) + (van.route_name ? ' · ' + escapeAttr(van.route_name) : '') +
+        ' · ₹' + rate.toLocaleString('en-IN') + ' × ' + months.length + ' months</span>' +
+      '</div>' +
+      '<div style="overflow-x:auto"><table style="font-size:12px">' +
+        '<thead><tr><th>Month</th><th style="text-align:right">Amount</th>' +
+        '<th style="text-align:right">Paid</th><th style="text-align:right">Status</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+        '<tfoot><tr style="font-weight:700;background:#FBF5EE">' +
+          '<td>Total</td>' +
+          '<td style="text-align:right">₹' + due.toLocaleString('en-IN') + '</td>' +
+          '<td style="text-align:right;color:#2D7A3A">₹' + paid.toLocaleString('en-IN') + '</td>' +
+          '<td style="text-align:right;color:' + (bal > 0 ? '#A32D2D' : '#2D7A3A') + '">₹' +
+            bal.toLocaleString('en-IN') + '</td>' +
+        '</tr></tfoot>' +
+      '</table></div>' +
+    '</div>';
+
+  return { badge: badge, html: html, due: due, paid: paid };
+}
+
 // ── SEARCH STUDENT FOR COLLECTION ──
 async function searchStudents() {
   const q = document.getElementById('search-student').value.trim();
@@ -1626,6 +1855,10 @@ async function selectStudentForFee(studentId) {
   const periods = getPeriods();
   const activeScheme = await getActiveScheme(studentId);
 
+  // Van fee lives in the transport assignment, not the class structure
+  const vanRecord = await getStudentVan(studentId);
+  const vanHead = getVanFeeHead();
+
   // Apply this student's custom fee amounts (e.g. route-based van fee)
   const { data: ovData } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
   studentOverrides = ovData || [];
@@ -1645,8 +1878,17 @@ async function selectStudentForFee(studentId) {
     return;
   }
 
+  // Transport heads are drawn in their own van block below, not in this table
+  const mainStructure = (structure || []).filter(s => {
+    const h = feeHeads.find(x => x.id === s.fee_head_id);
+    return !h || h.category !== 'transport';
+  });
+
+  const vanSection = buildVanSection(student, vanRecord, vanHead, paidMap, activeScheme);
+
   let totalFee = 0, totalPaid = 0;
-  structure.forEach(s => { if (!isFeeWaived(activeScheme, s.fee_head_id)) totalFee += s.total_amount || 0; });
+  mainStructure.forEach(s => { if (!isFeeWaived(activeScheme, s.fee_head_id)) totalFee += s.total_amount || 0; });
+  totalFee += vanSection.due;
   if (payments) payments.forEach(p => { totalPaid += p.amount_paid || 0; });
   const balance = totalFee - totalPaid;
   const pct = totalFee > 0 ? Math.round((totalPaid/totalFee)*100) : 0;
@@ -1663,6 +1905,7 @@ async function selectStudentForFee(studentId) {
         <div style="flex:1">
           <div style="font-weight:700;font-size:15px">${student.full_name}</div>
           <div style="font-size:12px;color:var(--text-muted)">${student.admission_no} · ${student.class}${student.section?' '+student.section:''} · ${student.father_name||''} · ${student.mobile||''}</div>
+          <div style="margin-top:6px">${vanSection.badge}</div>
         </div>
         ${(typeof isFeeCollectionOnly === 'function' && isFeeCollectionOnly()) ? '' : `<button class="btn btn-secondary" onclick="openOverridesModal('${student.id}')">✏️ Custom Amounts</button>`}
         <button class="btn btn-gold" onclick="openCollectModal('${student.id}')">+ Collect Fee</button>
@@ -1691,7 +1934,7 @@ async function selectStudentForFee(studentId) {
           </tr>
         </thead>
         <tbody>
-          ${structure.map(s => {
+          ${mainStructure.map(s => {
             if (isFeeWaived(activeScheme, s.fee_head_id)) {
               return `
                 <tr style="background:#F3FBF5">
@@ -1726,6 +1969,7 @@ async function selectStudentForFee(studentId) {
         </tbody>
       </table>
       </div>
+      ${vanSection.html}
       ${payments && payments.length > 0 ? `
         <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
           <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Payment History</div>
