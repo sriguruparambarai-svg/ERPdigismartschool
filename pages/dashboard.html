@@ -29,6 +29,12 @@
 .notice-date{font-size:11px;color:var(--text-muted);margin-top:2px}
 .att-bar{height:8px;border-radius:4px;background:#F0EBE3;overflow:hidden;margin-top:4px}
 .att-fill{height:100%;border-radius:4px;background:#2D7A3A}
+.task-btn{display:flex;align-items:center;gap:14px;padding:18px 20px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);text-decoration:none;transition:all .15s;margin-bottom:10px}
+.task-btn:hover{border-color:var(--gold);background:var(--sandal-light);box-shadow:0 4px 16px rgba(107,26,26,.1)}
+.task-btn .ti{width:48px;height:48px;border-radius:12px;background:var(--sandal-light);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0}
+.task-btn .tl{font-size:16px;font-weight:700;color:var(--maroon)}
+.task-btn .ts{font-size:12px;color:var(--text-muted);margin-top:2px}
+.task-arrow{margin-left:auto;color:var(--gold);font-size:20px;font-weight:700}
 @media(max-width:900px){.dash-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -59,6 +65,18 @@
           <div style="font-size:11px;color:rgba(245,230,200,.55);margin-top:2px">Academic Year 2026-27</div>
         </div>
       </div>
+
+      <!-- ══ Staff Home (shown only to staff logins, not the owner) ══ -->
+      <div id="staff-home" style="display:none">
+        <div class="card" style="max-width:640px">
+          <div class="section-header">✅ Your Tasks</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Tap a task below to get started.</div>
+          <div id="staff-task-list"></div>
+        </div>
+      </div>
+
+      <!-- ══ Owner Dashboard (full figures — hidden from staff logins) ══ -->
+      <div id="owner-dash">
 
       <!-- Main Stats -->
       <div class="dash-grid">
@@ -194,6 +212,7 @@
         </div>
 
       </div>
+      </div><!-- /owner-dash -->
     </div>
   </div>
 </div>
@@ -249,6 +268,50 @@ function dashCanSeeFeeTotals() {
   return !isStaff || (typeof ALLOWED_MODULES !== 'undefined' && ALLOWED_MODULES.indexOf('fee') !== -1);
 }
 
+// ══ Staff Home (Option B) ══
+// A staff login gets a plain task page instead of the school dashboard.
+// No student counts, no fee totals, no admissions — and none of those
+// figures are even fetched, because we stop before the loaders run.
+var STAFF_TASKS = [
+  { id:'face',          icon:'\u{1F9D1}\u200D\u{1F3EB}', label:'Staff Attendance',     sub:'Mark morning and evening attendance', href:'face-attendance.html' },
+  { id:'student-att',   icon:'\u2705',                     label:'Student Attendance',   sub:'Mark class attendance',               href:'student-attendance.html' },
+  { id:'fee',           icon:'\u{1F4B0}',                  label:'Fee Management',       sub:'Enter and collect fee details',       href:'fee.html' },
+  { id:'admission',     icon:'\u{1F4DD}',                  label:'Admission',            sub:'Add and manage students',             href:'admission.html' },
+  { id:'exam',          icon:'\u{1F4C4}',                  label:'Exam Management',      sub:'Exams and marks entry',               href:'exam.html' },
+  { id:'icard',         icon:'\u{1FAAA}',                  label:'I-Card & Timetable',   sub:'Cards and class timetable',           href:'icard.html' },
+  { id:'certificates',  icon:'\u{1F4DC}',                  label:'Certificates',         sub:'Issue school certificates',           href:'certificates.html' },
+  { id:'billing',       icon:'\u{1F9FE}',                  label:'Billing & Accounts',   sub:'Bills and account entries',           href:'billing.html' },
+  { id:'hrm',           icon:'\u{1F465}',                  label:'HRM & Salary',         sub:'Staff records and salary',            href:'hrm.html' },
+  { id:'frontoffice',   icon:'\u{1F3E2}',                  label:'Front Office',         sub:'Visitors and enquiries',              href:'frontoffice.html' },
+  { id:'transport',     icon:'\u{1F68C}',                  label:'Transport & GPS',      sub:'Routes and vehicle tracking',         href:'transport.html' },
+  { id:'communication', icon:'\u{1F4E3}',                  label:'Parent Communication', sub:'Send notices to parents',             href:'communication.html' }
+];
+
+function renderStaffHome() {
+  var list = document.getElementById('staff-task-list');
+  if (!list) return;
+  var html = '';
+  for (var i = 0; i < STAFF_TASKS.length; i++) {
+    var t = STAFF_TASKS[i];
+    if (typeof hasModuleAccess === 'function' && !hasModuleAccess(t.id)) continue;
+    html += '<a href="' + t.href + '" class="task-btn">' +
+              '<div class="ti">' + t.icon + '</div>' +
+              '<div><div class="tl">' + t.label + '</div>' +
+              '<div class="ts">' + t.sub + '</div></div>' +
+              '<div class="task-arrow">\u2192</div>' +
+            '</a>';
+  }
+  if (!html) {
+    html = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0">' +
+           'No tasks have been assigned to your login yet. Please contact the school office.</div>';
+  }
+  list.innerHTML = html;
+  var ownerDash = document.getElementById('owner-dash');
+  if (ownerDash) ownerDash.style.display = 'none';
+  var staffHome = document.getElementById('staff-home');
+  if (staffHome) staffHome.style.display = 'block';
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('dashboard');
 
@@ -293,6 +356,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const schoolName = sessionStorage.getItem('school_name') || 'DigiSmart ERP';
   document.getElementById('school-name-display').textContent = schoolName;
+
+  // Staff logins stop here — task page only, no school figures loaded at all.
+  if (IS_STAFF_DASH) {
+    renderStaffHome();
+    return;
+  }
 
   await Promise.all([
     loadMainStats(),
