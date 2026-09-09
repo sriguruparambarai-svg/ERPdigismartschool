@@ -160,7 +160,7 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group" style="margin:0">
-          <label class="form-label">Bill Date</label>
+          <label class="form-label">Bill Date <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
           <input type="date" id="es-opening-date" class="form-control">
         </div>
         <div class="form-group" style="margin:0">
@@ -488,7 +488,6 @@ async function saveEnrollment() {
   if (openingAmt < 0) { alertEl.className='alert alert-danger'; alertEl.textContent='Amount already paid cannot be a minus figure.'; return; }
   if (openingAmt > feeAmount) { alertEl.className='alert alert-danger'; alertEl.textContent='Amount already paid cannot be more than the scheme fee.'; return; }
   if (openingAmt > 0 && !openingBill) { alertEl.className='alert alert-danger'; alertEl.textContent='Please enter the manual bill number for the amount already paid.'; return; }
-  if (openingAmt > 0 && !openingDate) { alertEl.className='alert alert-danger'; alertEl.textContent='Please enter the bill date for the amount already paid.'; return; }
 
   alertEl.className = 'hidden';
   const btn = document.getElementById('enroll-save-btn');
@@ -523,7 +522,7 @@ async function saveEnrollment() {
     const row = { scheme_enrollment_id: enrollment.id, school_id: SCHOOL_ID, installment_no: i+1, amount_due: amt, amount_paid: paidNow };
     if (paidNow > 0) {
       row.receipt_no = openingBill;
-      row.payment_date = openingDate;
+      row.payment_date = openingDate || null;
       row.payment_mode = openingMode;
       row.is_manual_bill = true;
     }
