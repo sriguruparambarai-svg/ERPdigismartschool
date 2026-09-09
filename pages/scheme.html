@@ -212,6 +212,8 @@ function populateYearDropdowns() {
   startSel.innerHTML = ''; compSel.innerHTML = '';
   for (let y = nowYear - 6; y <= nowYear + 2; y++) {
     startSel.innerHTML += `<option value="${y}">${y}-${y+1}</option>`;
+  }
+  for (let y = nowYear - 6; y <= nowYear + 8; y++) {
     compSel.innerHTML += `<option value="${y}">${y}-${y+1}</option>`;
   }
   startSel.value = nowYear;
@@ -220,7 +222,12 @@ function populateYearDropdowns() {
 
 function updateCompletionYear() {
   const start = parseInt(document.getElementById('es-start-year').value);
-  document.getElementById('es-completion-year').value = start + 4;
+  const compSel = document.getElementById('es-completion-year');
+  const target = start + 4;
+  if (!Array.from(compSel.options).some(o => parseInt(o.value) === target)) {
+    compSel.innerHTML += `<option value="${target}">${target}-${target+1}</option>`;
+  }
+  compSel.value = target;
 }
 
 // ── LOAD & RENDER ──
