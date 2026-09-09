@@ -193,6 +193,47 @@
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
 <script>
+// ══ Secure Scheme Channel ══
+// The two scheme tables are locked in the database — browsers cannot reach
+// them directly. Every scheme query travels through api/scheme-data.js,
+// which checks the login's signed session token first.
+const secureScheme = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null };
+    const b = {
+      select(cols) { if (req.action === 'select') req.select = cols || '*'; return b; },
+      insert(vals) { req.action = 'insert'; req.values = vals; return b; },
+      update(vals) { req.action = 'update'; req.values = vals; return b; },
+      delete() { req.action = 'delete'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      in(col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+      gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+      lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+      order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+      limit(n) { req.limit = n; return b; },
+      single() { req.single = true; return b; },
+      then(resolve, reject) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/scheme-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json().then(out => ({ status: r.status, out: out })))
+        .then(({ status, out }) => {
+          if (status === 401) {
+            showToast('Session expired — please log in again', 'error');
+            setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+          }
+          resolve({ data: (out && out.ok) ? out.data : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } });
+        })
+        .catch(() => resolve({ data: null, error: { message: 'Network error — please check your connection.' } }));
+      }
+    };
+    return b;
+  }
+};
+
 let allSchemes = [];
 let selectedEnrollStudent = null;
 let currentSchemeEnrollment = null;
@@ -232,11 +273,11 @@ function updateCompletionYear() {
 
 // ── LOAD & RENDER ──
 async function loadSchemes() {
-  const { data } = await supabase.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).order('created_at', {ascending:false});
+  const { data } = await secureScheme.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).order('created_at', {ascending:false});
   allSchemes = data || [];
 
   // Load payment totals for each
-  const { data: payments } = await supabase.from('scheme_payments').select('*').eq('school_id', SCHOOL_ID);
+  const { data: payments } = await secureScheme.from('scheme_payments').select('*').eq('school_id', SCHOOL_ID);
   allSchemes.forEach(s => {
     s.payments = (payments || []).filter(p => p.scheme_enrollment_id === s.id);
     s.totalPaid = s.payments.reduce((sum,p) => sum + (p.amount_paid||0), 0);
@@ -308,7 +349,7 @@ function renderSchemeList() {
 
 async function updateSchemeStatus(id, status) {
   if (!confirm(`Mark this scheme as ${status}?`)) return;
-  await supabase.from('scheme_enrollments').update({ status }).eq('id', id);
+  await secureScheme.from('scheme_enrollments').update({ status }).eq('id', id);
   showToast('Scheme status updated.','success');
   await loadSchemes();
 }
@@ -388,7 +429,7 @@ async function saveEnrollment() {
   const btn = document.getElementById('enroll-save-btn');
   btn.textContent = 'Saving...'; btn.disabled = true;
 
-  const { data: enrollment, error } = await supabase.from('scheme_enrollments').insert([{
+  const { data: enrollment, error } = await secureScheme.from('scheme_enrollments').insert([{
     school_id: SCHOOL_ID,
     student_id: selectedEnrollStudent.id,
     student_name: selectedEnrollStudent.full_name,
@@ -412,7 +453,7 @@ async function saveEnrollment() {
     const amt = parseFloat(document.getElementById(`inst-amt-${i}`)?.value) || 0;
     installments.push({ scheme_enrollment_id: enrollment.id, school_id: SCHOOL_ID, installment_no: i+1, amount_due: amt, amount_paid: 0 });
   }
-  if (installments.length > 0) await supabase.from('scheme_payments').insert(installments);
+  if (installments.length > 0) await secureScheme.from('scheme_payments').insert(installments);
 
   btn.textContent = '✓ Enroll Student'; btn.disabled = false;
   closeEnrollModal();
@@ -431,7 +472,7 @@ async function openCollectSchemeModal(enrollmentId) {
     <div style="font-size:12px;color:var(--text-muted)">${scheme.admission_no} · Scheme: ${scheme.start_year}-${scheme.start_year+1} to ${scheme.completion_year}-${scheme.completion_year+1}</div>
   `;
 
-  const { data: installments } = await supabase.from('scheme_payments').select('*').eq('scheme_enrollment_id', enrollmentId).order('installment_no');
+  const { data: installments } = await secureScheme.from('scheme_payments').select('*').eq('scheme_enrollment_id', enrollmentId).order('installment_no');
   let html = '';
   (installments||[]).forEach(inst => {
     const balance = (inst.amount_due||0) - (inst.amount_paid||0);
@@ -483,9 +524,9 @@ async function processSchemePayment() {
     if (amt <= 0) continue;
     anyPaid = true;
 
-    const { data: current } = await supabase.from('scheme_payments').select('amount_paid').eq('id', instId).single();
+    const { data: current } = await secureScheme.from('scheme_payments').select('amount_paid').eq('id', instId).single();
     const newPaid = (current?.amount_paid || 0) + amt;
-    await supabase.from('scheme_payments').update({
+    await secureScheme.from('scheme_payments').update({
       amount_paid: newPaid, payment_date: payDate, payment_mode: payMode,
       receipt_no: `SCH-${new Date().getFullYear()}-${instId.slice(0,6).toUpperCase()}`
     }).eq('id', instId);
