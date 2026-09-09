@@ -145,6 +145,36 @@
 
     <div id="es-installment-preview" style="margin-bottom:12px"></div>
 
+    <div style="border:1px dashed var(--sandal,#E8C99A);border-radius:8px;padding:12px;margin-bottom:12px;background:#FDFBF7">
+      <div style="font-weight:700;font-size:13px;color:var(--maroon);margin-bottom:2px">Already Paid (collected before ERP)</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Leave blank if nothing has been collected yet. Money entered here is applied to the installments in order.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Amount Already Paid (Rs.)</label>
+          <input type="number" id="es-opening-amt" class="form-control" placeholder="e.g. 20000">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Manual Bill No</label>
+          <input type="text" id="es-opening-bill" class="form-control" placeholder="e.g. 1247">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Bill Date</label>
+          <input type="date" id="es-opening-date" class="form-control">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label class="form-label">Payment Mode</label>
+          <select id="es-opening-mode" class="form-control">
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="cheque">Cheque</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div class="form-group" style="margin-bottom:12px">
       <label class="form-label">Notes (optional)</label>
       <input type="text" id="es-notes" class="form-control" placeholder="Any additional notes">
@@ -181,6 +211,14 @@
         <label class="form-label">Payment Date</label>
         <input type="date" id="cs-pay-date" class="form-control">
       </div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Bill / Receipt No <span style="font-weight:400;color:var(--text-muted)">(leave blank to auto-generate)</span></label>
+      <input type="text" id="cs-bill-no" class="form-control" placeholder="e.g. 1247">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:8px">
+        <input type="checkbox" id="cs-manual-bill" style="width:16px;height:16px">
+        This is a manual bill written outside the ERP
+      </label>
     </div>
     <div id="cs-alert" class="hidden"></div>
     <div class="modal-footer">
@@ -348,6 +386,19 @@ function renderSchemeList() {
 }
 
 async function updateSchemeStatus(id, status) {
+  // Marking a scheme completed only changes the label — it does NOT record
+  // money as paid. Warn plainly so nobody expects the dues to clear.
+  const sch = allSchemes.find(x => x.id === id);
+  if (status === 'completed' && sch) {
+    const due = Math.max(0, (sch.scheme_fee_amount || 0) - (sch.totalPaid || 0));
+    if (due > 0) {
+      if (!confirm(`${sch.student_name} still has Rs.${due.toLocaleString('en-IN')} not entered as paid.\n\nMarking the scheme completed will NOT record that money. If it was already collected by hand, cancel this and use "+ Collect Installment" with the bill number instead.\n\nMark completed anyway?`)) return;
+      await secureScheme.from('scheme_enrollments').update({ status }).eq('id', id);
+      showToast('Scheme status updated.','success');
+      await loadSchemes();
+      return;
+    }
+  }
   if (!confirm(`Mark this scheme as ${status}?`)) return;
   await secureScheme.from('scheme_enrollments').update({ status }).eq('id', id);
   showToast('Scheme status updated.','success');
@@ -366,6 +417,10 @@ function openEnrollModal() {
   document.getElementById('es-free-uniform').checked = false;
   document.getElementById('es-free-books').checked = false;
   document.getElementById('es-installment-preview').innerHTML = '';
+  document.getElementById('es-opening-amt').value = '';
+  document.getElementById('es-opening-bill').value = '';
+  document.getElementById('es-opening-date').value = '';
+  document.getElementById('es-opening-mode').value = 'cash';
   document.getElementById('enroll-alert').className = 'hidden';
   populateYearDropdowns();
   document.getElementById('enroll-modal').classList.add('open');
@@ -425,6 +480,16 @@ async function saveEnrollment() {
   const completionYear = parseInt(document.getElementById('es-completion-year').value);
   const installmentCount = parseInt(document.getElementById('es-installments').value);
 
+  // Money already collected by hand, before this scheme was entered in the ERP
+  const openingAmt = parseFloat(document.getElementById('es-opening-amt').value) || 0;
+  const openingBill = document.getElementById('es-opening-bill').value.trim();
+  const openingDate = document.getElementById('es-opening-date').value;
+  const openingMode = document.getElementById('es-opening-mode').value;
+  if (openingAmt < 0) { alertEl.className='alert alert-danger'; alertEl.textContent='Amount already paid cannot be a minus figure.'; return; }
+  if (openingAmt > feeAmount) { alertEl.className='alert alert-danger'; alertEl.textContent='Amount already paid cannot be more than the scheme fee.'; return; }
+  if (openingAmt > 0 && !openingBill) { alertEl.className='alert alert-danger'; alertEl.textContent='Please enter the manual bill number for the amount already paid.'; return; }
+  if (openingAmt > 0 && !openingDate) { alertEl.className='alert alert-danger'; alertEl.textContent='Please enter the bill date for the amount already paid.'; return; }
+
   alertEl.className = 'hidden';
   const btn = document.getElementById('enroll-save-btn');
   btn.textContent = 'Saving...'; btn.disabled = true;
@@ -449,9 +514,20 @@ async function saveEnrollment() {
 
   // Create installment payment placeholders
   const installments = [];
+  let openingLeft = openingAmt;
   for (let i = 0; i < installmentCount; i++) {
     const amt = parseFloat(document.getElementById(`inst-amt-${i}`)?.value) || 0;
-    installments.push({ scheme_enrollment_id: enrollment.id, school_id: SCHOOL_ID, installment_no: i+1, amount_due: amt, amount_paid: 0 });
+    // Fill installment 1 first, then spill over into the next one
+    const paidNow = Math.min(openingLeft, amt);
+    openingLeft -= paidNow;
+    const row = { scheme_enrollment_id: enrollment.id, school_id: SCHOOL_ID, installment_no: i+1, amount_due: amt, amount_paid: paidNow };
+    if (paidNow > 0) {
+      row.receipt_no = openingBill;
+      row.payment_date = openingDate;
+      row.payment_mode = openingMode;
+      row.is_manual_bill = true;
+    }
+    installments.push(row);
   }
   if (installments.length > 0) await secureScheme.from('scheme_payments').insert(installments);
 
@@ -489,6 +565,8 @@ async function openCollectSchemeModal(enrollmentId) {
     }
   });
   document.getElementById('cs-installments').innerHTML = html || '<div class="empty-state"><p>All installments paid.</p></div>';
+  document.getElementById('cs-bill-no').value = '';
+  document.getElementById('cs-manual-bill').checked = false;
   document.getElementById('cs-alert').className = 'hidden';
   document.getElementById('collect-scheme-modal').classList.add('open');
 }
@@ -514,6 +592,8 @@ async function processSchemePayment() {
   const rows = document.querySelectorAll('[id^="inst-cb-"]');
   const payDate = document.getElementById('cs-pay-date').value;
   const payMode = document.getElementById('cs-pay-mode').value;
+  const billNo = document.getElementById('cs-bill-no').value.trim();
+  const isManualBill = document.getElementById('cs-manual-bill').checked;
   let anyPaid = false;
 
   for (const cb of rows) {
@@ -528,7 +608,8 @@ async function processSchemePayment() {
     const newPaid = (current?.amount_paid || 0) + amt;
     await secureScheme.from('scheme_payments').update({
       amount_paid: newPaid, payment_date: payDate, payment_mode: payMode,
-      receipt_no: `SCH-${new Date().getFullYear()}-${instId.slice(0,6).toUpperCase()}`
+      receipt_no: billNo || `SCH-${new Date().getFullYear()}-${instId.slice(0,6).toUpperCase()}`,
+      is_manual_bill: isManualBill
     }).eq('id', instId);
   }
 
