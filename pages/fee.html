@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fee Management — DigiSmart ERP</title>
-<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/style.css?v=2">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 .van-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px}
@@ -39,6 +39,24 @@
    Desktop layout is completely untouched.
    ════════════════════════════════════════ */
 @media (max-width: 768px) {
+
+  /* 0 — The Collect Fee tab uses a fixed 380px side column, which cannot
+         fit a phone and was forcing the whole page wider than the screen.
+         Every fixed-column layout on this page becomes a single column.
+         Grids that say auto-fit / auto-fill already shrink on their own. */
+  .page-body div[style*="grid-template-columns"]:not([style*="auto-fit"]):not([style*="auto-fill"]) {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 0b — Nothing on the page may be wider than the phone itself. */
+  .page-body,
+  .page-body .card,
+  #tab-collect,
+  #fee-detail-panel {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 
   /* 1 — Tab strip swipes sideways, so Reports and Defaulters
          can be reached on a phone instead of being cut off. */
