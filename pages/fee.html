@@ -648,6 +648,21 @@
         <input type="text" id="pay-remark" class="form-control" placeholder="Optional note">
       </div>
     </div>
+    <!-- ── PREVIOUS HAND-WRITTEN BILL (pre-ERP entries) ── -->
+    <div style="border:1px dashed var(--gold);border-radius:8px;padding:11px 12px;margin-bottom:14px;background:var(--sandal-light)">
+      <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:600;color:var(--maroon)">
+        <input type="checkbox" id="manual-bill-chk" onchange="toggleManualBill()" style="width:16px;height:16px;cursor:pointer;flex:0 0 auto">
+        Previous hand-written bill (before ERP)
+      </label>
+      <div id="manual-bill-wrap" class="hidden" style="margin-top:10px">
+        <label class="form-label">Old Bill No <span class="req">*</span></label>
+        <input type="text" id="manual-bill-no" class="form-control" placeholder="e.g. 245 or A/245">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:5px">
+          This is saved as the receipt number, so the old bill number shows in Receipts and reports.
+          Also set the <b>Payment Date</b> above to the original bill date.
+        </div>
+      </div>
+    </div>
     <div style="background:var(--sandal-light);border-radius:8px;padding:12px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
         <span>Selected Amount:</span>
@@ -2163,6 +2178,7 @@ async function openCollectModal(studentId) {
   `;
   document.getElementById('collect-fee-items').innerHTML = itemsHtml;
   updateCollectTotal();
+  resetManualBill();
   document.getElementById('collect-modal').classList.add('open');
 }
 
@@ -2196,6 +2212,25 @@ function updateCollectTotal() {
 function closeCollectModal() { document.getElementById('collect-modal').classList.remove('open'); }
 function closeReceiptModal() { document.getElementById('receipt-modal').classList.remove('open'); }
 
+// ── PREVIOUS HAND-WRITTEN BILL HELPERS ──
+// Shows or hides the Old Bill No box when the tick box is changed.
+function toggleManualBill() {
+  const on = document.getElementById('manual-bill-chk').checked;
+  const wrap = document.getElementById('manual-bill-wrap');
+  if (on) wrap.classList.remove('hidden'); else wrap.classList.add('hidden');
+}
+
+// Clears the tick box between students, so one old bill number can never
+// be carried over by accident into the next collection.
+function resetManualBill() {
+  const chk = document.getElementById('manual-bill-chk');
+  const no = document.getElementById('manual-bill-no');
+  const wrap = document.getElementById('manual-bill-wrap');
+  if (chk) chk.checked = false;
+  if (no) no.value = '';
+  if (wrap) wrap.classList.add('hidden');
+}
+
 async function processPayment() {
   const selectedItems = currentCollectItems.filter(item => {
     const cb = document.getElementById(item.id);
@@ -2222,14 +2257,44 @@ async function processPayment() {
   const payRemark = document.getElementById('pay-remark').value.trim();
   const totalAmt = selectedItems.reduce((s,i)=>s+i.amount, 0);
 
-  // Generate receipt number
-  const { data: lastRec } = await secureFee.from('fee_payments').select('receipt_no').eq('school_id',SCHOOL_ID).order('created_at',{ascending:false}).limit(1);
-  let recNum = 1;
-  if (lastRec && lastRec.length > 0) {
-    const last = lastRec[0].receipt_no?.split('-').pop();
-    if (last) recNum = parseInt(last) + 1;
+  // ── Receipt number ──
+  // Either the old hand-written bill number, or the next ERP number.
+  const manualChk = document.getElementById('manual-bill-chk');
+  const manualOn = !!(manualChk && manualChk.checked);
+  const manualNo = manualOn ? (document.getElementById('manual-bill-no').value || '').trim() : '';
+  let receiptNo;
+
+  if (manualOn) {
+    if (!manualNo) {
+      document.getElementById('collect-alert').className = 'alert alert-danger';
+      document.getElementById('collect-alert').textContent = '⚠️ Please enter the Old Bill No, or untick "Previous hand-written bill".';
+      btn.textContent = '✓ Collect & Print Receipt'; btn.disabled = false;
+      return;
+    }
+    // Refuse a bill number already used — two receipts sharing a number
+    // would merge into one row in the Receipts tab.
+    const { data: dupRec } = await secureFee.from('fee_payments').select('receipt_no').eq('school_id', SCHOOL_ID).eq('receipt_no', manualNo).limit(1);
+    if (dupRec && dupRec.length > 0) {
+      document.getElementById('collect-alert').className = 'alert alert-danger';
+      document.getElementById('collect-alert').textContent = '⚠️ Bill No ' + manualNo + ' has already been entered. Please check the Receipts tab.';
+      btn.textContent = '✓ Collect & Print Receipt'; btn.disabled = false;
+      return;
+    }
+    receiptNo = manualNo;
+  } else {
+    // Only ERP receipts (RCP-...) are counted, and the HIGHEST number is used
+    // rather than the newest row. So a hand-written bill number entered today
+    // can never push the automatic numbering forward or backward.
+    const { data: allRec } = await secureFee.from('fee_payments').select('receipt_no').eq('school_id', SCHOOL_ID);
+    let recNum = 1;
+    (allRec || []).forEach(function (r) {
+      const rn = r.receipt_no || '';
+      if (rn.indexOf('RCP-') !== 0) return;
+      const tail = parseInt(rn.split('-').pop(), 10);
+      if (!isNaN(tail) && tail + 1 > recNum) recNum = tail + 1;
+    });
+    receiptNo = `RCP-${new Date().getFullYear()}-${String(recNum).padStart(4,'0')}`;
   }
-  const receiptNo = `RCP-${new Date().getFullYear()}-${String(recNum).padStart(4,'0')}`;
 
   // Insert all payment records
   const records = selectedItems.map(item => ({
