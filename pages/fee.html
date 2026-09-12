@@ -32,6 +32,67 @@
 .sband-item{display:flex;flex-direction:column;gap:2px}
 .sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
 .sband-value{font-size:18px;font-weight:700;color:var(--maroon)}
+
+/* ════════════════════════════════════════
+   MOBILE FIX — FEE PAGE (phones only, max-width 768px)
+   Added below. Nothing above this line was changed.
+   Desktop layout is completely untouched.
+   ════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* 1 — Tab strip swipes sideways, so Reports and Defaulters
+         can be reached on a phone instead of being cut off. */
+  .tab-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tab-bar::-webkit-scrollbar { display: none; }
+  .tab { flex: 0 0 auto; padding: 9px 13px; font-size: 12.5px; }
+
+  /* 2 — The student name row wraps, and both buttons become full
+         width underneath, so "+ Collect Fee" is always tappable. */
+  #fee-detail-panel div[style*="border-bottom:1px solid var(--border)"],
+  #fee-detail-panel div[style*="display:flex"]:has(> .avatar) {
+    flex-wrap: wrap;
+  }
+  #fee-detail-panel div[style*="display:flex"]:has(> .avatar) > .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+    margin-top: 6px;
+  }
+
+  /* 3 — Total Fee / Paid / Balance / Collection sits two across two. */
+  .summary-band {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+  .summary-band .sband-item[style*="flex:1"] { grid-column: 1 / -1; }
+
+  /* 4 — Wide fee tables scroll sideways inside their own box, with the
+         first column pinned so you always see which row you are on. */
+  #fee-detail-panel div[style*="overflow-x:auto"] {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+  #fee-detail-panel div[style*="overflow-x:auto"] > table { min-width: 560px; }
+  #fee-detail-panel div[style*="overflow-x:auto"] > table th:first-child,
+  #fee-detail-panel div[style*="overflow-x:auto"] > table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+  }
+  #fee-detail-panel div[style*="overflow-x:auto"] > table th:first-child {
+    background: var(--bg);
+  }
+  #fee-detail-panel div[style*="overflow-x:auto"] > table td:first-child {
+    background: var(--white);
+  }
+}
 </style>
 </head>
 <body>
