@@ -2799,7 +2799,7 @@ async function loadDefaulters() {
   const period = document.getElementById('def-period').value;
 
   // Get all active students
-  let studentQuery = supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,mobile,father_name').eq('school_id',SCHOOL_ID).eq('status','active');
+  let studentQuery = supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,mobile,father_name,admission_date').eq('school_id',SCHOOL_ID).eq('status','active');
   if (cls) studentQuery = studentQuery.eq('class',cls);
   const { data: students } = await studentQuery;
 
@@ -2828,6 +2828,20 @@ async function loadDefaulters() {
     structMap[s.class].push(s);
   });
 
+  // ── Scheme concessions and van assignments ──
+  // Both were ignored here before, so scheme students appeared to owe money
+  // for things given to them free, and van dues never showed up at all.
+  // Loaded once in bulk rather than per student.
+  const { data: schemeRows } = await supabase.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).eq('status', 'active');
+  const schemeMap = {};
+  (schemeRows || []).forEach(function (s) { schemeMap[s.student_id] = s; });
+
+  const { data: vanRows } = await supabase.from('student_transport').select('*').eq('school_id', SCHOOL_ID);
+  const vanMap = {};
+  (vanRows || []).forEach(function (v) { vanMap[v.student_id] = v; });
+
+  const defVanHead = getVanFeeHead();
+
   const defaulters = [];
   students.forEach(student => {
     const structs = structMap[student.class] || [];
@@ -2835,7 +2849,14 @@ async function loadDefaulters() {
     let totalDue = 0;
     const pendingByPeriod = {};
 
+    const stuScheme = schemeMap[student.id] || null;
+
     structs.forEach(s => {
+      // Free under the 5-Year Scheme — nothing owed on this head.
+      if (isFeeWaived(stuScheme, s.fee_head_id)) return;
+      // Van money is counted in its own block below, never as a class fee.
+      const sHead = feeHeads.find(x => x.id === s.fee_head_id);
+      if (sHead && sHead.category === 'transport') return;
       periods.forEach(p => {
         const amt = amountForPeriod(s, p);
         if (amt <= 0) return;
@@ -2844,6 +2865,26 @@ async function loadDefaulters() {
         if (bal > 0) { totalDue += bal; pendingByPeriod[p] = (pendingByPeriod[p] || 0) + bal; }
       });
     });
+
+    // ── Van dues ──
+    // Deliberately kept out of pendingByPeriod: late fees are configured per
+    // term, and feeding month names into that would produce wrong fines.
+    // Only counted on the unfiltered list, since van is billed by month and
+    // does not belong to any one term.
+    const stuVan = vanMap[student.id];
+    if (!period && stuVan && defVanHead && !(stuScheme && stuScheme.free_van)) {
+      if (vanPlanActive(stuVan)) {
+        const planAmt = parseFloat(stuVan.van_plan_amount) || 0;
+        const planPaid = paidMap[student.id + '_' + defVanHead.id + '_' + VAN_ONETIME_PERIOD] || 0;
+        if (planAmt - planPaid > 0) totalDue += planAmt - planPaid;
+      } else {
+        const vRate = parseFloat(stuVan.monthly_fee) || 0;
+        vanMonthsForStudent(student).forEach(function (m) {
+          const mPaid = paidMap[student.id + '_' + defVanHead.id + '_' + m] || 0;
+          if (vRate - mPaid > 0) totalDue += vRate - mPaid;
+        });
+      }
+    }
 
     // Fine owed on each overdue period
     let lateFee = 0;
