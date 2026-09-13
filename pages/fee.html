@@ -2441,8 +2441,11 @@ async function processPayment() {
     }
     // Refuse a bill number already used — two receipts sharing a number
     // would merge into one row in the Receipts tab.
-    const { data: dupRec } = await secureFee.from('fee_payments').select('receipt_no').eq('school_id', SCHOOL_ID).eq('receipt_no', manualNo).limit(1);
-    if (dupRec && dupRec.length > 0) {
+    // Cancelled receipts stay on record for audit, so they must not block the
+    // same bill number being entered again after a mistake has been undone.
+    const { data: dupRec } = await secureFee.from('fee_payments').select('receipt_no,is_cancelled').eq('school_id', SCHOOL_ID).eq('receipt_no', manualNo);
+    const dupLive = live(dupRec) || [];
+    if (dupLive.length > 0) {
       document.getElementById('collect-alert').className = 'alert alert-danger';
       document.getElementById('collect-alert').textContent = '⚠️ Bill No ' + manualNo + ' has already been entered. Please check the Receipts tab.';
       btn.textContent = '✓ Collect & Print Receipt'; btn.disabled = false;
