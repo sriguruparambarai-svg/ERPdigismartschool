@@ -54,6 +54,13 @@
           <div class="stat-sub">Days of messages left</div>
         </div>
         <div class="stat-card">
+          <div class="stat-label">Send today's question</div>
+          <div style="margin-top:8px">
+            <button class="btn btn-gold btn-sm" onclick="sendNow()">📤 Send now</button>
+          </div>
+          <div class="stat-sub" style="margin-top:6px">One per class, once a day</div>
+        </div>
+        <div class="stat-card">
           <div class="stat-label">Already sent</div>
           <div class="stat-value" id="st-sent">—</div>
           <div class="stat-sub">All time</div>
@@ -306,6 +313,24 @@ async function saveOne(id) {
   } catch (e) {
     hideLoading();
     showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+async function sendNow() {
+  if (!confirmAction("Send today's question now? Every class with approved questions left will receive one, and parents will see it immediately.")) return;
+  try {
+    showLoading('Sending...');
+    const res = await call('send_today', {});
+    hideLoading();
+    if (res.sent_count === 0) {
+      showToast('Nothing to send. Either today is already done, or no approved questions are left.', 'success');
+    } else {
+      showToast('Sent to ' + res.sent_count + ' class(es).', 'success');
+    }
+    await loadAll();
+  } catch (e) {
+    hideLoading();
+    showToast('\u26A0\uFE0F ' + e.message, 'error');
   }
 }
 
