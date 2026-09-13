@@ -1817,6 +1817,26 @@ function vanMonthsForStudent(student) {
 }
 
 // Builds the whole van block: header badge and month table.
+// ── ONE-TIME VAN PLAN ──
+// The period a one-time van payment is filed under. Kept as a fixed word so
+// paid-lookups always match, and so it reads plainly on a parent's receipt.
+const VAN_ONETIME_PERIOD = 'One-Time';
+
+// The van year runs June to May. Before June we are still inside last year's
+// run, so the year label steps back by one. Must match transport.html.
+function currentVanYear() {
+  const d = new Date();
+  const startY = d.getMonth() >= 5 ? d.getFullYear() : d.getFullYear() - 1;
+  return startY + '-' + String((startY + 1) % 100).padStart(2, '0');
+}
+
+// Is this student on a live one-time plan? Only when the stamped year matches
+// the current van year — so the plan lapses by itself each June rather than
+// carrying forward silently and leaving the student unbilled.
+function vanPlanActive(van) {
+  return !!(van && van.van_plan === 'one_time' && van.van_plan_year === currentVanYear());
+}
+
 function buildVanSection(student, van, vanHead, paidMap, activeScheme) {
   if (!van) {
     return { badge: '<span class="van-pill day">🚶 Day Scholar</span>', html: '', due: 0, paid: 0 };
@@ -1844,6 +1864,37 @@ function buildVanSection(student, van, vanHead, paidMap, activeScheme) {
             '<div class="alert alert-info" style="margin:0">No fee head is categorised as ' +
             '<b>Transport / Van</b> yet. Add one under Fee Heads so van fee can be tracked.</div></div>',
       due: 0, paid: 0
+    };
+  }
+
+  // One-time plan replaces the month-by-month table entirely.
+  if (vanPlanActive(van)) {
+    const planAmt = parseFloat(van.van_plan_amount) || 0;
+    const planPaid = paidMap[vanHead.id + '_' + VAN_ONETIME_PERIOD] || 0;
+    const planSettled = planPaid >= planAmt && planAmt > 0;
+    const planBadge = '<span class="van-pill van">🚌 Van · ' + escapeAttr(stop) +
+                      ' · One-time ₹' + planAmt.toLocaleString('en-IN') + '</span>';
+    return {
+      badge: planBadge,
+      html: '<div class="van-box">' +
+        '<div class="van-title">🚌 Van Fee' +
+          '<span style="font-weight:400;font-size:12px;color:var(--text-muted)"> — ' +
+          escapeAttr(stop) + (van.route_name ? ' · ' + escapeAttr(van.route_name) : '') +
+          ' · One-time plan ' + escapeAttr(van.van_plan_year) + '</span>' +
+        '</div>' +
+        '<div style="overflow-x:auto"><table style="font-size:12px">' +
+          '<thead><tr><th>Plan</th><th style="text-align:right">Amount</th>' +
+          '<th style="text-align:right">Paid</th><th style="text-align:right">Status</th></tr></thead>' +
+          '<tbody><tr>' +
+            '<td style="font-weight:500">One-time · full year</td>' +
+            '<td style="text-align:right">₹' + planAmt.toLocaleString('en-IN') + '</td>' +
+            '<td style="text-align:right;color:#2D7A3A">₹' + planPaid.toLocaleString('en-IN') + '</td>' +
+            '<td style="text-align:right;font-weight:600;color:' + (planSettled ? '#2D7A3A' : '#A32D2D') + '">' +
+              (planSettled ? '✓ Paid' : 'Unpaid') + '</td>' +
+          '</tr></tbody>' +
+        '</table></div>' +
+      '</div>',
+      due: planAmt, paid: planPaid
     };
   }
 
@@ -2187,6 +2238,37 @@ async function openCollectModal(studentId) {
         </div>
       </div>
     `;
+  } else if (collectVan && collectVanHead && vanPlanActive(collectVan)) {
+    // One-time plan — a single line, amount locked, because this plan is
+    // paid in full or not at all.
+    const planAmt = parseFloat(collectVan.van_plan_amount) || 0;
+    const planPaid = paidMap[collectVanHead.id + '_' + VAN_ONETIME_PERIOD] || 0;
+    const planBal = planAmt - planPaid;
+
+    if (planBal > 0) {
+      const planItemId = 'item-van-onetime';
+      currentCollectItems.push({
+        id: planItemId,
+        fee_head_id: collectVanHead.id,
+        fee_head_name: collectVanHead.name || 'Van Fee',
+        period: VAN_ONETIME_PERIOD,
+        amount: planBal,
+        original: planAmt,
+        paid: planPaid
+      });
+
+      itemsHtml += `
+        <div style="font-size:11px;font-weight:600;color:var(--maroon);margin:14px 0 8px">🚌 Van Fee — one-time plan ${escapeAttr(collectVan.van_plan_year)}</div>
+        <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px">
+          <input type="checkbox" id="${planItemId}" value="${planBal}" onchange="toggleItemAmount('${planItemId}')" style="width:16px;height:16px;cursor:pointer">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px">🚌 Van Fee · One-time plan</div>
+            <div style="font-size:11px;color:var(--text-muted)">Full year · ${escapeAttr(collectVan.boarding_stop || 'Van')} · single payment, no part payment</div>
+          </div>
+          <input type="number" id="${planItemId}-amt" class="form-control" style="width:100px;text-align:right;font-weight:700;color:var(--maroon);opacity:.4;background:var(--bg)" value="${planBal}" readonly disabled onclick="event.preventDefault();event.stopPropagation()">
+        </label>
+      `;
+    }
   } else if (collectVan && collectVanHead) {
     const vanRate = parseFloat(collectVan.monthly_fee) || 0;
     const vanMonthList = vanMonthsForStudent(student);
