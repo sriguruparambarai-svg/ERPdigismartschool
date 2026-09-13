@@ -186,14 +186,26 @@ module.exports = async (req, res) => {
 
   // ── The daily job. No login token; guarded by a secret instead. ──
   if (action === 'send_today') {
+    // Two ways in: the nightly schedule (secret), or a staff member pressing
+    // "Send now" in ERP. A staff member can only send for their own school.
     const secret = process.env.CRON_SECRET || '';
-    if (!secret || String(body.cron_secret || '') !== secret) {
-      return res.status(401).json({ ok: false, error: 'Not allowed.' });
+    const byCron = secret && String(body.cron_secret || '') === secret;
+    let onlySchool = null;
+
+    if (!byCron) {
+      const who = verifySessionToken(body.token);
+      if (!mayUse(who)) return res.status(401).json({ ok: false, error: 'Not allowed.' });
+      onlySchool = String(body.school_id || '').trim();
+      if (!onlySchool) return res.status(400).json({ ok: false, error: 'School missing.' });
     }
     const today = new Date().toISOString().split('T')[0];
 
+    const schoolFilter = onlySchool
+      ? '&school_code=eq.' + encodeURIComponent(onlySchool)
+      : '';
     const pending = await sb('GET',
-      'parent_questions?status=eq.approved&select=*&order=school_code.asc,class_level.asc,send_order.asc&limit=500');
+      'parent_questions?status=eq.approved' + schoolFilter
+      + '&select=*&order=school_code.asc,class_level.asc,send_order.asc&limit=500');
     if (!pending.ok) return res.status(500).json({ ok: false, error: 'Could not read the queue.' });
 
     // One question per school + class, lowest send_order first.
