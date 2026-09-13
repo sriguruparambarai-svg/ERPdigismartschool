@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>School Gallery — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.g-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+.g-label{font-size:12px;font-weight:700;color:var(--maroon)}
+.g-meta{font-size:11px;color:#9B928A;margin-top:3px}
+.g-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:7px;margin-top:11px}
+.g-thumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:#F5F1EA}
+.g-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.g-x{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.6);color:#fff;border:0;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer}
+.g-count{font-size:12px;font-weight:600;color:var(--maroon);margin-top:9px}
+.g-bar{height:6px;background:#F0EDE8;border-radius:4px;overflow:hidden;margin-top:9px}
+.g-bar span{display:block;height:100%;background:var(--gold);width:0}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">School Gallery</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Communication → Photos for Parents</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- NEW ALBUM -->
+      <div class="g-card">
+        <div class="g-label">New album</div>
+        <div class="g-meta">Up to 10 photos. Pick the best ten — parents scroll past long albums. Photos only, no videos.</div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:9px;margin-top:12px">
+          <div>
+            <label class="form-label">Album name</label>
+            <input id="g-title" class="form-control" placeholder="e.g. Annual Day 2026">
+          </div>
+          <div>
+            <label class="form-label">Event date</label>
+            <input id="g-date" type="date" class="form-control">
+          </div>
+          <div>
+            <label class="form-label">Who can see it</label>
+            <select id="g-class" class="form-control">
+              <option value="all">All Classes</option>
+              <option value="LKG">LKG</option><option value="UKG">UKG</option>
+              <option value="Class 1">Class 1</option><option value="Class 2">Class 2</option>
+              <option value="Class 3">Class 3</option><option value="Class 4">Class 4</option>
+              <option value="Class 5">Class 5</option><option value="Class 6">Class 6</option>
+              <option value="Class 7">Class 7</option><option value="Class 8">Class 8</option>
+              <option value="Class 9">Class 9</option><option value="Class 10">Class 10</option>
+              <option value="Class 11">Class 11</option><option value="Class 12">Class 12</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="file" id="g-file" accept="image/*" multiple class="form-control" style="max-width:300px">
+          <button class="btn btn-secondary btn-sm" onclick="clearPicked()">Clear</button>
+        </div>
+
+        <div class="g-count" id="g-count">No photos chosen yet</div>
+        <div class="g-grid" id="g-preview"></div>
+
+        <div class="g-bar hidden" id="g-bar"><span id="g-bar-fill"></span></div>
+        <div id="g-status" class="g-meta"></div>
+
+        <button class="btn btn-gold" style="margin-top:12px" onclick="publishAlbum()">📤 Send to parents</button>
+      </div>
+
+      <div class="g-label" style="margin:18px 0 10px">Albums sent</div>
+      <div id="g-list"><div class="empty-state" style="padding:26px"><div class="empty-text">Loading…</div></div></div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const API = '/api/gallery-data';
+const MAX_PHOTOS = 10;
+const MAX_WIDTH = 1200;   // plenty for a phone screen
+const QUALITY = 0.75;
+
+let picked = [];          // { dataUrl }
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+
+async function call(action, extra) {
+  const body = Object.assign({ action: action, token: token(), school_id: SCHOOL_ID }, extra || {});
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  let data;
+  try { data = await r.json(); }
+  catch (e) { throw new Error('The server sent back something unreadable.'); }
+  if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Shrink the photo here, in the browser, before anything is sent.
+// A 4MB phone photo becomes roughly 200KB, so 10 of them upload in seconds
+// even on mobile data.
+function shrink(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > MAX_WIDTH) { h = Math.round(h * (MAX_WIDTH / w)); w = MAX_WIDTH; }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', QUALITY));
+      };
+      img.onerror = () => reject(new Error('That file is not a photo.'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'g-file') return;
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+
+  const room = MAX_PHOTOS - picked.length;
+  if (room <= 0) {
+    showToast('⚠️ An album can hold 10 photos. Remove one first.', 'error');
+    e.target.value = '';
+    return;
+  }
+  const take = files.slice(0, room);
+  if (files.length > room) {
+    showToast('Only ' + room + ' more photo(s) fit in this album.', 'success');
+  }
+
+  document.getElementById('g-status').textContent = 'Preparing photos…';
+  for (const f of take) {
+    if (!/^image\//.test(f.type)) {
+      showToast('⚠️ ' + f.name + ' is not a photo. Videos cannot be sent.', 'error');
+      continue;
+    }
+    try { picked.push({ dataUrl: await shrink(f) }); }
+    catch (err) { showToast('⚠️ ' + err.message, 'error'); }
+  }
+  document.getElementById('g-status').textContent = '';
+  e.target.value = '';
+  renderPicked();
+});
+
+function renderPicked() {
+  const c = document.getElementById('g-count');
+  c.textContent = picked.length === 0
+    ? 'No photos chosen yet'
+    : picked.length + ' of ' + MAX_PHOTOS + ' photos chosen';
+
+  document.getElementById('g-preview').innerHTML = picked.map((p, i) =>
+    '<div class="g-thumb"><img src="' + p.dataUrl + '">'
+    + '<button class="g-x" onclick="removePicked(' + i + ')">×</button></div>'
+  ).join('');
+}
+
+function removePicked(i) { picked.splice(i, 1); renderPicked(); }
+
+function clearPicked() {
+  picked = [];
+  document.getElementById('g-file').value = '';
+  renderPicked();
+}
+
+async function publishAlbum() {
+  const title = document.getElementById('g-title').value.trim();
+  const date = document.getElementById('g-date').value;
+  const cls = document.getElementById('g-class').value;
+
+  if (!title) { showToast('⚠️ Please give the album a name.', 'error'); return; }
+  if (!date) { showToast('⚠️ Please pick the event date.', 'error'); return; }
+  if (picked.length === 0) { showToast('⚠️ Please add at least one photo.', 'error'); return; }
+  if (!confirmAction('Send ' + picked.length + ' photo(s) to parents of ' + (cls === 'all' ? 'the whole school' : cls) + '?')) return;
+
+  const bar = document.getElementById('g-bar');
+  const fill = document.getElementById('g-bar-fill');
+  const status = document.getElementById('g-status');
+  bar.classList.remove('hidden');
+
+  const urls = [];
+  try {
+    for (let i = 0; i < picked.length; i++) {
+      status.textContent = 'Uploading photo ' + (i + 1) + ' of ' + picked.length + '…';
+      fill.style.width = Math.round((i / picked.length) * 100) + '%';
+      const res = await call('photo', { data_url: picked[i].dataUrl });
+      urls.push(res.url);
+    }
+    fill.style.width = '100%';
+    status.textContent = 'Saving album…';
+
+    await call('create', { title: title, event_date: date, target_class: cls, photos: urls });
+
+    status.textContent = '';
+    bar.classList.add('hidden');
+    fill.style.width = '0';
+    showToast('Album sent to parents.', 'success');
+
+    document.getElementById('g-title').value = '';
+    clearPicked();
+    await loadAlbums();
+  } catch (e) {
+    bar.classList.add('hidden');
+    fill.style.width = '0';
+    status.textContent = '';
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+async function loadAlbums() {
+  try {
+    const res = await call('list', {});
+    const rows = res.rows || [];
+    if (rows.length === 0) {
+      document.getElementById('g-list').innerHTML =
+        '<div class="empty-state" style="padding:32px"><div class="empty-icon">📷</div>'
+        + '<div class="empty-text">No albums yet.</div></div>';
+      return;
+    }
+    document.getElementById('g-list').innerHTML = rows.map(a =>
+      '<div class="g-card">'
+      + '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      + '<div><div class="g-label">' + esc(a.title) + '</div>'
+      + '<div class="g-meta">' + esc(a.event_date) + ' · '
+      + (a.target_class === 'all' ? 'All classes' : esc(a.target_class)) + ' · '
+      + (a.photos || []).length + ' photos · removed after ' + esc(a.expires_on) + '</div></div>'
+      + '<button class="btn btn-secondary btn-sm" onclick="removeAlbum(\'' + a.id + '\')">🗑 Delete</button>'
+      + '</div>'
+      + '<div class="g-grid">' + (a.photos || []).map(u =>
+          '<div class="g-thumb"><img loading="lazy" src="' + esc(u) + '"></div>').join('')
+      + '</div></div>'
+    ).join('');
+  } catch (e) {
+    document.getElementById('g-list').innerHTML =
+      '<div class="g-card" style="color:#B3261E;font-size:13px">Could not load albums: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function removeAlbum(id) {
+  if (!confirmAction('Delete this album? Parents will no longer see these photos.')) return;
+  try {
+    showLoading('Deleting...');
+    await call('remove', { id: id });
+    hideLoading();
+    showToast('Album deleted.', 'success');
+    await loadAlbums();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('communication');
+  const d = document.getElementById('today-date');
+  if (d) d.textContent = new Date().toDateString();
+  document.getElementById('g-date').value = new Date().toISOString().split('T')[0];
+  await loadAlbums();
+});
+</script>
+</body>
+</html>
