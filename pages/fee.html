@@ -2123,7 +2123,14 @@ async function openCollectModal(studentId) {
   let itemsHtml = '<div style="max-height:280px;overflow-y:auto">';
   itemsHtml += '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Select fee items to collect:</div>';
 
-  structure?.forEach(s => {
+  // Transport heads are drawn in their own van block below, never as an
+  // ordinary class fee line — otherwise van money would be charged twice.
+  const collectStructure = (structure || []).filter(function (s) {
+    const h = feeHeads.find(x => x.id === s.fee_head_id);
+    return !h || h.category !== 'transport';
+  });
+
+  collectStructure.forEach(s => {
     if (isFeeWaived(currentActiveScheme, s.fee_head_id)) {
       itemsHtml += `
         <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed #B7E0C2;border-radius:8px;margin-bottom:6px;background:#F3FBF5">
@@ -2159,6 +2166,67 @@ async function openCollectModal(studentId) {
       `;
     });
   });
+
+  // ── VAN FEE — one line per unpaid month ──
+  // Van money lives on the student's transport assignment, not on the class
+  // fee structure, so it is built separately here. Each line is saved against
+  // the transport fee head with the MONTH NAME as the period, exactly matching
+  // the month table on the fee card, so a collected month turns ✓ Paid at once.
+  // Van months are deliberately left unticked: a student can owe eleven months
+  // at a time, and staff should tick only the months actually being paid.
+  const collectVan = await getStudentVan(studentId);
+  const collectVanHead = getVanFeeHead();
+  const vanFreeBySeheme = !!(currentActiveScheme && currentActiveScheme.free_van);
+
+  if (collectVan && collectVanHead && vanFreeBySeheme) {
+    itemsHtml += `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed #B7E0C2;border-radius:8px;margin-top:12px;background:#F3FBF5">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px;color:#2D7A3A">🚌 Van Fee</div>
+          <div style="font-size:11px;color:var(--text-muted)">🎓 Free under 5-Year Scheme</div>
+        </div>
+      </div>
+    `;
+  } else if (collectVan && collectVanHead) {
+    const vanRate = parseFloat(collectVan.monthly_fee) || 0;
+    const vanMonthList = vanMonthsForStudent(student);
+    let vanHtml = '';
+
+    vanMonthList.forEach(function (m) {
+      if (vanRate <= 0) return;
+      const vPaid = paidMap[collectVanHead.id + '_' + m] || 0;
+      const vBal = vanRate - vPaid;
+      if (vBal <= 0) return; // month already settled
+
+      const vanItemId = 'item-van-' + m;
+      currentCollectItems.push({
+        id: vanItemId,
+        fee_head_id: collectVanHead.id,
+        fee_head_name: collectVanHead.name || 'Van Fee',
+        period: m,
+        amount: vBal,
+        original: vanRate,
+        paid: vPaid
+      });
+
+      vanHtml += `
+        <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;margin-bottom:6px;transition:border-color .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">
+          <input type="checkbox" id="${vanItemId}" value="${vBal}" onchange="toggleItemAmount('${vanItemId}')" style="width:16px;height:16px;cursor:pointer">
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:13px">🚌 Van Fee · ${m}</div>
+            <div style="font-size:11px;color:var(--text-muted)">Balance: ₹${vBal.toLocaleString('en-IN')} of ₹${vanRate.toLocaleString('en-IN')}</div>
+          </div>
+          <input type="number" id="${vanItemId}-amt" class="form-control" style="width:100px;text-align:right;font-weight:700;color:var(--maroon);opacity:.4" value="${vBal}" max="${vBal}" min="0" step="1" disabled onclick="event.preventDefault();event.stopPropagation()" oninput="clampAndUpdate('${vanItemId}',${vBal})">
+        </label>
+      `;
+    });
+
+    if (vanHtml) {
+      itemsHtml += '<div style="font-size:11px;font-weight:600;color:var(--maroon);margin:14px 0 8px">' +
+        '🚌 Van Fee — ' + escapeAttr(collectVan.boarding_stop || 'Van') +
+        ' · ₹' + vanRate.toLocaleString('en-IN') + '/month · tick the months being paid</div>' + vanHtml;
+    }
+  }
 
   // Late fee lines — one per overdue period, ticked by default but waivable
   Object.keys(pendingByPeriod).forEach(function (p) {
