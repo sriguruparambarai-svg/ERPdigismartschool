@@ -218,9 +218,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div id="home-events-list">
       <div class="empty-state"><div class="empty-icon">🗓</div><div class="empty-text">No upcoming events</div></div>
     </div>
+
+    <!-- School photos -->
+    <div id="gal-home-section" class="hidden">
+      <div class="section-title" style="margin-top:16px">
+        <span>📸 School Photos</span>
+        <span class="see-all" onclick="showTab('gallery')">See all →</span>
+      </div>
+      <div id="gal-home-list"></div>
+    </div>
   </div>
 
   <!-- ── NOTICES ── -->
+  <div id="tab-gallery" class="tab-section">
+    <div class="section-title">
+      <span>📸 School Photos</span>
+      <span class="see-all" onclick="showTab('home')">← Home</span>
+    </div>
+    <div id="gal-list">
+      <div class="empty-state"><div class="empty-icon">📷</div><div class="empty-text">No photos yet</div></div>
+    </div>
+  </div>
+
+  <!-- PHOTO VIEWER -->
+  <div id="gal-viewer" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:999;display:flex;align-items:center;justify-content:center;padding:12px" onclick="closePhoto()">
+    <img id="gal-viewer-img" style="max-width:100%;max-height:82vh;border-radius:8px;display:block">
+    <a id="gal-viewer-dl" download style="position:absolute;bottom:22px;background:#6B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600">⬇ Save photo</a>
+  </div>
+
   <div id="tab-notices" class="tab-section">
     <div class="section-title">📢 Circulars & Notices</div>
     <div id="notices-list">
@@ -417,7 +442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   session = JSON.parse(saved);
   setupUI();
-  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation()]);
+  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery()]);
   loadStats();
 });
 
@@ -479,6 +504,51 @@ function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+let galAlbums = [];
+
+async function loadGallery() {
+  const { data } = await sbClient.from('gallery_albums')
+    .select('*').eq('school_code', session.school_id)
+    .or(`target_class.eq.all,target_class.eq.${session.class}`)
+    .order('event_date', { ascending: false }).limit(30);
+
+  galAlbums = data || [];
+  if (galAlbums.length === 0) return;
+
+  // Newest album on the home screen
+  document.getElementById('gal-home-list').innerHTML = buildAlbum(galAlbums[0]);
+  document.getElementById('gal-home-section').classList.remove('hidden');
+
+  // All albums on the gallery page
+  document.getElementById('gal-list').innerHTML = galAlbums.map(buildAlbum).join('');
+}
+
+function buildAlbum(a) {
+  const photos = a.photos || [];
+  return '<div style="background:#fff;border:1px solid #E8E0D5;border-radius:10px;padding:12px;margin-bottom:10px">'
+    + '<div style="font-size:13px;font-weight:700;color:#6B1A1A">' + escapeHtml(a.title || '') + '</div>'
+    + '<div style="font-size:11px;color:#9B928A;margin-top:2px">' + escapeHtml(a.event_date || '')
+    + ' · ' + photos.length + ' photos</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px">'
+    + photos.map(u =>
+        '<div style="aspect-ratio:1;border-radius:7px;overflow:hidden;background:#F5F1EA">'
+        + '<img loading="lazy" src="' + escapeHtml(u) + '" '
+        + 'style="width:100%;height:100%;object-fit:cover;display:block" '
+        + 'onclick="openPhoto(\'' + escapeHtml(u) + '\')"></div>').join('')
+    + '</div></div>';
+}
+
+function openPhoto(url) {
+  document.getElementById('gal-viewer-img').src = url;
+  document.getElementById('gal-viewer-dl').href = url;
+  document.getElementById('gal-viewer').classList.remove('hidden');
+}
+
+function closePhoto() {
+  document.getElementById('gal-viewer').classList.add('hidden');
+  document.getElementById('gal-viewer-img').src = '';
 }
 
 async function loadNotices() {
