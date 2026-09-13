@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Foundation Questions — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.fq-batch{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+.fq-batch-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.fq-label{font-size:12px;font-weight:700;color:var(--maroon);letter-spacing:.2px}
+.fq-meta{font-size:11px;color:#9B928A;margin-top:3px}
+.fq-pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;margin-right:5px}
+.fq-wait{background:#FFF4DC;color:#8B5E00}
+.fq-appr{background:#E8F5E9;color:#1B5E20}
+.fq-sent{background:#F0EDE8;color:#6B6259}
+.fq-q{border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:10px;background:#FCFAF7}
+.fq-q-num{font-size:11px;font-weight:700;color:#9B928A;margin-bottom:6px}
+.fq-phone{background:var(--white);border:1px solid #E8E0D5;border-left:3px solid var(--gold);border-radius:8px;padding:11px 13px;font-size:13px;line-height:1.7;white-space:pre-wrap}
+.fq-title-line{font-size:11px;font-weight:700;color:var(--maroon);margin-bottom:7px}
+.fq-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}
+.fq-hint{font-size:11px;color:#9B928A;margin-top:4px}
+.hidden{display:none}
+@media(max-width:700px){.fq-edit-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Foundation Questions</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Communication → Daily Question to Parents</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Waiting for approval</div>
+          <div class="stat-value" id="st-wait">—</div>
+          <div class="stat-sub">Not yet going to parents</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Approved and queued</div>
+          <div class="stat-value" id="st-appr">—</div>
+          <div class="stat-sub">Days of messages left</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Already sent</div>
+          <div class="stat-value" id="st-sent">—</div>
+          <div class="stat-sub">All time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Classes running low</div>
+          <div class="stat-value" id="st-low" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Under 5 left</div>
+        </div>
+      </div>
+
+      <div id="low-warning" class="hidden" style="background:#FFF4DC;border:1px solid #F0D9A0;border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:13px;color:#8B5E00"></div>
+
+      <!-- UPLOAD -->
+      <div class="fq-batch">
+        <div class="fq-label">Add a new set of questions</div>
+        <div class="fq-meta">Export the paper from TeachBot, then upload the file here. Nothing reaches a parent until you approve it below.</div>
+
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="file" id="fq-file" accept=".json,application/json" class="form-control" style="max-width:320px">
+          <button class="btn btn-gold btn-sm" onclick="uploadFile()">⬆ Upload questions</button>
+          <button class="btn btn-secondary btn-sm" onclick="togglePaste()">Paste instead</button>
+        </div>
+
+        <div id="paste-box" class="hidden" style="margin-top:10px">
+          <textarea id="fq-paste" class="form-control" rows="6" placeholder="Paste the exported text here..."></textarea>
+          <button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="uploadPaste()">⬆ Upload pasted questions</button>
+        </div>
+
+        <div class="fq-hint">The class label is written by the system, not by the file. A Class 6 set is always marked foundation practice, never a NEET question.</div>
+      </div>
+
+      <div id="fq-list"><div class="empty-state" style="padding:30px"><div class="empty-text">Loading…</div></div></div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const API = '/api/parent-questions';
+let ALL_ROWS = [];
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+
+async function call(action, extra) {
+  const body = Object.assign({ action: action, token: token(), school_id: SCHOOL_ID }, extra || {});
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  let data;
+  try { data = await r.json(); }
+  catch (e) { throw new Error('The server sent back something unreadable.'); }
+  if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function parentText(r) {
+  const map = { a: r.opt_a, b: r.opt_b, c: r.opt_c, d: r.opt_d };
+  const letter = String(r.answer || '').toLowerCase();
+  return r.question + '\n\n'
+    + 'A) ' + r.opt_a + '\n'
+    + 'B) ' + r.opt_b + '\n'
+    + 'C) ' + r.opt_c + '\n'
+    + 'D) ' + r.opt_d + '\n\n'
+    + 'Answer: ' + letter.toUpperCase() + ', ' + (map[letter] || '') + '\n'
+    + 'Why: ' + r.why;
+}
+
+function togglePaste() {
+  document.getElementById('paste-box').classList.toggle('hidden');
+}
+
+async function sendPaper(paper) {
+  try {
+    showLoading('Checking the questions...');
+    const res = await call('upload', { paper: paper });
+    hideLoading();
+    showToast(res.count + ' questions added. Please check and approve them.', 'success');
+    document.getElementById('fq-file').value = '';
+    document.getElementById('fq-paste').value = '';
+    await loadAll();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+function uploadFile() {
+  const f = document.getElementById('fq-file').files[0];
+  if (!f) { showToast('⚠️ Please choose a file first.', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = function () {
+    let paper;
+    try { paper = JSON.parse(reader.result); }
+    catch (e) { showToast('⚠️ That file is not a question file.', 'error'); return; }
+    sendPaper(paper);
+  };
+  reader.onerror = function () { showToast('⚠️ Could not read that file.', 'error'); };
+  reader.readAsText(f);
+}
+
+function uploadPaste() {
+  const txt = document.getElementById('fq-paste').value.trim();
+  if (!txt) { showToast('⚠️ Nothing pasted.', 'error'); return; }
+  let paper;
+  try { paper = JSON.parse(txt); }
+  catch (e) { showToast('⚠️ That text is not a question file.', 'error'); return; }
+  sendPaper(paper);
+}
+
+async function loadAll() {
+  try {
+    const res = await call('list', {});
+    ALL_ROWS = res.rows || [];
+    render();
+  } catch (e) {
+    document.getElementById('fq-list').innerHTML =
+      '<div class="fq-batch" style="color:#B3261E;font-size:13px">Could not load the queue: ' + esc(e.message) + '</div>';
+  }
+}
+
+function render() {
+  const waiting = ALL_ROWS.filter(r => r.status === 'waiting');
+  const appr = ALL_ROWS.filter(r => r.status === 'approved');
+  const sent = ALL_ROWS.filter(r => r.status === 'sent');
+
+  document.getElementById('st-wait').textContent = waiting.length;
+  document.getElementById('st-appr').textContent = appr.length;
+  document.getElementById('st-sent').textContent = sent.length;
+
+  // Which classes are about to run out of approved questions
+  const perClass = {};
+  appr.forEach(r => { perClass[r.class_level] = (perClass[r.class_level] || 0) + 1; });
+  const low = Object.keys(perClass).filter(c => perClass[c] < 5);
+  document.getElementById('st-low').textContent = low.length;
+
+  const warn = document.getElementById('low-warning');
+  if (low.length > 0) {
+    warn.classList.remove('hidden');
+    warn.innerHTML = '⚠️ Running low: ' + low.map(c => 'Class ' + c + ' (' + perClass[c] + ' left)').join(', ')
+      + '. Upload the next set before the queue empties.';
+  } else {
+    warn.classList.add('hidden');
+  }
+
+  // Group by batch
+  const batches = {};
+  ALL_ROWS.forEach(r => {
+    if (!batches[r.batch_id]) batches[r.batch_id] = [];
+    batches[r.batch_id].push(r);
+  });
+
+  const keys = Object.keys(batches);
+  if (keys.length === 0) {
+    document.getElementById('fq-list').innerHTML =
+      '<div class="empty-state" style="padding:36px"><div class="empty-icon">📭</div>'
+      + '<div class="empty-text">No questions yet. Upload a set above to begin.</div></div>';
+    return;
+  }
+
+  let html = '';
+  keys.forEach(bid => {
+    const rows = batches[bid].sort((a, b) => a.send_order - b.send_order);
+    const first = rows[0];
+    const nWait = rows.filter(r => r.status === 'waiting').length;
+    const nAppr = rows.filter(r => r.status === 'approved').length;
+    const nSent = rows.filter(r => r.status === 'sent').length;
+
+    html += '<div class="fq-batch">'
+      + '<div class="fq-batch-head"><div>'
+      + '<div class="fq-label">' + esc(first.label) + '</div>'
+      + '<div class="fq-meta">' + esc(first.subject) + ' · ' + rows.length + ' questions · added '
+      + esc(String(first.created_at || '').split('T')[0]) + '</div>'
+      + '<div style="margin-top:7px">'
+      + (nWait ? '<span class="fq-pill fq-wait">' + nWait + ' waiting</span>' : '')
+      + (nAppr ? '<span class="fq-pill fq-appr">' + nAppr + ' approved</span>' : '')
+      + (nSent ? '<span class="fq-pill fq-sent">' + nSent + ' sent</span>' : '')
+      + '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+      + (nWait ? '<button class="btn btn-gold btn-sm" onclick="approveBatch(\'' + bid + '\')">✓ Approve all ' + nWait + '</button>' : '')
+      + '<button class="btn btn-secondary btn-sm" onclick="toggleBatch(\'' + bid + '\')">Show questions</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="removeBatch(\'' + bid + '\')">🗑 Delete</button>'
+      + '</div></div>';
+
+    html += '<div id="qs-' + bid + '" class="hidden">';
+    rows.forEach(r => {
+      const locked = r.status === 'sent';
+      html += '<div class="fq-q">'
+        + '<div class="fq-q-num">Day ' + r.send_order
+        + (locked ? ' · sent ' + esc(r.sent_on || '') : (r.status === 'approved' ? ' · approved' : ' · waiting')) + '</div>'
+        + '<div class="fq-phone"><div class="fq-title-line">' + esc(first.label) + '</div>'
+        + esc(parentText(r)) + '</div>'
+        + (locked ? '' :
+            '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="editOne(\'' + r.id + '\')">✎ Edit this one</button></div>'
+            + '<div id="ed-' + r.id + '" class="hidden">'
+            + '<div class="fq-edit-grid">'
+            + '<div><label class="form-label">Question</label><textarea class="form-control" rows="2" id="f-q-' + r.id + '">' + esc(r.question) + '</textarea></div>'
+            + '<div><label class="form-label">Why (the explanation)</label><textarea class="form-control" rows="2" id="f-w-' + r.id + '">' + esc(r.why) + '</textarea></div>'
+            + '<div><label class="form-label">A</label><input class="form-control" id="f-a-' + r.id + '" value="' + esc(r.opt_a) + '"></div>'
+            + '<div><label class="form-label">B</label><input class="form-control" id="f-b-' + r.id + '" value="' + esc(r.opt_b) + '"></div>'
+            + '<div><label class="form-label">C</label><input class="form-control" id="f-c-' + r.id + '" value="' + esc(r.opt_c) + '"></div>'
+            + '<div><label class="form-label">D</label><input class="form-control" id="f-d-' + r.id + '" value="' + esc(r.opt_d) + '"></div>'
+            + '<div><label class="form-label">Correct answer</label><select class="form-control" id="f-ans-' + r.id + '">'
+            + ['a', 'b', 'c', 'd'].map(x => '<option value="' + x + '"' + (r.answer === x ? ' selected' : '') + '>' + x.toUpperCase() + '</option>').join('')
+            + '</select></div>'
+            + '</div>'
+            + '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="saveOne(\'' + r.id + '\')">Save change</button>'
+            + '</div>')
+        + '</div>';
+    });
+    html += '</div></div>';
+  });
+
+  document.getElementById('fq-list').innerHTML = html;
+}
+
+function toggleBatch(bid) {
+  document.getElementById('qs-' + bid).classList.toggle('hidden');
+}
+
+function editOne(id) {
+  document.getElementById('ed-' + id).classList.toggle('hidden');
+}
+
+async function saveOne(id) {
+  const fields = {
+    question: document.getElementById('f-q-' + id).value,
+    why: document.getElementById('f-w-' + id).value,
+    opt_a: document.getElementById('f-a-' + id).value,
+    opt_b: document.getElementById('f-b-' + id).value,
+    opt_c: document.getElementById('f-c-' + id).value,
+    opt_d: document.getElementById('f-d-' + id).value,
+    answer: document.getElementById('f-ans-' + id).value
+  };
+  try {
+    showLoading('Saving...');
+    await call('update', { id: id, fields: fields });
+    hideLoading();
+    showToast('Saved.', 'success');
+    await loadAll();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+async function approveBatch(bid) {
+  if (!confirmAction('Approve this set? From tomorrow one question a day will go to every parent of that class.')) return;
+  try {
+    showLoading('Approving...');
+    const res = await call('approve', { batch_id: bid });
+    hideLoading();
+    showToast(res.approved + ' questions approved.', 'success');
+    await loadAll();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+async function removeBatch(bid) {
+  if (!confirmAction('Delete this set? Questions already sent to parents are kept.')) return;
+  try {
+    showLoading('Deleting...');
+    await call('remove', { batch_id: bid });
+    hideLoading();
+    showToast('Deleted.', 'success');
+    await loadAll();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('communication');
+  const d = document.getElementById('today-date');
+  if (d) d.textContent = new Date().toDateString();
+  await loadAll();
+});
+</script>
+</body>
+</html>
