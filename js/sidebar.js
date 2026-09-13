@@ -39,6 +39,7 @@ async function renderSidebar(activePage) {
     { group: 'Communication', items: [
       { id: 'communication', icon: '📣', label: 'Parent Communication', href: 'communication.html' },
       { id: 'communication', icon: '🎯', label: 'Foundation Questions', href: 'foundation-questions.html' },
+      { id: 'communication', icon: '📸', label: 'School Gallery', href: 'gallery.html' },
     ]},
   ];
 
