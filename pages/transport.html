@@ -309,6 +309,23 @@
               <label class="form-label">Monthly Transport Fee (₹)</label>
               <input type="number" id="assign-fee" class="form-control" placeholder="0" style="margin-top:4px">
             </div>
+            <!-- ── VAN FEE PLAN ── -->
+            <div class="form-group" style="margin-bottom:14px;border:1px dashed var(--gold);border-radius:8px;padding:11px 12px;background:var(--sandal-light)">
+              <label class="form-label" style="color:var(--maroon)">Van Fee Plan</label>
+              <select id="assign-plan" class="form-control" style="margin-top:4px" onchange="toggleVanPlan()">
+                <option value="monthly">Monthly — charged month by month</option>
+                <option value="one_time">One-time plan — single payment for the whole year</option>
+              </select>
+              <div id="assign-plan-wrap" style="display:none;margin-top:10px">
+                <label class="form-label">One-Time Amount (₹) <span class="req">*</span></label>
+                <input type="number" id="assign-plan-amt" class="form-control" placeholder="10000" style="margin-top:4px">
+                <div style="font-size:11px;color:var(--text-muted);margin-top:5px">
+                  Covers <b id="assign-plan-year">—</b> only, whatever the boarding stop.
+                  The monthly fee above is ignored while this plan is on, and the plan
+                  ends by itself next June.
+                </div>
+              </div>
+            </div>
             <button class="btn btn-gold w-full" onclick="saveAssignment()">Assign to Route</button>
           </div>
 
@@ -977,6 +994,36 @@ function loadRouteStops() {
   }
 }
 
+// ── VAN FEE PLAN HELPERS ──
+// The van year runs June to May. Before June we are still inside last
+// year's run, so the year label steps back by one.
+function currentVanYear() {
+  const d = new Date();
+  const startY = d.getMonth() >= 5 ? d.getFullYear() : d.getFullYear() - 1;
+  return startY + '-' + String((startY + 1) % 100).padStart(2, '0');
+}
+
+// Shows the amount box only when the one-time plan is picked.
+function toggleVanPlan() {
+  const sel = document.getElementById('assign-plan');
+  const wrap = document.getElementById('assign-plan-wrap');
+  const yr = document.getElementById('assign-plan-year');
+  if (!sel || !wrap) return;
+  const on = sel.value === 'one_time';
+  wrap.style.display = on ? 'block' : 'none';
+  if (yr) yr.textContent = currentVanYear();
+}
+
+// Puts the plan fields back to Monthly between students.
+function resetVanPlan() {
+  const sel = document.getElementById('assign-plan');
+  const amt = document.getElementById('assign-plan-amt');
+  const wrap = document.getElementById('assign-plan-wrap');
+  if (sel) sel.value = 'monthly';
+  if (amt) amt.value = '';
+  if (wrap) wrap.style.display = 'none';
+}
+
 async function saveAssignment() {
   if (!assignedStudent) { showToast('Please search and select a student first.','error'); return; }
   const routeId = document.getElementById('assign-route').value;
@@ -994,6 +1041,23 @@ async function saveAssignment() {
     monthly_fee: parseFloat(document.getElementById('assign-fee').value) || 0,
   };
 
+  // ── Van fee plan ──
+  // A one-time plan replaces monthly billing for this van year only. The year
+  // is stamped on the record so the plan lapses on its own next June instead
+  // of quietly carrying forward and leaving the student unbilled.
+  const planMode = document.getElementById('assign-plan') ? document.getElementById('assign-plan').value : 'monthly';
+  if (planMode === 'one_time') {
+    const planAmt = parseFloat(document.getElementById('assign-plan-amt').value) || 0;
+    if (planAmt <= 0) { showToast('Please enter the one-time plan amount.','error'); return; }
+    record.van_plan = 'one_time';
+    record.van_plan_amount = planAmt;
+    record.van_plan_year = currentVanYear();
+  } else {
+    record.van_plan = 'monthly';
+    record.van_plan_amount = 0;
+    record.van_plan_year = null;
+  }
+
   let error;
   if (existing) { ({ error } = await supabase.from('student_transport').update(record).eq('id', existing.id)); }
   else { ({ error } = await supabase.from('student_transport').insert([record])); }
@@ -1003,6 +1067,7 @@ async function saveAssignment() {
   assignedStudent = null;
   document.getElementById('assign-search').value = '';
   document.getElementById('assign-student-info').style.display = 'none';
+  resetVanPlan();
   await loadStats();
   if (document.getElementById('view-route').value) loadRouteStudents();
 }
@@ -1032,7 +1097,13 @@ async function loadRouteStudents() {
             <td><span style="font-size:11px;padding:2px 6px;background:var(--sandal-light);border-radius:4px">${s.boarding_stop}</span></td>
             <td>${s.morning_time||'—'}</td>
             <td>${s.evening_time||'—'}</td>
-            <td style="font-weight:600">₹${(s.monthly_fee||0).toLocaleString('en-IN')}</td>
+            <td style="font-weight:600">${
+              s.van_plan === 'one_time' && s.van_plan_year === currentVanYear()
+                ? '₹' + (s.van_plan_amount||0).toLocaleString('en-IN') +
+                  '<div style="font-size:10px;font-weight:600;color:var(--maroon)">One-time ' + s.van_plan_year + '</div>'
+                : '₹' + (s.monthly_fee||0).toLocaleString('en-IN') +
+                  '<div style="font-size:10px;font-weight:400;color:var(--text-muted)">per month</div>'
+            }</td>
             <td><button class="btn btn-danger btn-sm btn-icon" onclick="removeAssignment('${s.id}')">🗑</button></td>
           </tr>
         `).join('')}
