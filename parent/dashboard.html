@@ -193,6 +193,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div id="urgent-list"></div>
     </div>
 
+    <!-- Daily foundation question -->
+    <div id="fq-section" class="hidden">
+      <div class="section-title">
+        <span>🎯 Today's Foundation Question</span>
+      </div>
+      <div id="fq-card"></div>
+    </div>
+
     <!-- Recent homework -->
     <div class="section-title">
       <span>📚 Today's Homework</span>
@@ -409,7 +417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   session = JSON.parse(saved);
   setupUI();
-  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent()]);
+  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation()]);
   loadStats();
 });
 
@@ -430,6 +438,49 @@ function setupUI() {
 }
 
 // ── LOAD DATA ──
+async function loadFoundation() {
+  const { data } = await sbClient.from('communications')
+    .select('*').eq('school_id', session.school_id)
+    .eq('type', 'foundation_question')
+    .or(`target_class.eq.all,target_class.eq.${session.class}`)
+    .order('created_at', { ascending: false }).limit(1);
+
+  const q = (data || [])[0];
+  if (!q) return;
+
+  const text = String(q.message || '');
+  const cut = text.indexOf('\nAnswer:');
+  const ask = cut > -1 ? text.slice(0, cut).trim() : text;
+  const sol = cut > -1 ? text.slice(cut).trim() : '';
+  const day = String(q.created_at || '').split('T')[0];
+
+  document.getElementById('fq-card').innerHTML =
+    '<div style="background:#fff;border:1px solid #E8E0D5;border-left:3px solid #C9A84C;border-radius:10px;padding:13px 14px">'
+    + '<div style="font-size:11px;font-weight:700;color:#6B1A1A;margin-bottom:8px">' + escapeHtml(q.title || '') + '</div>'
+    + '<div style="font-size:13.5px;line-height:1.75;white-space:pre-wrap">' + escapeHtml(ask) + '</div>'
+    + (sol
+        ? '<button id="fq-reveal" style="margin-top:11px;background:#6B1A1A;color:#fff;border:0;border-radius:7px;padding:8px 14px;font-size:12.5px;font-weight:600">Show answer</button>'
+          + '<div id="fq-answer" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px dashed #E8E0D5;font-size:13px;line-height:1.75;white-space:pre-wrap;color:#3A342E">'
+          + escapeHtml(sol) + '</div>'
+        : '')
+    + '<div style="margin-top:10px;font-size:10.5px;color:#9B928A">' + escapeHtml(day) + '</div>'
+    + '</div>';
+
+  const btn = document.getElementById('fq-reveal');
+  if (btn) btn.onclick = function () {
+    document.getElementById('fq-answer').classList.remove('hidden');
+    btn.style.display = 'none';
+  };
+
+  document.getElementById('fq-section').classList.remove('hidden');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function loadNotices() {
   const { data } = await sbClient.from('communications')
     .select('*').eq('school_id', session.school_id)
