@@ -443,10 +443,43 @@ let allStudents = [];
 let editingId = null;
 let deletingId = null;
 
+// ── ACADEMIC YEAR ──
+// The school year runs June to May, so before June we are still inside last
+// year's session. Worked out from the date rather than written into the page,
+// so the count, the label and the dropdowns stay correct next year without
+// anyone having to edit the file.
+function currentAcademicYear() {
+  const d = new Date();
+  const startY = d.getMonth() >= 5 ? d.getFullYear() : d.getFullYear() - 1;
+  return startY + '-' + String((startY + 1) % 100).padStart(2, '0');
+}
+
+// Makes sure this year appears in the year dropdowns and is picked by default.
+function ensureAcademicYearOptions() {
+  const cur = currentAcademicYear();
+  ['f-acyear', 'roll-year'].forEach(function (id) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    let found = false;
+    for (let i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].text === cur || sel.options[i].value === cur) { found = true; break; }
+    }
+    if (!found) {
+      const opt = document.createElement('option');
+      opt.text = cur;
+      opt.value = cur;
+      sel.insertBefore(opt, sel.firstChild);
+    }
+    sel.value = cur;
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('admission');
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
   document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
+  ensureAcademicYearOptions();
+  document.getElementById('stat-year-label').textContent = currentAcademicYear();
   await loadStudents();
   await loadStats();
   await createTableIfNeeded();
@@ -488,7 +521,7 @@ async function loadStats() {
 
   document.getElementById('stat-total').textContent = allStudents.length;
 
-  const yearStudents = allStudents.filter(s => s.academic_year === '2026-27');
+  const yearStudents = allStudents.filter(s => s.academic_year === currentAcademicYear());
   document.getElementById('stat-year').textContent = yearStudents.length;
 
   const monthStudents = allStudents.filter(s => s.created_at && s.created_at >= monthStart);
@@ -673,7 +706,7 @@ function editStudent(id) {
   document.getElementById('f-section').value = s.section || '';
   document.getElementById('f-rollno').value = s.roll_no || '';
   document.getElementById('f-emis').value = s.emis_id || '';
-  document.getElementById('f-acyear').value = s.academic_year || '2026-27';
+  document.getElementById('f-acyear').value = s.academic_year || currentAcademicYear();
   document.getElementById('f-admdate').value = s.admission_date || '';
   document.getElementById('f-prevschool').value = s.prev_school || '';
   document.getElementById('f-tc').value = s.tc_number || '';
