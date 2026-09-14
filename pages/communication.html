@@ -839,7 +839,7 @@ let PORTAL_ALIAS = null;
 // Fetch the school's short name once. If it has none, the long link is used.
 async function loadPortalAlias() {
   try {
-    const { data } = await sbClient.from('schools')
+    const { data } = await supabase.from('schools')
       .select('portal_alias').eq('school_id', SCHOOL_ID).limit(1);
     PORTAL_ALIAS = (data && data[0] && data[0].portal_alias) || null;
   } catch (e) { PORTAL_ALIAS = null; }
