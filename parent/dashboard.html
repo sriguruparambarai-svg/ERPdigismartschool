@@ -230,6 +230,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
 
   <!-- ── NOTICES ── -->
+  <!-- FIRST LOGIN: SET A PASSWORD -->
+  <div id="pw-gate" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:18px">
+    <div style="background:#fff;border-radius:14px;padding:20px;max-width:340px;width:100%">
+      <div style="font-size:15px;font-weight:700;color:#6B1A1A">Set your password</div>
+      <div style="font-size:12.5px;color:#6B6259;line-height:1.6;margin-top:7px">
+        Your password is still your child's date of birth, which other people may know.
+        Please choose a new one to keep your child's marks and fees private.
+      </div>
+      <input id="pw-new" type="password" placeholder="New password (6 or more)" autocomplete="new-password"
+        style="width:100%;box-sizing:border-box;margin-top:13px;padding:11px;border:1px solid #E8E0D5;border-radius:9px;font-size:14px">
+      <input id="pw-again" type="password" placeholder="Type it once more" autocomplete="new-password"
+        style="width:100%;box-sizing:border-box;margin-top:8px;padding:11px;border:1px solid #E8E0D5;border-radius:9px;font-size:14px">
+      <div id="pw-msg" style="font-size:12px;color:#B3261E;margin-top:8px;min-height:16px"></div>
+      <button id="pw-save" onclick="saveFirstPassword()"
+        style="width:100%;margin-top:6px;background:#6B1A1A;color:#fff;border:0;border-radius:9px;padding:12px;font-size:14px;font-weight:600">Save password</button>
+    </div>
+  </div>
+
   <div id="tab-gallery" class="tab-section">
     <div class="section-title">
       <span>📸 School Photos</span>
@@ -442,6 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   session = JSON.parse(saved);
   setupUI();
+  checkPasswordGate();
   await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery()]);
   loadStats();
 });
@@ -504,6 +523,39 @@ function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function checkPasswordGate() {
+  if (!session || !session.must_change) return;
+  document.getElementById('pw-gate').style.display = 'flex';
+}
+
+async function saveFirstPassword() {
+  const pw = document.getElementById('pw-new').value;
+  const again = document.getElementById('pw-again').value;
+  const msg = document.getElementById('pw-msg');
+  const btn = document.getElementById('pw-save');
+
+  if (pw.length < 6) { msg.textContent = 'Please use at least 6 characters.'; return; }
+  if (pw !== again) { msg.textContent = 'The two passwords do not match.'; return; }
+
+  msg.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  const out = await parentApi('set_first_password', { new_password: pw });
+
+  btn.disabled = false;
+  btn.textContent = 'Save password';
+
+  if (!out || !out.ok) {
+    msg.textContent = (out && out.error) || 'Could not save. Please try again.';
+    return;
+  }
+
+  session.must_change = false;
+  sessionStorage.setItem('parent_session', JSON.stringify(session));
+  document.getElementById('pw-gate').style.display = 'none';
 }
 
 let galAlbums = [];
