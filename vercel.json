@@ -7,6 +7,10 @@
   ],
   "rewrites": [
     {
+      "source": "/p/:alias",
+      "destination": "/parent/index.html?alias=:alias"
+    },
+    {
       "source": "/ark",
       "destination": "/parent/index.html?school=ark-global-school-mqp1gfuc"
     }
