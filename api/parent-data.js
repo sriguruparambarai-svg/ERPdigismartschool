@@ -281,6 +281,33 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
+    // ══ FIRST PASSWORD ══
+    // Only works while the password is still the birth date. The login token
+    // is the proof, so the parent does not have to type the old one again.
+    if (action === 'set_first_password') {
+      const newPw = String(body.new_password || '');
+      if (newPw.length < 6) {
+        return res.status(400).json({ ok: false, error: 'Password must be at least 6 characters.' });
+      }
+
+      const rows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=parent_password_hash,dob&limit=1');
+      if (!rows || rows.length === 0) {
+        return res.status(404).json({ ok: false, error: 'Student record not found.' });
+      }
+      if (rows[0].parent_password_hash) {
+        return res.status(400).json({ ok: false, error: 'A password is already set. Please change it from Settings.' });
+      }
+      if (dobMatches(rows[0].dob, newPw)) {
+        return res.status(400).json({ ok: false, error: 'Please choose something other than the date of birth.' });
+      }
+
+      await sb('PATCH', 'students?id=eq.' + encodeURIComponent(studentId), {
+        parent_password_hash: sha256(newPw)
+      });
+      return res.status(200).json({ ok: true });
+    }
+
     return res.status(400).json({ ok: false, error: 'Unknown action.' });
 
   } catch (err) {

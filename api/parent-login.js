@@ -122,7 +122,8 @@ module.exports = async (req, res) => {
         roll_no: student.roll_no || '',
         admission_no: student.admission_no || '',
         school_id: student.school_id,
-        school_name: school.name || ''
+        school_name: school.name || '',
+        must_change: !student.parent_password_hash
       }
     });
 
