@@ -130,7 +130,21 @@ let schoolId = null;
 document.addEventListener('DOMContentLoaded', async () => {
   // Get school from URL param or session
   const params = new URLSearchParams(window.location.search);
-  schoolId = params.get('school') || sessionStorage.getItem('parent_school_id');
+
+  // A short link like /p/ark arrives here as ?alias=ark. Turn it into the
+  // school's real id before anything else happens.
+  const alias = params.get('alias');
+  if (alias) {
+    try {
+      const { data } = await sbClient.from('schools')
+        .select('school_id').ilike('portal_alias', alias).limit(1);
+      if (data && data[0]) schoolId = data[0].school_id;
+    } catch (e) { /* fall through to the long link below */ }
+  }
+
+  if (!schoolId) {
+    schoolId = params.get('school') || sessionStorage.getItem('parent_school_id');
+  }
 
   if (schoolId) {
     sessionStorage.setItem('parent_school_id', schoolId);
