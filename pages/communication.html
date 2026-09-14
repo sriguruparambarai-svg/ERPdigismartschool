@@ -466,7 +466,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('hw-filter-date').value = today;
 
   // Set portal link
-  const portalUrl = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+  await loadPortalAlias();
+  const portalUrl = portalLink();
   document.getElementById('portal-link-display').textContent = portalUrl;
   document.getElementById('portal-wa-msg').textContent = buildPortalWAMsg(portalUrl);
 
@@ -833,8 +834,25 @@ async function loadHistory() {
 }
 
 // ── PORTAL ──
+let PORTAL_ALIAS = null;
+
+// Fetch the school's short name once. If it has none, the long link is used.
+async function loadPortalAlias() {
+  try {
+    const { data } = await sbClient.from('schools')
+      .select('portal_alias').eq('school_id', SCHOOL_ID).limit(1);
+    PORTAL_ALIAS = (data && data[0] && data[0].portal_alias) || null;
+  } catch (e) { PORTAL_ALIAS = null; }
+}
+
+function portalLink() {
+  return PORTAL_ALIAS
+    ? window.location.origin + '/p/' + PORTAL_ALIAS
+    : window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+}
+
 function copyPortalLink() {
-  const link = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+  const link = portalLink();
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(link).then(() => showToast('Portal link copied! ✓','success')).catch(() => fallbackCopy(link));
   } else {
@@ -962,7 +980,7 @@ function switchTab(tab, el) {
   if (tab==='events') loadEventsList();
   if (tab==='history') loadHistory();
   if (tab==='portal') {
-    const url = window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+    const url = portalLink();
     const display = document.getElementById('portal-link-display');
     if(display) display.textContent = url;
     const waMsg = document.getElementById('portal-wa-msg');
