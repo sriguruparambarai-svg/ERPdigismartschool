@@ -7,8 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="DigiSmart ERP">
-<link rel="manifest" href="../manifest.json">
-<link rel="apple-touch-icon" href="../assets/icons/icon-192.png">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
 <title>Parent Portal — DigiSmart ERP</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved) {
     const sess = JSON.parse(saved);
     if (sess.school_id === schoolId || !schoolId) {
-      window.location.href = 'dashboard.html';
+      window.location.href = '/parent/dashboard.html';
       return;
     }
   }
@@ -213,7 +213,7 @@ async function doParentLogin() {
     sessionStorage.setItem('parent_session', JSON.stringify(result.student));
     sessionStorage.setItem('parent_school_id', result.student.school_id);
 
-    window.location.href = 'dashboard.html';
+    window.location.href = '/parent/dashboard.html';
   } catch (e) {
     btn.textContent = 'Sign In →'; btn.disabled = false;
     showAlert('⚠️ Could not sign in. Please check your internet connection and try again.');
