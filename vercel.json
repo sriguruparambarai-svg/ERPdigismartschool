@@ -4,5 +4,11 @@
       "path": "/api/daily-job",
       "schedule": "30 13 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/ark",
+      "destination": "/parent/index.html?school=ark-global-school-mqp1gfuc"
+    }
   ]
 }
