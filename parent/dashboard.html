@@ -1045,7 +1045,9 @@ async function loadFees() {
     let html = bd.map(h => {
       const settled = h.balance === 0;
       const badge = h.waived
-        ? '<span style="font-size:10px;font-weight:700;color:#2D7A3A;background:#E8F5EB;padding:2px 8px;border-radius:10px">FREE 🎓 Scheme</span>'
+        ? (h.waived_by === 'rte'
+            ? '<span style="font-size:10px;font-weight:700;color:#2D7A3A;background:#E8F5EB;padding:2px 8px;border-radius:10px">FREE · RTE</span>'
+            : '<span style="font-size:10px;font-weight:700;color:#2D7A3A;background:#E8F5EB;padding:2px 8px;border-radius:10px">FREE 🎓 Scheme</span>')
         : (settled
             ? '<span style="font-size:10px;font-weight:700;color:#2D7A3A;background:#E8F5EB;padding:2px 8px;border-radius:10px">✓ PAID</span>'
             : '<span style="font-size:10px;font-weight:700;color:#A32D2D;background:#FCEBEB;padding:2px 8px;border-radius:10px">DUE ' + inr(h.balance) + '</span>');
