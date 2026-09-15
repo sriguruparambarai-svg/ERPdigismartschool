@@ -771,6 +771,38 @@
 // Fee tables are locked in the database — browsers cannot reach them
 // directly. All fee queries travel through api/fee-data.js, which
 // verifies the login's signed session token and role first.
+// ══ Secure Scheme Channel (read) ══
+// scheme_enrollments is locked in the database, so a direct browser read
+// always came back empty — scheme waivers never applied. Read it through
+// api/scheme-data.js instead, same as the 5-Year Scheme page does.
+const secureScheme = {
+  from(table) {
+    const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null };
+    const b = {
+      select(cols) { req.select = cols || '*'; return b; },
+      eq(col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+      in(col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+      limit(n) { req.limit = n; return b; },
+      single() { req.single = true; return b; },
+      then(resolve) {
+        const token = sessionStorage.getItem('digismart_session_token') || '';
+        fetch('/api/scheme-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, req: req })
+        })
+        .then(r => r.json())
+        .then(out => {
+          if (!out || !out.ok) console.error('Scheme read failed:', out && out.error);
+          resolve({ data: (out && out.ok) ? out.data : null, error: (out && out.ok) ? null : { message: (out && out.error) || 'Request failed' } });
+        })
+        .catch(e => { console.error('Scheme read network error:', e); resolve({ data: null, error: { message: 'Network error' } }); });
+      }
+    };
+    return b;
+  }
+};
+
 const secureFee = {
   from(table) {
     const req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null, single: false, limit: null, orFilter: null };
@@ -1975,7 +2007,7 @@ async function searchStudents() {
 
 // ── 5-YEAR SCHEME WAIVER HELPERS ──
 async function getActiveScheme(studentId) {
-  const { data } = await supabase.from('scheme_enrollments').select('*').eq('student_id', studentId).eq('school_id', SCHOOL_ID).eq('status', 'active').single();
+  const { data } = await secureScheme.from('scheme_enrollments').select('*').eq('student_id', studentId).eq('status', 'active').single();
   return data || null;
 }
 function isFeeWaived(scheme, feeHeadId) {
@@ -1985,6 +2017,8 @@ function isFeeWaived(scheme, feeHeadId) {
   if (head.category === 'transport') return !!scheme.free_van;
   if (head.category === 'uniform') return !!scheme.free_uniform;
   if (head.category === 'books') return !!scheme.free_books;
+  // School fees (general heads) are covered by the 5-Year Scheme fee
+  if (!head.category || head.category === 'general') return true;
   return false;
 }
 
@@ -2061,7 +2095,7 @@ async function selectStudentForFee(studentId) {
 
   currentActiveScheme = activeScheme;
   const schemeYear = activeScheme ? `${activeScheme.start_year}-${activeScheme.start_year+1} to ${activeScheme.completion_year}-${activeScheme.completion_year+1}` : '';
-  const schemeFreeItems = activeScheme ? [activeScheme.free_van&&'Van',activeScheme.free_uniform&&'Uniform',activeScheme.free_books&&'Books'].filter(Boolean) : [];
+  const schemeFreeItems = activeScheme ? ['School Fees',activeScheme.free_van&&'Van',activeScheme.free_uniform&&'Uniform',activeScheme.free_books&&'Books'].filter(Boolean) : [];
 
   let html = `
     <div class="card">
@@ -2859,7 +2893,7 @@ async function loadDefaulters() {
   // Both were ignored here before, so scheme students appeared to owe money
   // for things given to them free, and van dues never showed up at all.
   // Loaded once in bulk rather than per student.
-  const { data: schemeRows } = await supabase.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).eq('status', 'active');
+  const { data: schemeRows } = await secureScheme.from('scheme_enrollments').select('*').eq('status', 'active');
   const schemeMap = {};
   (schemeRows || []).forEach(function (s) { schemeMap[s.student_id] = s; });
 
