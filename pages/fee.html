@@ -619,6 +619,7 @@
         <option value="transport">Transport / Van</option>
         <option value="uniform">Uniform</option>
         <option value="books">Books</option>
+        <option value="rte">RTE Annual Fee (only RTE students pay)</option>
       </select>
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Used to match with scheme waivers (e.g. "Free Van" applies to any fee head tagged Transport/Van)</div>
     </div>
@@ -1440,8 +1441,9 @@ async function openOverridesModal(studentId) {
   alertEl.classList.add('hidden');
 
   // Fresh class structure (original class amounts) + current overrides
-  const { data: stu } = await supabase.from('students').select('full_name,class').eq('id', studentId).single();
-  const { data: structure } = await secureFee.from('fee_structure').select('fee_head_id,fee_head_name,total_amount').eq('school_id', SCHOOL_ID).eq('class', stu ? stu.class : '');
+  const { data: stu } = await supabase.from('students').select('full_name,class,is_rte').eq('id', studentId).single();
+  const { data: structureRaw } = await secureFee.from('fee_structure').select('fee_head_id,fee_head_name,total_amount').eq('school_id', SCHOOL_ID).eq('class', stu ? stu.class : '');
+  const structure = structureForStudent(stu, structureRaw);
   const { data: ovs } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
   const ovByHead = {};
   (ovs || []).forEach(o => { ovByHead[o.fee_head_id] = o; });
@@ -1522,7 +1524,7 @@ function renderFeeHeads() {
         <div style="font-size:11px;color:var(--text-muted)">${h.type === 'per_period' ? 'Charged per period' : h.type === 'annual' ? 'Annual (once per year)' : 'One-time'} ${h.description ? '· ' + h.description : ''}</div>
       </div>
       <span class="badge badge-maroon" style="font-size:10px">${h.type}</span>
-      ${h.category && h.category !== 'general' ? `<span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${h.category}</span>` : ''}
+      ${h.category && h.category !== 'general' ? `<span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${h.category === 'rte' ? 'RTE Fee' : h.category}</span>` : ''}
       <button class="btn btn-danger btn-sm btn-icon" onclick="deleteFeeHead('${h.id}')">🗑</button>
     </div>
   `).join('');
@@ -1986,6 +1988,25 @@ function isFeeWaived(scheme, feeHeadId) {
   return false;
 }
 
+// ── RTE STUDENT HELPERS ──
+// RTE students: General heads (tuition, exam etc.) are free.
+// Books, Uniform and Van are charged as normal.
+// Heads tagged 'rte' (the small RTE annual fee) are charged ONLY to RTE students.
+function isRteHead(feeHeadId) {
+  const h = feeHeads.find(x => x.id === feeHeadId);
+  return !!h && h.category === 'rte';
+}
+function isRteFree(student, feeHeadId) {
+  if (!student || !student.is_rte) return false;
+  const h = feeHeads.find(x => x.id === feeHeadId);
+  if (!h) return false;
+  return !h.category || h.category === 'general';
+}
+function structureForStudent(student, structure) {
+  if (student && student.is_rte) return structure || [];
+  return (structure || []).filter(s => !isRteHead(s.fee_head_id));
+}
+
 async function selectStudentForFee(studentId) {
   const { data: student } = await supabase.from('students').select('*').eq('id', studentId).single();
   if (!student) return;
@@ -2024,7 +2045,7 @@ async function selectStudentForFee(studentId) {
   }
 
   // Transport heads are drawn in their own van block below, not in this table
-  const mainStructure = (structure || []).filter(s => {
+  const mainStructure = structureForStudent(student, structure).filter(s => {
     const h = feeHeads.find(x => x.id === s.fee_head_id);
     return !h || h.category !== 'transport';
   });
@@ -2032,7 +2053,7 @@ async function selectStudentForFee(studentId) {
   const vanSection = buildVanSection(student, vanRecord, vanHead, paidMap, activeScheme);
 
   let totalFee = 0, totalPaid = 0;
-  mainStructure.forEach(s => { if (!isFeeWaived(activeScheme, s.fee_head_id)) totalFee += s.total_amount || 0; });
+  mainStructure.forEach(s => { if (!isFeeWaived(activeScheme, s.fee_head_id) && !isRteFree(student, s.fee_head_id)) totalFee += s.total_amount || 0; });
   totalFee += vanSection.due;
   if (payments) payments.forEach(p => { totalPaid += p.amount_paid || 0; });
   const balance = totalFee - totalPaid;
@@ -2044,6 +2065,7 @@ async function selectStudentForFee(studentId) {
 
   let html = `
     <div class="card">
+      ${student.is_rte ? `<div class="alert alert-info" style="margin-bottom:14px">📘 <b>RTE Student</b> — tuition and general fees are free. Books, Uniform, Van and the RTE annual fee are charged.</div>` : ''}
       ${activeScheme ? `<div class="alert alert-success" style="margin-bottom:14px">🎓 <b>5-Year Scheme Student</b> (${schemeYear})${schemeFreeItems.length?` — Free: ${schemeFreeItems.join(', ')}`:''}</div>` : ''}
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
         <div class="avatar" style="width:44px;height:44px;font-size:16px">${getInitials(student.full_name)}</div>
@@ -2080,13 +2102,14 @@ async function selectStudentForFee(studentId) {
         </thead>
         <tbody>
           ${mainStructure.map(s => {
-            if (isFeeWaived(activeScheme, s.fee_head_id)) {
+            const rteFreeRow = isRteFree(student, s.fee_head_id);
+            if (rteFreeRow || isFeeWaived(activeScheme, s.fee_head_id)) {
               return `
                 <tr style="background:#F3FBF5">
                   <td style="font-weight:500">${s.fee_head_name}</td>
                   ${periods.map(()=>`<td></td>`).join('')}
                   <td style="text-align:right;font-weight:600;color:var(--text-muted);text-decoration:line-through">₹${(s.total_amount||0).toLocaleString('en-IN')}</td>
-                  <td colspan="2" style="text-align:center;color:#2D7A3A;font-weight:700;font-size:11px">🎓 Free — 5-Year Scheme</td>
+                  <td colspan="2" style="text-align:center;color:#2D7A3A;font-weight:700;font-size:11px">${rteFreeRow ? '📘 Free — RTE' : '🎓 Free — 5-Year Scheme'}</td>
                 </tr>
               `;
             }
@@ -2176,18 +2199,19 @@ async function openCollectModal(studentId) {
 
   // Transport heads are drawn in their own van block below, never as an
   // ordinary class fee line — otherwise van money would be charged twice.
-  const collectStructure = (structure || []).filter(function (s) {
+  const collectStructure = structureForStudent(student, structure).filter(function (s) {
     const h = feeHeads.find(x => x.id === s.fee_head_id);
     return !h || h.category !== 'transport';
   });
 
   collectStructure.forEach(s => {
-    if (isFeeWaived(currentActiveScheme, s.fee_head_id)) {
+    const rteFreeItem = isRteFree(student, s.fee_head_id);
+    if (rteFreeItem || isFeeWaived(currentActiveScheme, s.fee_head_id)) {
       itemsHtml += `
         <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px dashed #B7E0C2;border-radius:8px;margin-bottom:6px;background:#F3FBF5">
           <div style="flex:1">
             <div style="font-weight:600;font-size:13px;color:#2D7A3A">${s.fee_head_name}</div>
-            <div style="font-size:11px;color:var(--text-muted)">🎓 Free under 5-Year Scheme</div>
+            <div style="font-size:11px;color:var(--text-muted)">${rteFreeItem ? '📘 Free for RTE student' : '🎓 Free under 5-Year Scheme'}</div>
           </div>
         </div>
       `;
@@ -2802,7 +2826,7 @@ async function loadDefaulters() {
   const period = document.getElementById('def-period').value;
 
   // Get all active students
-  let studentQuery = supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,mobile,father_name,admission_date').eq('school_id',SCHOOL_ID).eq('status','active');
+  let studentQuery = supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,mobile,father_name,admission_date,is_rte').eq('school_id',SCHOOL_ID).eq('status','active');
   if (cls) studentQuery = studentQuery.eq('class',cls);
   const { data: students } = await studentQuery;
 
@@ -2847,7 +2871,7 @@ async function loadDefaulters() {
 
   const defaulters = [];
   students.forEach(student => {
-    const structs = structMap[student.class] || [];
+    const structs = structureForStudent(student, structMap[student.class] || []);
     const periods = period ? [period] : getPeriods();
     let totalDue = 0;
     const pendingByPeriod = {};
@@ -2857,6 +2881,8 @@ async function loadDefaulters() {
     structs.forEach(s => {
       // Free under the 5-Year Scheme — nothing owed on this head.
       if (isFeeWaived(stuScheme, s.fee_head_id)) return;
+      // Free for RTE students (tuition / general heads).
+      if (isRteFree(student, s.fee_head_id)) return;
       // Van money is counted in its own block below, never as a class fee.
       const sHead = feeHeads.find(x => x.id === s.fee_head_id);
       if (sHead && sHead.category === 'transport') return;

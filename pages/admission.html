@@ -83,6 +83,11 @@
               <option value="">All Years</option>
               <option>2026-27</option><option>2024-25</option><option>2023-24</option>
             </select>
+            <select class="form-control" id="filter-rte" onchange="filterStudents()" style="width:120px; padding:7px 10px">
+              <option value="">All Students</option>
+              <option value="yes">RTE only</option>
+              <option value="no">Non-RTE</option>
+            </select>
             <button class="btn btn-secondary" onclick="openRollModal()">🔢 Roll Numbers</button>
             <button class="btn btn-primary" onclick="openAddModal()">+ New Admission</button>
           </div>
@@ -332,6 +337,13 @@
             </select>
           </div>
           <div class="form-group">
+            <label class="form-label">RTE Student</label>
+            <label style="display:flex;align-items:center;gap:8px;padding:9px 0;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="f-rte" style="width:16px;height:16px;cursor:pointer">
+              Admitted under RTE (free seat)
+            </label>
+          </div>
+          <div class="form-group">
             <label class="form-label">Status</label>
             <select id="f-status" class="form-control">
               <option value="active">Active</option>
@@ -560,6 +572,7 @@ function renderTable(students) {
         <td>
           <div class="fw-600">${s.full_name || '—'}</div>
           ${s.full_name_tamil ? `<div class="text-small text-muted">${s.full_name_tamil}</div>` : ''}
+          ${s.is_rte ? '<span class="badge badge-maroon" style="font-size:10px;margin-top:3px;display:inline-block">RTE</span>' : ''}
         </td>
         <td>${s.class || '—'} ${s.section ? '– ' + s.section : ''}</td>
         <td>${s.father_name || '—'}</td>
@@ -583,6 +596,7 @@ function filterStudents() {
   const search = document.getElementById('search-input').value.toLowerCase();
   const cls = document.getElementById('filter-class').value;
   const yr = document.getElementById('filter-year').value;
+  const rteSel = document.getElementById('filter-rte') ? document.getElementById('filter-rte').value : '';
 
   const filtered = allStudents.filter(s => {
     const matchSearch = !search ||
@@ -594,7 +608,8 @@ function filterStudents() {
       (s.mobile || '').includes(search);
     const matchClass = !cls || s.class === cls;
     const matchYear = !yr || s.academic_year === yr;
-    return matchSearch && matchClass && matchYear;
+    const matchRte = !rteSel || (rteSel === 'yes' ? !!s.is_rte : !s.is_rte);
+    return matchSearch && matchClass && matchYear && matchRte;
   });
 
   renderTable(filtered);
@@ -712,6 +727,7 @@ function editStudent(id) {
   document.getElementById('f-tc').value = s.tc_number || '';
   document.getElementById('f-transport').value = s.transport_route || '';
   document.getElementById('f-status').value = s.status || 'active';
+  document.getElementById('f-rte').checked = !!s.is_rte;
 
   goToStep(1);
   document.getElementById('admission-modal').classList.add('open');
@@ -761,6 +777,7 @@ async function saveStudent() {
     tc_number: document.getElementById('f-tc').value.trim(),
     transport_route: document.getElementById('f-transport').value,
     status: document.getElementById('f-status').value,
+    is_rte: document.getElementById('f-rte').checked,
   };
 
   let error;
@@ -806,6 +823,7 @@ function viewStudent(id) {
       ${row('Class', (s.class || '') + (s.section ? ' – ' + s.section : ''))}
       ${row('Roll Number', s.roll_no)}
       ${row('EMIS Id', s.emis_id)}
+      ${row('RTE Student', s.is_rte ? 'Yes' : 'No')}
       ${row('Academic Year', s.academic_year)}
       ${row('Date of Birth', formatDate(s.dob))}
       ${row('Gender', s.gender)}
@@ -876,6 +894,7 @@ function clearForm() {
   document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-acyear').value = '2026-27';
   document.getElementById('f-status').value = 'active';
+  document.getElementById('f-rte').checked = false;
   editingId = null;
 }
 
