@@ -102,8 +102,9 @@ module.exports = async (req, res) => {
     // ══ FEES — per-head breakdown, scheme waivers, payment history ══
     if (action === 'fees') {
       const stuRows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
-        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class,is_rte&limit=1');
       const cls = stuRows && stuRows[0] ? stuRows[0].class : null;
+      const isRte = !!(stuRows && stuRows[0] && stuRows[0].is_rte);
 
       let structure = [];
       if (cls) {
@@ -147,6 +148,17 @@ module.exports = async (req, res) => {
         return false;
       }
 
+      // RTE: general heads free; 'rte' heads charged only to RTE students
+      function isRteFree(feeHeadId) {
+        if (!isRte) return false;
+        const head = headById[feeHeadId];
+        if (!head) return false;
+        return !head.category || head.category === 'general';
+      }
+      if (!isRte) {
+        structure = structure.filter(s => !(headById[s.fee_head_id] && headById[s.fee_head_id].category === 'rte'));
+      }
+
       // Paid amount per fee head
       const paidByHead = {};
       let unmatchedPaid = 0;
@@ -158,7 +170,8 @@ module.exports = async (req, res) => {
 
       // One breakdown row per fee head — custom student amount wins over class amount
       const breakdown = structure.map(s => {
-        const waived = isWaived(s.fee_head_id);
+        const rteFreeHead = isRteFree(s.fee_head_id);
+        const waived = rteFreeHead || isWaived(s.fee_head_id);
         const ov = ovByHead[s.fee_head_id];
         const baseAmount = ov ? (parseFloat(ov.total_amount) || 0) : (parseFloat(s.total_amount) || 0);
         const total = waived ? 0 : baseAmount;
@@ -166,7 +179,7 @@ module.exports = async (req, res) => {
         let name = s.fee_head_name || (headById[s.fee_head_id] && headById[s.fee_head_id].name) || 'Fee';
         if (ov && ov.note) name = name + ' (' + ov.note + ')';
         delete paidByHead[s.fee_head_id];
-        return { name: name, total: total, paid: paid, balance: Math.max(total - paid, 0), waived: waived };
+        return { name: name, total: total, paid: paid, balance: Math.max(total - paid, 0), waived: waived, waived_by: rteFreeHead ? 'rte' : (waived ? 'scheme' : null) };
       });
 
       // Payments toward heads not in the structure (e.g. old heads) → still shown
@@ -191,6 +204,7 @@ module.exports = async (req, res) => {
         balance: Math.max(totalFee - totalPaid, 0),
         breakdown: breakdown,
         scheme_free: schemeFree,
+        is_rte: isRte,
         payments: payments
       });
     }
