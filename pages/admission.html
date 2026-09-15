@@ -329,11 +329,6 @@
             <label class="form-label">Transport Route</label>
             <select id="f-transport" class="form-control">
               <option value="">No Transport</option>
-              <option>Sirkazhi Route</option>
-              <option>Kollidam Route</option>
-              <option>Nagapattinam Route</option>
-              <option>Chidambaram Route</option>
-              <option>Karaikal Route</option>
             </select>
           </div>
           <div class="form-group">
@@ -491,11 +486,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
   document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
   ensureAcademicYearOptions();
+  await loadRouteOptions();
   document.getElementById('stat-year-label').textContent = currentAcademicYear();
   await loadStudents();
   await loadStats();
   await createTableIfNeeded();
 });
+
+// ── Transport Route dropdown: real routes from the Transport module ──
+async function loadRouteOptions() {
+  const sel = document.getElementById('f-transport');
+  if (!sel) return;
+  const { data, error } = await supabase.from('bus_routes').select('name').eq('school_id', SCHOOL_ID).order('name');
+  if (error) { console.error('Could not load routes:', error.message); return; }
+  let html = '<option value="">No Transport</option>';
+  (data || []).forEach(r => {
+    if (!r.name) return;
+    const n = String(r.name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    html += '<option value="' + n + '">' + n + '</option>';
+  });
+  sel.innerHTML = html;
+}
+
+// An older record may hold a route name that no longer exists in Transport.
+// Show it (marked) so opening Edit does not silently wipe it.
+function ensureRouteOption(name) {
+  const sel = document.getElementById('f-transport');
+  if (!sel || !name) return;
+  if (Array.from(sel.options).some(o => o.value === name)) return;
+  const opt = document.createElement('option');
+  opt.value = name; opt.textContent = name + ' (old)';
+  sel.appendChild(opt);
+}
 
 // ── Create Supabase table SQL reminder (run once in Supabase dashboard) ──
 async function createTableIfNeeded() {
@@ -725,6 +747,7 @@ function editStudent(id) {
   document.getElementById('f-admdate').value = s.admission_date || '';
   document.getElementById('f-prevschool').value = s.prev_school || '';
   document.getElementById('f-tc').value = s.tc_number || '';
+  ensureRouteOption(s.transport_route);
   document.getElementById('f-transport').value = s.transport_route || '';
   document.getElementById('f-status').value = s.status || 'active';
   document.getElementById('f-rte').checked = !!s.is_rte;
