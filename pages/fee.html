@@ -111,6 +111,7 @@
     background: var(--white);
   }
 }
+@media print { .print-only-rest { display:inline !important; } }
 </style>
 </head>
 <body>
@@ -545,6 +546,12 @@
               <option>Class 4</option><option>Class 5</option><option>Class 6</option>
               <option>Class 7</option><option>Class 8</option><option>Class 9</option>
               <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Fee Head</label>
+            <select class="form-control" id="def-head" style="width:180px;margin-top:4px" onchange="populateDefPeriod()">
+              <option value="">All Fee Heads</option>
             </select>
           </div>
           <div>
@@ -1045,13 +1052,40 @@ async function saveCollectionMode() {
 }
 
 function populateDefPeriod() {
+  populateDefHead();
+  const headEl = document.getElementById('def-head');
+  const vanMode = !!(headEl && headEl.value === '__van__');
   const sel = document.getElementById('def-period');
+  const keep = sel.value;
   sel.innerHTML = '<option value="">All Periods</option>';
-  getPeriods().forEach(p => {
+  const list = vanMode ? vanMonths.slice() : getPeriods();
+  list.forEach(p => {
     const opt = document.createElement('option');
-    opt.value = p; opt.textContent = p;
+    opt.value = p; opt.textContent = vanMode ? 'Van – ' + p : p;
     sel.appendChild(opt);
   });
+  if (vanMode) {
+    const opt = document.createElement('option');
+    opt.value = VAN_ONETIME_PERIOD; opt.textContent = 'One-time van plan';
+    sel.appendChild(opt);
+  }
+  if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+}
+
+// Fee Head filter for Defaulters: every class fee head, plus one "Van Fee"
+// entry (van dues come from transport assignments, not fee heads).
+function populateDefHead() {
+  const sel = document.getElementById('def-head');
+  if (!sel) return;
+  const keep = sel.value;
+  let html = '<option value="">All Fee Heads</option>';
+  (feeHeads || []).forEach(h => {
+    if (h.category === 'transport') return;
+    html += '<option value="' + h.id + '">' + escapeAttr(h.name || 'Fee') + '</option>';
+  });
+  html += '<option value="__van__">🚐 Van Fee</option>';
+  sel.innerHTML = html;
+  if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
 }
 
 function getPeriods() {
@@ -2903,59 +2937,87 @@ async function loadDefaulters() {
 
   const defVanHead = getVanFeeHead();
 
+  // Filters: Fee Head ('' = all, '__van__' = van only, or a fee head id)
+  const headEl = document.getElementById('def-head');
+  const headSel = headEl ? headEl.value : '';
+  const vanMode = headSel === '__van__';
+  // Late fees are set per term on the whole bill, so they are only shown
+  // on the all-heads view; with a single head chosen they would mislead.
+  const showLate = lateFeeConfig.enabled && !headSel;
+
   const defaulters = [];
   students.forEach(student => {
-    const structs = structureForStudent(student, structMap[student.class] || []);
-    const periods = period ? [period] : getPeriods();
     let totalDue = 0;
     const pendingByPeriod = {};
+    const pendingItems = [];   // what exactly is unpaid: { label, amount }
 
     const stuScheme = schemeMap[student.id] || null;
 
-    structs.forEach(s => {
-      // Free under the 5-Year Scheme — nothing owed on this head.
-      if (isFeeWaived(stuScheme, s.fee_head_id)) return;
-      // Free for RTE students (tuition / general heads).
-      if (isRteFree(student, s.fee_head_id)) return;
-      // Van money is counted in its own block below, never as a class fee.
-      const sHead = feeHeads.find(x => x.id === s.fee_head_id);
-      if (sHead && sHead.category === 'transport') return;
-      periods.forEach(p => {
-        const amt = amountForPeriod(s, p);
-        if (amt <= 0) return;
-        const paid = paidForPeriod(paidMap, student.id + '_', s, p);
-        const bal = amt - paid;
-        if (bal > 0) { totalDue += bal; pendingByPeriod[p] = (pendingByPeriod[p] || 0) + bal; }
+    // ── Class fee heads (skipped when Van Fee is chosen) ──
+    if (!vanMode) {
+      const structs = structureForStudent(student, structMap[student.class] || []);
+      const periods = period ? [period] : getPeriods();
+      structs.forEach(s => {
+        // Only the chosen fee head, if one was picked
+        if (headSel && s.fee_head_id !== headSel) return;
+        // Free under the 5-Year Scheme — nothing owed on this head.
+        if (isFeeWaived(stuScheme, s.fee_head_id)) return;
+        // Free for RTE students (tuition / general heads).
+        if (isRteFree(student, s.fee_head_id)) return;
+        // Van money is counted in its own block below, never as a class fee.
+        const sHead = feeHeads.find(x => x.id === s.fee_head_id);
+        if (sHead && sHead.category === 'transport') return;
+        periods.forEach(p => {
+          const amt = amountForPeriod(s, p);
+          if (amt <= 0) return;
+          const paid = paidForPeriod(paidMap, student.id + '_', s, p);
+          const bal = amt - paid;
+          if (bal > 0) {
+            totalDue += bal;
+            pendingByPeriod[p] = (pendingByPeriod[p] || 0) + bal;
+            pendingItems.push({ label: (s.fee_head_name || (sHead && sHead.name) || 'Fee') + ' – ' + (isPerPeriodRow(s) ? p : 'Full year'), amount: bal });
+          }
+        });
       });
-    });
+    }
 
     // ── Van dues ──
-    // Deliberately kept out of pendingByPeriod: late fees are configured per
-    // term, and feeding month names into that would produce wrong fines.
-    // Only counted on the unfiltered list, since van is billed by month and
-    // does not belong to any one term.
+    // Kept out of pendingByPeriod: late fees are per term, not per van month.
+    // Counted on the full view (no head, no period) or when Van Fee is chosen.
     const stuVan = vanMap[student.id];
-    if (!period && stuVan && defVanHead && !(stuScheme && stuScheme.free_van)) {
+    const wantVan = vanMode || (!headSel && !period);
+    if (wantVan && stuVan && defVanHead && !(stuScheme && stuScheme.free_van)) {
       if (vanPlanActive(stuVan)) {
-        const planAmt = parseFloat(stuVan.van_plan_amount) || 0;
-        const planPaid = paidMap[student.id + '_' + defVanHead.id + '_' + VAN_ONETIME_PERIOD] || 0;
-        if (planAmt - planPaid > 0) totalDue += planAmt - planPaid;
+        if (!period || period === VAN_ONETIME_PERIOD) {
+          const planAmt = parseFloat(stuVan.van_plan_amount) || 0;
+          const planPaid = paidMap[student.id + '_' + defVanHead.id + '_' + VAN_ONETIME_PERIOD] || 0;
+          if (planAmt - planPaid > 0) {
+            totalDue += planAmt - planPaid;
+            pendingItems.push({ label: 'Van – One-time plan', amount: planAmt - planPaid });
+          }
+        }
       } else {
         const vRate = parseFloat(stuVan.monthly_fee) || 0;
         vanMonthsForStudent(student).forEach(function (m) {
+          if (period && period !== m) return;
           const mPaid = paidMap[student.id + '_' + defVanHead.id + '_' + m] || 0;
-          if (vRate - mPaid > 0) totalDue += vRate - mPaid;
+          if (vRate - mPaid > 0) {
+            totalDue += vRate - mPaid;
+            pendingItems.push({ label: 'Van – ' + m, amount: vRate - mPaid });
+          }
         });
       }
     }
 
-    // Fine owed on each overdue period
+    // Fine owed on each overdue period (all-heads view only)
     let lateFee = 0;
-    Object.keys(pendingByPeriod).forEach(function (p) {
-      lateFee += lateFeeForPeriod(p, pendingByPeriod[p], lfPaid[student.id]);
-    });
+    if (showLate) {
+      Object.keys(pendingByPeriod).forEach(function (p) {
+        lateFee += lateFeeForPeriod(p, pendingByPeriod[p], lfPaid[student.id]);
+      });
+    }
 
-    if (totalDue > 0) defaulters.push({ ...student, totalDue, lateFee, grandTotal: totalDue + lateFee });
+    if (totalDue > 0) defaulters.push({ ...student, totalDue, lateFee, grandTotal: totalDue + lateFee, pendingItems });
   });
 
   defaulters.sort((a,b)=>(b.grandTotal||b.totalDue)-(a.grandTotal||a.totalDue));
@@ -2967,11 +3029,18 @@ async function loadDefaulters() {
     return;
   }
 
+  // Plain words for what was filtered, shown above the list
+  const defFilterLabel = [
+    headEl && headEl.value ? headEl.options[headEl.selectedIndex].text.replace('🚐 ', '') : '',
+    period ? (period === VAN_ONETIME_PERIOD ? 'One-time van plan' : period) : '',
+    cls || ''
+  ].filter(Boolean).join(' · ');
+
   document.getElementById('defaulters-list').innerHTML = `
-    <div style="font-size:13px;font-weight:600;color:var(--danger);margin-bottom:12px">${defaulters.length} student${defaulters.length!==1?'s':''} with pending dues</div>
+    <div style="font-size:13px;font-weight:600;color:var(--danger);margin-bottom:12px">${defaulters.length} student${defaulters.length!==1?'s':''} with pending dues${defFilterLabel ? ' — ' + defFilterLabel : ''}</div>
     <div class="table-wrap" id="defaulters-print-area">
     <table>
-      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th style="text-align:right">Fee Due</th>${lateFeeConfig.enabled ? '<th style="text-align:right">Late Fee</th><th style="text-align:right">Total</th>' : ''}<th class="no-print">Reminder</th></tr></thead>
+      <thead><tr><th>#</th><th>Student Name</th><th>Class</th><th>Adm No</th><th>Father's Name</th><th>Mobile</th><th>Pending For</th><th style="text-align:right">Fee Due</th>${showLate ? '<th style="text-align:right">Late Fee</th><th style="text-align:right">Total</th>' : ''}<th class="no-print">Reminder</th></tr></thead>
       <tbody>
         ${defaulters.map((s,i)=>`
           <tr>
@@ -2981,8 +3050,9 @@ async function loadDefaulters() {
             <td style="color:var(--maroon)">${s.admission_no}</td>
             <td>${s.father_name||'—'}</td>
             <td>${s.mobile||'—'}</td>
+            <td style="font-size:11px;line-height:1.5">${pendingListHtml(s.pendingItems)}</td>
             <td style="text-align:right;font-weight:700;color:#A32D2D">₹${s.totalDue.toLocaleString('en-IN')}</td>
-            ${lateFeeConfig.enabled ? `
+            ${showLate ? `
               <td style="text-align:right;color:${s.lateFee > 0 ? '#8B5E00' : 'var(--text-muted)'};font-weight:${s.lateFee > 0 ? '700' : '400'}">${s.lateFee > 0 ? '₹' + s.lateFee.toLocaleString('en-IN') : '—'}</td>
               <td style="text-align:right;font-weight:700;color:var(--maroon)">₹${(s.grandTotal || s.totalDue).toLocaleString('en-IN')}</td>` : ''}
             <td class="no-print">
@@ -2997,9 +3067,9 @@ async function loadDefaulters() {
           </tr>
         `).join('')}
         <tr style="border-top:2px solid var(--border);font-weight:700">
-          <td colspan="6">Total Pending</td>
+          <td colspan="7">Total Pending</td>
           <td style="text-align:right;color:var(--maroon)">₹${defaulters.reduce((s,d)=>s+d.totalDue,0).toLocaleString('en-IN')}</td>
-          ${lateFeeConfig.enabled ? `
+          ${showLate ? `
             <td style="text-align:right;color:#8B5E00">₹${defaulters.reduce((s,d)=>s+(d.lateFee||0),0).toLocaleString('en-IN')}</td>
             <td style="text-align:right;color:var(--maroon)">₹${defaulters.reduce((s,d)=>s+(d.grandTotal||d.totalDue),0).toLocaleString('en-IN')}</td>` : ''}
           <td class="no-print"></td>
@@ -3012,6 +3082,16 @@ async function loadDefaulters() {
 }
 
 function printDefaulters() { window.print(); }
+
+// "Book Fees – Term 1 ₹1,650" lines; long lists fold after 4 on screen
+function pendingListHtml(items) {
+  if (!items || items.length === 0) return '—';
+  const line = it => escapeAttr(it.label) + ' <b>₹' + Number(it.amount).toLocaleString('en-IN') + '</b>';
+  if (items.length <= 4) return items.map(line).join('<br>');
+  return items.slice(0, 4).map(line).join('<br>') +
+    '<br><span class="no-print" style="color:var(--text-muted)">+ ' + (items.length - 4) + ' more</span>' +
+    '<span style="display:none" class="print-only-rest"><br>' + items.slice(4).map(line).join('<br>') + '</span>';
+}
 
 // ══════════════════════════════════════
 // FEE DUES REMINDERS
