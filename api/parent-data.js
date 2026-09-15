@@ -145,6 +145,8 @@ module.exports = async (req, res) => {
         if (head.category === 'transport') return !!scheme.free_van;
         if (head.category === 'uniform') return !!scheme.free_uniform;
         if (head.category === 'books') return !!scheme.free_books;
+        // School fees (general heads) are covered by the 5-Year Scheme fee
+        if (!head.category || head.category === 'general') return true;
         return false;
       }
 
@@ -194,7 +196,7 @@ module.exports = async (req, res) => {
       const totalFee = breakdown.reduce((s, r) => s + r.total, 0);
       const totalPaid = payments.reduce((s, r) => s + (parseFloat(r.amount_paid) || 0), 0);
       const schemeFree = scheme
-        ? [scheme.free_van && 'Van', scheme.free_uniform && 'Uniform', scheme.free_books && 'Books'].filter(Boolean)
+        ? ['School Fees', scheme.free_van && 'Van', scheme.free_uniform && 'Uniform', scheme.free_books && 'Books'].filter(Boolean)
         : [];
 
       return res.status(200).json({

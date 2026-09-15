@@ -63,7 +63,12 @@ module.exports = async (req, res) => {
   const mods = Array.isArray(session.mods) ? session.mods : [];
   const isOwner = session.role === 'owner';
   const hasScheme = isOwner || mods.indexOf('scheme') !== -1;
-  if (!hasScheme) {
+  // Fee staff may READ scheme enrolments (needed to show scheme waivers
+  // in Fee Management). They still cannot change anything.
+  const reqPeek = body.req || {};
+  const feeReadOnly = mods.indexOf('fee') !== -1 &&
+    reqPeek.table === 'scheme_enrollments' && (reqPeek.action || 'select') === 'select';
+  if (!hasScheme && !feeReadOnly) {
     return res.status(403).json({ ok: false, error: 'You do not have permission for the 5-Year Scheme.' });
   }
   const schoolId = String(session.sid || '');
