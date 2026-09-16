@@ -670,6 +670,15 @@ async function togglePublish(examId, makePublished) {
   const { error } = await supabase.from('exams').update({ published_to_parents: makePublished }).eq('id', examId);
   if (error) { showToast('Could not update: ' + error.message, 'error'); return; }
   showToast(makePublished ? 'Results published — parents can now view ✓' : 'Results hidden from parents');
+  if (makePublished) {
+    // Free phone alert to parents of the exam's classes (sent once per exam)
+    fetch('/api/push', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action: 'notify_results', exam_id: examId })
+    }).then(r => r.json()).then(out => {
+      if (out && out.ok && out.sent > 0) showToast('🔔 Phone alert sent to ' + out.sent + ' parent device(s)', 'success');
+    }).catch(e => console.error('Push alert failed:', e));
+  }
   loadExams();
 }
 
