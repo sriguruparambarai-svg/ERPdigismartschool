@@ -61,6 +61,11 @@
           <div class="stat-sub">Awaiting responses</div>
         </div>
         <div class="stat-card">
+          <div class="stat-label">🔔 Phone Alerts On</div>
+          <div class="stat-value" id="st-push" style="color:#2D7A3A">—</div>
+          <div class="stat-sub">Students whose parents get alerts</div>
+        </div>
+        <div class="stat-card">
           <div class="stat-label">Parent Portal Link</div>
           <div style="margin-top:6px">
             <button class="btn btn-secondary btn-sm" onclick="copyPortalLink()">📋 Copy Link</button>
@@ -497,15 +502,16 @@ async function sendCommunication() {
   if (!type) { showComposeAlert('⚠️ Please select a communication type.'); return; }
   if (!title || !message) { showComposeAlert('⚠️ Please fill title and message.'); return; }
 
-  const { error } = await supabase.from('communications').insert([{
+  const { data: newComm, error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type, title, message,
     target_class: target, priority,
     sender_name: 'Admin',
     created_at: new Date().toISOString(),
-  }]);
+  }]).select('id');
 
   if (error) { showComposeAlert('⚠️ Error: ' + error.message); return; }
   showToast(title + ' sent successfully!', 'success');
+  notifyParentsPush('notify_comm', { comm_id: newComm && newComm[0] && newComm[0].id });
   clearCompose();
   await loadStats();
   await loadHistory();
@@ -589,7 +595,7 @@ async function postHomework() {
   const title = cls + ' Homework — ' + new Date(due+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
 
   showLoading('Sending homework to parents...');
-  const { error } = await supabase.from('communications').insert([{
+  const { data: newComm, error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type: 'homework',
     title,
     message: combined,
@@ -599,7 +605,7 @@ async function postHomework() {
     due_date: due, priority: 'normal',
     sender_name: 'Teacher',
     created_at: new Date().toISOString(),
-  }]);
+  }]).select('id');
 
   if (error) {
     hideLoading();
@@ -611,6 +617,7 @@ async function postHomework() {
 
   hideLoading();
   showToast('✅ Homework sent for ' + cls + '! (' + subjects.length + ' subjects)','success');
+  notifyParentsPush('notify_comm', { comm_id: newComm && newComm[0] && newComm[0].id });
 
   // Reset form - clear only task fields, keep subjects
   document.querySelectorAll('.hw-sub-task').forEach(el => el.value = '');
@@ -701,16 +708,17 @@ async function createConsentForm() {
   if (options.length < 2) { document.getElementById('cf-alert').className='alert alert-danger'; document.getElementById('cf-alert').textContent='⚠️ Please add at least 2 response options.'; return; }
   document.getElementById('cf-alert').className = 'hidden';
 
-  const { error } = await supabase.from('communications').insert([{
+  const { data: newComm, error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type: 'consent_form',
     title, message: desc, target_class: target,
     consent_options: options, due_date: deadline,
     priority: 'important', sender_name: 'Admin',
     created_at: new Date().toISOString(),
-  }]);
+  }]).select('id');
 
   if (error) { document.getElementById('cf-alert').className='alert alert-danger'; document.getElementById('cf-alert').textContent='⚠️ '+error.message; return; }
   showToast('Consent form sent!','success');
+  notifyParentsPush('notify_comm', { comm_id: newComm && newComm[0] && newComm[0].id });
   document.getElementById('cf-title').value = '';
   document.getElementById('cf-desc').value = '';
   await loadConsentForms();
@@ -762,7 +770,7 @@ async function addEvent() {
   const date = document.getElementById('ev-date').value;
   if (!title || !date) { showToast('Please fill event name and date.','error'); return; }
 
-  const { error } = await supabase.from('communications').insert([{
+  const { data: newComm, error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type: 'event',
     title, message: document.getElementById('ev-desc').value.trim(),
     event_date: date, event_time: document.getElementById('ev-time').value,
@@ -770,10 +778,11 @@ async function addEvent() {
     target_class: 'all', priority: 'normal',
     sender_name: 'Admin',
     created_at: new Date().toISOString(),
-  }]);
+  }]).select('id');
 
   if (error) { showToast('Error: '+error.message,'error'); return; }
   showToast(title + ' added!','success');
+  notifyParentsPush('notify_comm', { comm_id: newComm && newComm[0] && newComm[0].id });
   ['ev-title','ev-desc','ev-venue','ev-time'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   await loadEventsList();
 }
@@ -957,8 +966,36 @@ async function deleteComm(id) {
   await loadHistory(); await loadHomeworkList(); await loadConsentForms(); await loadEventsList(); await loadStats();
 }
 
+// ── PHONE ALERTS ──
+// Sends a free phone alert to parents after something is saved. The server
+// reads the saved record itself, so only real notices can be sent.
+async function notifyParentsPush(action, extra) {
+  if (!extra || (!extra.comm_id && !extra.exam_id)) return;
+  try {
+    const r = await fetch('/api/push', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action: action }, extra))
+    });
+    const out = await r.json();
+    if (out && out.ok && out.sent > 0) showToast('🔔 Phone alert sent to ' + out.sent + ' parent device(s)', 'success');
+  } catch (e) { console.error('Push alert failed:', e); }
+}
+async function loadPushStats() {
+  const el = document.getElementById('st-push');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/push', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action: 'stats' })
+    });
+    const out = await r.json();
+    el.textContent = (out && out.ok) ? out.students_on : '—';
+  } catch (e) { el.textContent = '—'; }
+}
+
 // ── STATS ──
 async function loadStats() {
+  loadPushStats();
   const monthStart = new Date().toISOString().slice(0,7)+'-01';
   const { data } = await supabase.from('communications').select('type,created_at').eq('school_id',SCHOOL_ID).gte('created_at',monthStart);
   if (data) {
