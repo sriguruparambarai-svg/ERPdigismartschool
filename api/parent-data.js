@@ -113,6 +113,7 @@ module.exports = async (req, res) => {
       }
       const payments = await sb('GET', 'fee_payments?student_id=eq.' + encodeURIComponent(studentId) +
         '&school_id=eq.' + encodeURIComponent(schoolId) +
+        '&is_cancelled=not.is.true' + // cancelled receipts never count as paid
         '&select=receipt_no,amount_paid,payment_date,payment_mode,fee_head_id,period&order=payment_date.desc') || [];
 
       // Fee head categories (used to match scheme waivers)
@@ -212,6 +213,56 @@ module.exports = async (req, res) => {
     }
 
     // ══ EXAM RESULTS — published exams only, this child's marks ══
+    // ══ RECEIPT — one receipt of this child only, for the PDF download ══
+    if (action === 'receipt') {
+      const rno = String(body.receipt_no || '').trim();
+      if (!rno || rno.length > 60) return res.status(400).json({ ok: false, error: 'Receipt not found.' });
+      const lines = await sb('GET', 'fee_payments?student_id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) +
+        '&receipt_no=eq.' + encodeURIComponent(rno) +
+        '&is_cancelled=not.is.true' +
+        '&select=fee_head_name,period,amount_paid,payment_mode,payment_date,reference_no,is_late_fee&order=created_at.asc') || [];
+      if (!lines.length) return res.status(404).json({ ok: false, error: 'Receipt not found.' });
+
+      const stu = (await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&select=full_name,admission_no,class,section,father_name&limit=1') || [])[0] || {};
+      let school = {};
+      try {
+        school = (await sb('GET', 'schools?school_id=eq.' + encodeURIComponent(schoolId) + '&select=*&limit=1') || [])[0] || {};
+      } catch (e) { school = {}; }
+      let logo = '';
+      try {
+        const ic = (await sb('GET', 'icard_settings?school_id=eq.' + encodeURIComponent(schoolId) + '&select=logo_url&limit=1') || [])[0];
+        logo = (ic && ic.logo_url) || '';
+      } catch (e) { logo = ''; }
+
+      return res.status(200).json({
+        ok: true,
+        receipt: {
+          receipt_no: rno,
+          payment_date: lines[0].payment_date,
+          payment_mode: lines[0].payment_mode,
+          reference_no: lines[0].reference_no || '',
+          items: lines.map(l => ({
+            label: (l.fee_head_name || (l.is_late_fee ? 'Late Fee' : 'Fee')) + (l.period ? ' (' + l.period + ')' : ''),
+            amount: parseFloat(l.amount_paid) || 0
+          })),
+          total: lines.reduce((t, l) => t + (parseFloat(l.amount_paid) || 0), 0),
+          student: {
+            name: stu.full_name || '', admission_no: stu.admission_no || '',
+            class_text: (stu.class || '') + (stu.section ? ' ' + stu.section : ''),
+            father_name: stu.father_name || ''
+          },
+          school: {
+            name: school.name || '',
+            address: [school.address, school.city, school.pincode].filter(Boolean).join(', '),
+            contact: [school.phone || school.mobile, school.email].filter(Boolean).join('  ·  ')
+          },
+          logo_url: logo
+        }
+      });
+    }
+
     if (action === 'exam_results') {
       const stuRows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
         '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
