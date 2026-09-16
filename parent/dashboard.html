@@ -355,6 +355,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="qs-card"><div class="qs-num" id="fee-paid" style="color:#2D7A3A;font-size:15px">—</div><div class="qs-label">Paid</div></div>
       <div class="qs-card"><div class="qs-num" id="fee-due" style="color:#A32D2D;font-size:15px">—</div><div class="qs-label">Balance Due</div></div>
     </div>
+    <!-- Online payment (shown only when the school has switched it on) -->
+    <div id="pay-online-box" style="display:none;margin-bottom:14px">
+      <button onclick="openPayOnline()" style="width:100%;padding:13px;background:linear-gradient(135deg,#7A1F2B,#5A1520);color:#F5E6C8;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit">💳 Pay Fees Online</button>
+      <div id="pay-online-note" style="font-size:11px;color:#9B928A;text-align:center;margin-top:5px">UPI · GPay · PhonePe · Cards · Netbanking</div>
+    </div>
+
     <div class="section-title"><span>📋 Fee Breakdown</span></div>
     <div id="fee-breakdown" style="margin-bottom:16px">
       <div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">Loading breakdown...</div></div>
@@ -365,7 +371,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">Loading payments...</div></div>
     </div>
     <div style="margin-top:14px;font-size:11px;color:#9B928A;text-align:center;line-height:1.6">
-      For fee payments, please visit the school office.<br>Figures update as the office records payments.
+      <span id="fee-office-note">For fee payments, please visit the school office.<br>Figures update as the office records payments.</span>
     </div>
   </div>
 
@@ -430,6 +436,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 </div>
 
 <!-- NOTICE DETAIL MODAL -->
+<!-- PAY ONLINE -->
+<div class="modal-overlay" id="pay-modal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">💳 Pay Fees Online</div>
+    <div id="pay-test-banner" style="display:none;background:#FFF4D6;color:#8B5E00;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;margin-bottom:10px">TEST MODE — no real money will be taken</div>
+    <div style="font-size:12px;color:#9B928A;margin-bottom:8px">Tick the fees you want to pay now:</div>
+    <div id="pay-items"><div class="empty-state"><div class="empty-text">Loading fees...</div></div></div>
+    <div id="pay-summary" style="border-top:2px solid #7A1F2B;margin-top:10px;padding-top:10px;font-size:13px"></div>
+    <div id="pay-msg" style="font-size:12px;color:#A32D2D;margin-top:6px"></div>
+    <button id="pay-go" onclick="startPayment()" style="width:100%;margin-top:10px;padding:13px;background:#D4A843;color:#3A1A00;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit" disabled>Pay</button>
+    <button class="modal-close" onclick="closeModal('pay-modal')">Cancel</button>
+  </div>
+</div>
+
+<!-- PAYMENT RESULT -->
+<div class="modal-overlay" id="pay-result-modal">
+  <div class="modal-sheet" style="text-align:center">
+    <div class="modal-handle"></div>
+    <div id="pay-result-content"></div>
+    <button class="modal-close" onclick="closeModal('pay-result-modal')">Close</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="notice-modal">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
@@ -482,7 +512,159 @@ document.addEventListener('DOMContentLoaded', async () => {
   await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery()]);
   loadStats();
   initAlerts();
+  initOnlinePay();
 });
+
+// ══ ONLINE FEE PAYMENT (Cashfree) ══
+let payStatus = null;
+let payItems = [];
+async function payApi(action, extra) {
+  try {
+    const r = await fetch('/api/online-pay', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('parent_token') || '', action: action }, extra || {}))
+    });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'Network error. Please check your internet.' }; }
+}
+async function initOnlinePay() {
+  payStatus = await payApi('status');
+  if (payStatus && payStatus.ok && payStatus.enabled) {
+    const box = document.getElementById('pay-online-box');
+    if (box) box.style.display = 'block';
+    const note = document.getElementById('fee-office-note');
+    if (note) note.innerHTML = 'Pay online above, or at the school office.<br>Online payments show here instantly with a receipt.';
+    if (payStatus.conv_fee_percent > 0) {
+      const n = document.getElementById('pay-online-note');
+      if (n) n.textContent = 'UPI · GPay · PhonePe · Cards · Netbanking · ' + payStatus.conv_fee_percent + '% convenience fee';
+    }
+  }
+  // Back from Cashfree?
+  const params = new URLSearchParams(window.location.search);
+  const orderId = params.get('pay_order');
+  if (orderId) {
+    history.replaceState(null, '', window.location.pathname);
+    showTab('fees');
+    checkPayment(orderId);
+  }
+}
+function payInr(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+async function openPayOnline() {
+  document.getElementById('pay-modal').classList.add('open');
+  document.getElementById('pay-msg').textContent = '';
+  document.getElementById('pay-test-banner').style.display = (payStatus && payStatus.test_mode) ? 'block' : 'none';
+  const list = document.getElementById('pay-items');
+  list.innerHTML = '<div class="empty-state"><div class="empty-text">Loading fees...</div></div>';
+  const out = await payApi('dues');
+  if (!out || !out.ok) { list.innerHTML = '<div class="empty-state"><div class="empty-text">' + ((out && out.error) || 'Could not load fees.') + '</div></div>'; return; }
+  payItems = out.items || [];
+  if (!payItems.length) { list.innerHTML = '<div class="empty-state"><div class="empty-icon">🎉</div><div class="empty-text">No fees are due right now.</div></div>'; updatePaySummary(); return; }
+  list.innerHTML = payItems.map((it, i) => {
+    const late = it.group === 'late';
+    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid ' + (late ? '#E3B7B7' : 'var(--border)') + ';background:' + (late ? '#FDF6F6' : '#fff') + ';border-radius:10px;margin-bottom:6px;cursor:' + (late ? 'default' : 'pointer') + '">' +
+      '<input type="checkbox" id="pay-it-' + i + '" ' + (late ? 'disabled' : '') + ' onchange="updatePaySummary()" style="width:18px;height:18px;accent-color:#7A1F2B">' +
+      '<div style="flex:1;font-size:13px;font-weight:600;color:' + (late ? '#A32D2D' : 'var(--text)') + '">' + (late ? '⚠️ ' : '') + String(it.label).replace(/</g, '&lt;') +
+      (late ? '<div style="font-size:10px;font-weight:500;color:#9B928A">Added automatically when paying ' + String(it.period).replace(/</g, '&lt;') + ' fees</div>' : '') + '</div>' +
+      '<div style="font-size:13px;font-weight:800;color:#7A1F2B">' + payInr(it.amount) + '</div></label>';
+  }).join('');
+  updatePaySummary();
+}
+function selectedPayKeys() {
+  const keys = [];
+  payItems.forEach((it, i) => {
+    const cb = document.getElementById('pay-it-' + i);
+    if (it.group !== 'late' && cb && cb.checked) keys.push(it.key);
+  });
+  return keys;
+}
+function updatePaySummary() {
+  const keys = selectedPayKeys();
+  // Tick the late fee for any overdue term being paid
+  const periodsPaid = {};
+  payItems.forEach(it => { if (it.group === 'fee' && keys.indexOf(it.key) !== -1) periodsPaid[it.period] = true; });
+  let fees = 0;
+  payItems.forEach((it, i) => {
+    const cb = document.getElementById('pay-it-' + i);
+    if (it.group === 'late' && cb) cb.checked = !!periodsPaid[it.period];
+    if (cb && cb.checked) fees += Number(it.amount) || 0;
+  });
+  fees = Math.round(fees * 100) / 100;
+  const pct = (payStatus && payStatus.conv_fee_percent) || 0;
+  const conv = Math.round(fees * pct) / 100;
+  const total = Math.round((fees + conv) * 100) / 100;
+  const sum = document.getElementById('pay-summary');
+  sum.innerHTML = fees > 0
+    ? '<div style="display:flex;justify-content:space-between"><span>Fees</span><b>' + payInr(fees) + '</b></div>' +
+      (pct > 0 ? '<div style="display:flex;justify-content:space-between;color:#9B928A"><span>Convenience fee (' + pct + '%)</span><span>' + payInr(conv) + '</span></div>' : '') +
+      '<div style="display:flex;justify-content:space-between;font-size:16px;color:#7A1F2B;margin-top:4px"><b>Total</b><b>' + payInr(total) + '</b></div>'
+    : '';
+  const go = document.getElementById('pay-go');
+  go.disabled = !(fees >= 1);
+  go.textContent = fees >= 1 ? 'Pay ' + payInr(total) : 'Pay';
+  go.style.opacity = fees >= 1 ? '1' : '.5';
+}
+let cfSdkLoading = null;
+function loadCashfreeSdk() {
+  if (window.Cashfree) return Promise.resolve(window.Cashfree);
+  if (!cfSdkLoading) {
+    cfSdkLoading = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://sdk.cashfree.com/js/v3/cashfree.js';
+      sc.onload = () => window.Cashfree ? resolve(window.Cashfree) : reject(new Error('missing'));
+      sc.onerror = () => { cfSdkLoading = null; reject(new Error('load failed')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return cfSdkLoading;
+}
+async function startPayment() {
+  const keys = selectedPayKeys();
+  const msg = document.getElementById('pay-msg');
+  const go = document.getElementById('pay-go');
+  if (!keys.length) { msg.textContent = 'Please tick at least one fee.'; return; }
+  msg.textContent = '';
+  go.disabled = true; go.textContent = 'Opening secure payment...';
+  const out = await payApi('create_order', { keys: keys });
+  if (!out || !out.ok) {
+    msg.textContent = (out && out.error) || 'Could not start the payment.';
+    updatePaySummary();
+    if (out && /changed|already paid/i.test(out.error || '')) openPayOnline();
+    return;
+  }
+  try {
+    const CF = await loadCashfreeSdk();
+    const cashfree = CF({ mode: out.mode });
+    cashfree.checkout({ paymentSessionId: out.payment_session_id, redirectTarget: '_self' });
+  } catch (e) {
+    msg.textContent = 'Could not open the payment page. Please check your internet and try again.';
+    updatePaySummary();
+  }
+}
+async function checkPayment(orderId) {
+  const box = document.getElementById('pay-result-content');
+  document.getElementById('pay-result-modal').classList.add('open');
+  box.innerHTML = '<div style="font-size:40px">⏳</div><div class="modal-title">Confirming your payment...</div><div style="font-size:12px;color:#9B928A">Please don\'t close this page.</div>';
+  let out = null;
+  for (let i = 0; i < 8; i++) {
+    out = await payApi('verify', { order_id: orderId });
+    if (!out || !out.ok || out.status === 'paid' || out.status === 'failed') break;
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  if (out && out.ok && out.status === 'paid') {
+    const rno = String(out.receipt_no || '').replace(/[^A-Za-z0-9-]/g, '');
+    box.innerHTML = '<div style="font-size:44px">✅</div><div class="modal-title">Payment successful</div>' +
+      '<div style="font-size:14px;margin-bottom:6px">' + payInr(out.total) + ' received</div>' +
+      '<div style="font-size:12px;color:#9B928A;margin-bottom:12px">Receipt No: <b>' + rno + '</b></div>' +
+      (rno ? '<button onclick="downloadReceipt(\'' + rno + '\', this)" style="background:#FDF6E8;color:#7A1F2B;border:1px solid #E8D5A8;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer">📄 Download Receipt</button>' : '');
+    feesLoaded = false; loadFees(); feesLoaded = true;
+  } else if (out && out.ok && out.status === 'failed') {
+    box.innerHTML = '<div style="font-size:44px">❌</div><div class="modal-title">Payment not completed</div><div style="font-size:13px;color:#6B6560">No money was taken. You can try again.</div>';
+  } else if (out && out.ok) {
+    box.innerHTML = '<div style="font-size:44px">🕐</div><div class="modal-title">Payment is still processing</div><div style="font-size:13px;color:#6B6560">If money was deducted, your receipt will appear in Payment History within a few minutes. Please don\'t pay again.</div>';
+  } else {
+    box.innerHTML = '<div style="font-size:44px">⚠️</div><div class="modal-title">Could not confirm yet</div><div style="font-size:13px;color:#6B6560">' + ((out && out.error) || 'Please check Payment History in a few minutes.') + '</div>';
+  }
+}
 
 // ══ PHONE ALERTS (push notifications) ══
 function alertsSupported() {
