@@ -64,16 +64,20 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// Push notifications (future use)
+// Push notifications — parent alerts from /api/push
 self.addEventListener('push', event => {
-  const data = event.data?.json() || {};
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch (e) { data = { body: event.data ? event.data.text() : '' }; }
   const title = data.title || 'DigiSmart ERP';
   const options = {
     body: data.body || 'New notification from school',
     icon: '/assets/icons/icon-192.png',
-    badge: '/assets/icons/icon-96.png',
+    badge: '/assets/icons/badge-96.png',
     vibrate: [200, 100, 200],
-    data: { url: data.url || '/' },
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+    data: { url: data.url || '/parent/index.html' },
     actions: [
       { action: 'open', title: 'Open' },
       { action: 'close', title: 'Dismiss' }
@@ -85,7 +89,14 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   if (event.action === 'open' || !event.action) {
-    const url = event.notification.data?.url || '/';
-    event.waitUntil(clients.openWindow(url));
+    const url = event.notification.data?.url || '/parent/index.html';
+    // If the parent app is already open, bring it to the front instead of a new window
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        const open = list.find(c => c.url.includes('/parent/'));
+        if (open) return open.focus();
+        return clients.openWindow(url);
+      })
+    );
   }
 });

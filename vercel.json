@@ -3,6 +3,10 @@
     {
       "path": "/api/daily-job",
       "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/push",
+      "schedule": "0 5,7 * * 1-6"
     }
   ],
   "rewrites": [
