@@ -6,6 +6,8 @@
 <title>Transport & GPS — DigiSmart ERP</title>
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 .tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
 .tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
@@ -47,6 +49,8 @@
 .sband-item{display:flex;flex-direction:column;gap:2px}
 .sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
 .sband-value{font-size:20px;font-weight:700;color:var(--maroon)}
+.sos-banner{background:#A32D2D;color:#fff;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;animation:sosPulse 1.2s infinite}
+@keyframes sosPulse{0%,100%{box-shadow:0 0 0 0 rgba(163,45,45,.6)}50%{box-shadow:0 0 0 10px rgba(163,45,45,0)}}
 </style>
 </head>
 <body>
@@ -103,7 +107,9 @@
 
       <!-- ══ TAB: GPS LIVE ══ -->
       <div id="tab-gps">
-        <div class="driver-share-box">
+        <div id="sos-area"></div>
+        <!-- Driver phone sharing kept dormant: live tracking now comes from fitted GPS devices -->
+        <div class="driver-share-box" style="display:none">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--maroon);margin-bottom:4px">📱 Driver GPS Sharing</div>
@@ -131,7 +137,8 @@
                 <button class="btn btn-secondary btn-sm" onclick="refreshGPS()">↻ Refresh</button>
               </div>
             </div>
-            <div class="gps-map" id="gps-map">
+            <div id="live-leaflet-map" style="height:420px"></div>
+            <div class="gps-map" id="gps-map" style="display:none">
               <svg id="map-svg" width="100%" height="360" viewBox="0 0 700 360" xmlns="http://www.w3.org/2000/svg">
                 <!-- Background -->
                 <rect width="700" height="360" fill="#EEF2EE"/>
@@ -211,6 +218,10 @@
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
+            </div>
+            <div class="form-group" style="margin-bottom:8px">
+              <label class="form-label">GPS Device IMEI <span style="font-weight:400;color:var(--text-muted)">(for live tracking)</span></label>
+              <input type="text" id="bf-imei" class="form-control" placeholder="15-digit IMEI printed on the device" maxlength="20" inputmode="numeric">
             </div>
             <div style="font-size:12px;font-weight:600;color:var(--maroon);margin:10px 0 8px;padding-bottom:6px;border-bottom:2px solid var(--sandal)">👤 Driver Details</div>
             <div class="form-group" style="margin-bottom:8px">
@@ -507,6 +518,25 @@
   </div>
 </div>
 
+<!-- ══ STOP LOCATIONS MODAL ══ -->
+<div class="modal-overlay" id="stop-map-modal">
+  <div class="modal" style="max-width:980px;width:96vw">
+    <div class="modal-header">
+      <div class="modal-title" id="stop-map-title">📍 Stop Locations</div>
+      <button class="modal-close" onclick="closeStopMap()">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Click a stop in the list, then click its exact place on the map. Drag a pin to adjust. Parents get "bus is near your stop" alerts only for stops placed here.</div>
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:12px">
+      <div id="stop-map-list" style="max-height:440px;overflow-y:auto"></div>
+      <div id="stop-map-canvas" style="height:440px;border-radius:10px;overflow:hidden;border:1px solid var(--border)"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeStopMap()">Cancel</button>
+      <button class="btn btn-gold" id="stop-map-save" onclick="saveStopMap()">✓ Save Stop Locations</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ROUTE MODAL ══ -->
 <div class="modal-overlay" id="route-modal">
   <div class="modal" style="max-width:500px">
@@ -601,8 +631,157 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── GPS REFRESH ──
 function startGPSRefresh() {
-  refreshGPS();
-  gpsRefreshInterval = setInterval(refreshGPS, 30000);
+  // Live data now comes from fitted GPS devices through api/bus-gps.js
+  refreshLiveMap();
+  gpsRefreshInterval = setInterval(refreshLiveMap, 15000);
+}
+
+// ══ LIVE MAP (fitted GPS devices) ══
+let liveMap = null, liveMarkers = {}, liveFitted = false, liveStopLayer = null;
+async function busGpsApi(action, extra) {
+  try {
+    const r = await fetch('/api/bus-gps', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action: action }, extra || {}))
+    });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'Network error' }; }
+}
+function tEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function ensureLiveMap() {
+  if (liveMap || !window.L) return liveMap;
+  liveMap = L.map('live-leaflet-map').setView([11.10, 79.65], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(liveMap);
+  liveStopLayer = L.layerGroup().addTo(liveMap);
+  return liveMap;
+}
+async function refreshLiveMap() {
+  const out = await busGpsApi('live');
+  if (!out || !out.ok) return;
+  const now = new Date(out.server_time).getTime();
+  const liveByBus = {};
+  (out.live || []).forEach(d => {
+    liveByBus[d.bus_id] = { bus_id: d.bus_id, updated_at: d.updated_at, speed: (Number(d.speed_kmh) || 0) / 3.6, lat: Number(d.latitude), lng: Number(d.longitude), kmh: Number(d.speed_kmh) || 0 };
+  });
+  const liveCount = Object.values(liveByBus).filter(d => (now - new Date(d.updated_at).getTime()) / 1000 < 180).length;
+  const stLive = document.getElementById('st-live');
+  if (stLive) stLive.textContent = liveCount;
+  updateBusStatusPanel(liveByBus);
+  updateLastUpdatePanel(liveByBus);
+  renderSosAlerts(out.alerts || []);
+
+  const map = ensureLiveMap();
+  if (!map) return;
+  liveStopLayer.clearLayers();
+  (out.stops || []).forEach(s => {
+    L.circleMarker([Number(s.latitude), Number(s.longitude)], { radius: 5, color: '#7A1F2B', weight: 2, fillColor: '#F5E6C8', fillOpacity: 1 })
+      .bindTooltip(tEsc(s.stop_name)).addTo(liveStopLayer);
+  });
+  const pts = [];
+  allBuses.forEach(bus => {
+    const d = liveByBus[bus.id];
+    if (!d) { if (liveMarkers[bus.id]) { map.removeLayer(liveMarkers[bus.id]); delete liveMarkers[bus.id]; } return; }
+    const age = (now - new Date(d.updated_at).getTime()) / 1000;
+    const colour = age >= 180 ? '#888' : d.kmh >= 5 ? '#7A1F2B' : '#8B5E00';
+    const icon = L.divIcon({ className: '', iconSize: [40, 40], iconAnchor: [20, 20],
+      html: '<div style="background:' + colour + ';border:3px solid #D4A843;border-radius:50%;width:40px;height:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.35)">🚌<span>' + tEsc(String(bus.bus_number || '').slice(-4)) + '</span></div>' });
+    const tip = tEsc(bus.bus_number) + ' · ' + (age >= 180 ? 'Offline' : Math.round(d.kmh) + ' km/h') + ' · ' + tEsc(bus.driver_name || '');
+    if (liveMarkers[bus.id]) { liveMarkers[bus.id].setLatLng([d.lat, d.lng]).setIcon(icon).setTooltipContent(tip); }
+    else { liveMarkers[bus.id] = L.marker([d.lat, d.lng], { icon, zIndexOffset: 1000 }).bindTooltip(tip).addTo(map); }
+    pts.push([d.lat, d.lng]);
+  });
+  if (!liveFitted && pts.length) {
+    liveFitted = true;
+    if (pts.length === 1) map.setView(pts[0], 14); else map.fitBounds(pts, { padding: [40, 40] });
+  }
+}
+function renderSosAlerts(alerts) {
+  const el = document.getElementById('sos-area');
+  if (!el) return;
+  el.innerHTML = alerts.map(a => {
+    const bus = allBuses.find(b => b.id === a.bus_id) || {};
+    const when = new Date(a.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const mapLink = (a.latitude != null) ? '<a href="https://www.google.com/maps?q=' + a.latitude + ',' + a.longitude + '" target="_blank" style="color:#fff;text-decoration:underline">Open location</a>' : '';
+    return '<div class="sos-banner"><div style="font-size:28px">🆘</div><div style="flex:1"><div style="font-weight:800">PANIC BUTTON PRESSED — ' + tEsc(bus.bus_number || 'Bus') + '</div>' +
+      '<div style="font-size:12px">At ' + when + ' · Driver ' + tEsc(bus.driver_name || '—') + (bus.driver_mobile ? ' · 📞 ' + tEsc(bus.driver_mobile) : '') + ' · ' + mapLink + '</div></div>' +
+      '<button class="btn btn-sm" style="background:#fff;color:#A32D2D;font-weight:700" onclick="ackSos(\'' + tEsc(a.id) + '\')">Mark handled</button></div>';
+  }).join('');
+}
+async function ackSos(id) {
+  if (!confirm('Mark this emergency alert as handled?')) return;
+  await busGpsApi('ack_alert', { alert_id: id });
+  refreshLiveMap();
+}
+
+// ══ STOP LOCATIONS EDITOR ══
+let stopMap = null, stopRouteId = null, stopPins = {}, stopSelected = null, stopNames = [];
+async function openStopMap(routeId) {
+  const route = allRoutes.find(r => r.id === routeId);
+  if (!route) return;
+  if (!window.L) { showToast('Map could not load. Check your internet.', 'error'); return; }
+  stopRouteId = routeId;
+  stopNames = (route.stops || []).map(String);
+  document.getElementById('stop-map-title').textContent = '📍 Stop Locations — ' + route.name;
+  document.getElementById('stop-map-modal').classList.add('open');
+  if (!stopMap) {
+    stopMap = L.map('stop-map-canvas').setView([11.10, 79.65], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(stopMap);
+    stopMap.on('click', e => {
+      if (!stopSelected) { showToast('First click a stop name in the list.', 'info'); return; }
+      placeStopPin(stopSelected, e.latlng.lat, e.latlng.lng);
+      const next = stopNames.find(n => !stopPins[n]);
+      stopSelected = next || null;
+      renderStopList();
+    });
+  }
+  Object.values(stopPins).forEach(m => stopMap.removeLayer(m));
+  stopPins = {};
+  const out = await busGpsApi('live');
+  const saved = ((out && out.stops) || []).filter(s => s.route_id === routeId);
+  saved.forEach(s => placeStopPin(s.stop_name, Number(s.latitude), Number(s.longitude)));
+  stopSelected = stopNames.find(n => !stopPins[n]) || stopNames[0] || null;
+  renderStopList();
+  setTimeout(() => {
+    stopMap.invalidateSize();
+    const pts = Object.values(stopPins).map(m => m.getLatLng());
+    if (pts.length) stopMap.fitBounds(pts, { padding: [40, 40], maxZoom: 16 });
+  }, 200);
+}
+function placeStopPin(name, lat, lng) {
+  if (stopPins[name]) { stopPins[name].setLatLng([lat, lng]); return; }
+  const idx = stopNames.indexOf(name) + 1;
+  stopPins[name] = L.marker([lat, lng], {
+    draggable: true,
+    icon: L.divIcon({ className: '', iconSize: [28, 28], iconAnchor: [14, 14], html: '<div style="background:#7A1F2B;color:#F5E6C8;border:2px solid #D4A843;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px">' + idx + '</div>' })
+  }).bindTooltip(tEsc(name)).addTo(stopMap);
+}
+function renderStopList() {
+  const el = document.getElementById('stop-map-list');
+  if (!stopNames.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text-muted)">This route has no stops. Edit the route to add stop names first.</div>'; return; }
+  el.innerHTML = stopNames.map((n, i) => {
+    const placed = !!stopPins[n], sel = n === stopSelected;
+    return '<div onclick="selectStop(' + i + ')" style="padding:8px 10px;border:1px solid ' + (sel ? 'var(--gold)' : 'var(--border)') + ';background:' + (sel ? '#FDF6E8' : '#fff') + ';border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:8px">' +
+      '<span style="background:#7A1F2B;color:#F5E6C8;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">' + (i + 1) + '</span>' +
+      '<span style="flex:1;font-size:13px;font-weight:600">' + tEsc(n) + '</span>' +
+      '<span style="font-size:11px;color:' + (placed ? '#2D7A3A' : '#A32D2D') + '">' + (placed ? '✓ placed' : sel ? '👉 click map' : 'not placed') + '</span></div>';
+  }).join('');
+}
+function selectStop(i) {
+  stopSelected = stopNames[i];
+  if (stopPins[stopSelected]) stopMap.panTo(stopPins[stopSelected].getLatLng());
+  renderStopList();
+}
+function closeStopMap() { document.getElementById('stop-map-modal').classList.remove('open'); }
+async function saveStopMap() {
+  const btn = document.getElementById('stop-map-save');
+  const stops = stopNames.filter(n => stopPins[n]).map(n => { const ll = stopPins[n].getLatLng(); return { name: n, lat: ll.lat, lng: ll.lng }; });
+  btn.disabled = true; btn.textContent = 'Saving...';
+  const out = await busGpsApi('save_stops', { route_id: stopRouteId, stops: stops });
+  btn.disabled = false; btn.textContent = '✓ Save Stop Locations';
+  if (!out || !out.ok) { showToast((out && out.error) || 'Could not save.', 'error'); return; }
+  showToast(out.saved + ' of ' + stopNames.length + ' stop locations saved', 'success');
+  closeStopMap();
+  refreshLiveMap();
 }
 
 async function refreshGPS() {
@@ -809,6 +988,7 @@ async function saveBus() {
     license_no: document.getElementById('bf-license').value.trim(),
     conductor_name: document.getElementById('bf-conductor').value.trim(),
     conductor_mobile: document.getElementById('bf-conductor-mobile').value.trim(),
+    gps_imei: (document.getElementById('bf-imei').value || '').replace(/\s/g, '') || null,
   };
 
   let error;
@@ -833,6 +1013,7 @@ function editBus(id) {
   document.getElementById('bf-driver-mobile').value = b.driver_mobile || '';
   document.getElementById('bf-license').value = b.license_no || '';
   document.getElementById('bf-conductor').value = b.conductor_name || '';
+  document.getElementById('bf-imei').value = b.gps_imei || '';
   document.getElementById('bf-conductor-mobile').value = b.conductor_mobile || '';
   document.getElementById('bus-form-title').textContent = 'Edit Bus';
   document.getElementById('bus-save-btn').textContent = 'Update Bus';
@@ -847,7 +1028,7 @@ async function deleteBus(id, number) {
 
 function clearBusForm() {
   editingBusId = null;
-  ['bf-number','bf-capacity','bf-driver','bf-driver-mobile','bf-license','bf-conductor','bf-conductor-mobile'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  ['bf-number','bf-capacity','bf-driver','bf-driver-mobile','bf-license','bf-conductor','bf-conductor-mobile','bf-imei'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('bf-status').value = 'active';
   document.getElementById('bus-form-title').textContent = 'Add New Bus';
   document.getElementById('bus-save-btn').textContent = 'Save Bus';
@@ -890,6 +1071,7 @@ function renderRouteList() {
           </div>
         </div>
         <div style="display:flex;gap:4px">
+          <button class="btn btn-secondary btn-sm" onclick="openStopMap('${r.id}')" title="Set stop locations on map">📍 Stops</button>
           <button class="btn btn-secondary btn-sm btn-icon" onclick="editRoute('${r.id}')">✏️</button>
           <button class="btn btn-danger btn-sm btn-icon" onclick="deleteRoute('${r.id}','${(r.name||'').replace(/'/g,"\\'")}')">🗑</button>
         </div>
