@@ -209,6 +209,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
 
+    <!-- Leave application (parents) -->
+    <div id="leave-card" onclick="openLeave()" style="background:#fff;border:1px solid var(--border);border-left:4px solid var(--maroon);border-radius:14px;padding:12px 14px;margin-bottom:14px;cursor:pointer">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:26px">📝</div>
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14px;color:var(--maroon)" data-lv="cardTitle">Apply Leave</div>
+          <div style="font-size:12px;color:#9B928A" data-lv="cardSub">Inform the school when your child will be absent</div>
+        </div>
+        <div style="font-size:20px;color:#9B928A">›</div>
+      </div>
+    </div>
+
     <!-- Urgent notices -->
     <div id="urgent-section" class="hidden">
       <div class="section-title">
@@ -286,6 +298,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div id="gal-viewer" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:999;align-items:center;justify-content:center;padding:12px" onclick="closePhoto()">
     <img id="gal-viewer-img" style="max-width:100%;max-height:82vh;border-radius:8px;display:block">
     <a id="gal-viewer-dl" download style="position:absolute;bottom:22px;background:#6B1A1A;color:#fff;text-decoration:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600">⬇ Save photo</a>
+  </div>
+
+  <!-- ── LEAVE APPLICATION ── -->
+  <div id="tab-leave" class="tab-section">
+    <div class="section-title">
+      <span data-lv="title">📝 Leave Application</span>
+      <span class="see-all" onclick="showTab('home')" data-lv="home">← Home</span>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <div style="display:inline-flex;border:1.5px solid var(--maroon);border-radius:20px;overflow:hidden">
+        <button id="lv-lang-en" onclick="setLeaveLang('en')" style="padding:6px 16px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">English</button>
+        <button id="lv-lang-ta" onclick="setLeaveLang('ta')" style="padding:6px 16px;border:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">தமிழ்</button>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:18px">
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px" data-lv="from">From date</div>
+          <input type="date" id="lv-from" onchange="lvFromChanged()" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit">
+        </div>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px" data-lv="to">To date</div>
+          <input type="date" id="lv-to" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit">
+        </div>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px" data-lv="reason">Reason</div>
+      <div id="lv-reasons" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px" data-lv="note">Note (optional)</div>
+      <textarea id="lv-note" maxlength="500" rows="3" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;margin-bottom:12px"></textarea>
+
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px" data-lv="photo">Photo — e.g. medical certificate (optional)</div>
+      <input type="file" id="lv-photo-input" accept="image/*" style="display:none" onchange="lvPickPhoto(this)">
+      <div id="lv-photo-box" style="margin-bottom:14px">
+        <button onclick="document.getElementById('lv-photo-input').click()" style="padding:9px 14px;border:1.5px dashed var(--maroon);border-radius:10px;background:var(--sandal-light);color:var(--maroon);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit" data-lv="addPhoto">📷 Add photo</button>
+      </div>
+
+      <div id="lv-msg" style="display:none;font-size:13px;padding:9px 12px;border-radius:9px;margin-bottom:10px"></div>
+      <button id="lv-submit" onclick="submitLeave()" style="width:100%;padding:13px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit" data-lv="submit">Send Leave Request</button>
+    </div>
+
+    <div class="section-title"><span data-lv="myList">My Leave Requests</span></div>
+    <div id="lv-list"></div>
   </div>
 
   <div id="tab-notices" class="tab-section">
@@ -1720,6 +1778,292 @@ function showToastNative(msg) {
     if (e.target === this) this.classList.remove('open');
   });
 });
+</script>
+<script>
+// ══ LEAVE APPLICATION — parent side, English / Tamil ══
+const LV_TEXT = {
+  en: {
+    cardTitle: 'Apply Leave', cardSub: 'Inform the school when your child will be absent',
+    title: '📝 Leave Application', home: '← Home',
+    from: 'From date', to: 'To date', reason: 'Reason', note: 'Note (optional)',
+    photo: 'Photo — e.g. medical certificate (optional)', addPhoto: '📷 Add photo', removePhoto: 'Remove',
+    submit: 'Send Leave Request', sending: 'Sending...', myList: 'My Leave Requests',
+    empty: 'No leave requests yet', loading: 'Loading...',
+    Sick: 'Sick', 'Family function': 'Family function', Travel: 'Travel', Other: 'Other',
+    pending: '⏳ Waiting for approval', approved: '✅ Approved', rejected: '❌ Not approved',
+    day: 'day', days: 'days', reply: 'School reply', viewPhoto: '📎 View photo',
+    sent: 'Leave request sent. The school will reply soon.',
+    pickDates: 'Please pick the leave dates.', pickReason: 'Please choose a reason.',
+    needNote: 'Please write a short note explaining the reason.',
+    badOrder: 'The "To" date cannot be before the "From" date.',
+    photoFail: 'Could not read that photo. Please try another one.',
+    shrinking: 'Preparing photo...'
+  },
+  ta: {
+    cardTitle: 'விடுப்பு விண்ணப்பம்', cardSub: 'உங்கள் குழந்தை வர இயலாத நாட்களைப் பள்ளிக்குத் தெரிவிக்கவும்',
+    title: '📝 விடுப்பு விண்ணப்பம்', home: '← முகப்பு',
+    from: 'தொடக்க தேதி', to: 'இறுதி தேதி', reason: 'காரணம்', note: 'குறிப்பு (விருப்பத்தேர்வு)',
+    photo: 'புகைப்படம் — எ.கா. மருத்துவச் சான்றிதழ் (விருப்பத்தேர்வு)', addPhoto: '📷 புகைப்படம் சேர்க்க', removePhoto: 'நீக்கு',
+    submit: 'விடுப்பு விண்ணப்பத்தை அனுப்பு', sending: 'அனுப்பப்படுகிறது...', myList: 'எனது விடுப்பு விண்ணப்பங்கள்',
+    empty: 'இதுவரை விடுப்பு விண்ணப்பங்கள் இல்லை', loading: 'ஏற்றப்படுகிறது...',
+    Sick: 'உடல்நலக் குறைவு', 'Family function': 'குடும்ப நிகழ்ச்சி', Travel: 'வெளியூர் பயணம்', Other: 'மற்றவை',
+    pending: '⏳ ஒப்புதலுக்காகக் காத்திருக்கிறது', approved: '✅ அனுமதிக்கப்பட்டது', rejected: '❌ அனுமதிக்கப்படவில்லை',
+    day: 'நாள்', days: 'நாட்கள்', reply: 'பள்ளியின் பதில்', viewPhoto: '📎 புகைப்படத்தைப் பார்க்க',
+    sent: 'விடுப்பு விண்ணப்பம் அனுப்பப்பட்டது. பள்ளி விரைவில் பதிலளிக்கும்.',
+    pickDates: 'விடுப்பு தேதிகளைத் தேர்ந்தெடுக்கவும்.', pickReason: 'காரணத்தைத் தேர்ந்தெடுக்கவும்.',
+    needNote: 'காரணத்தை விளக்கி ஒரு சிறு குறிப்பு எழுதவும்.',
+    badOrder: 'இறுதி தேதி, தொடக்க தேதிக்கு முன்பாக இருக்கக் கூடாது.',
+    photoFail: 'இந்தப் புகைப்படத்தைப் படிக்க இயலவில்லை. வேறு புகைப்படம் முயற்சிக்கவும்.',
+    shrinking: 'புகைப்படம் தயாராகிறது...'
+  }
+};
+
+// Server messages parents may see, shown in Tamil when Tamil is on
+const LV_SERVER_TA = {
+  'Please pick the leave dates.': 'விடுப்பு தேதிகளைத் தேர்ந்தெடுக்கவும்.',
+  'The "to" date cannot be before the "from" date.': 'இறுதி தேதி, தொடக்க தேதிக்கு முன்பாக இருக்கக் கூடாது.',
+  'One request can cover at most 31 days.': 'ஒரு விண்ணப்பத்தில் அதிகபட்சம் 31 நாட்கள் மட்டுமே.',
+  'Please choose a reason.': 'காரணத்தைத் தேர்ந்தெடுக்கவும்.',
+  'Please write a short note explaining the reason.': 'காரணத்தை விளக்கி ஒரு சிறு குறிப்பு எழுதவும்.',
+  'You have already applied for leave on some of these days.': 'இந்த நாட்களில் சிலவற்றுக்கு ஏற்கனவே விடுப்பு விண்ணப்பித்துள்ளீர்கள்.',
+  'That photo is too large. Please try again.': 'புகைப்படம் மிகப் பெரியதாக உள்ளது. மீண்டும் முயற்சிக்கவும்.',
+  'Only photos can be attached.': 'புகைப்படங்களை மட்டுமே இணைக்க முடியும்.',
+  'Network error — please check your connection.': 'இணைய இணைப்பில் சிக்கல் — உங்கள் இணைப்பைச் சரிபார்க்கவும்.'
+};
+
+const LV_REASONS = ['Sick', 'Family function', 'Travel', 'Other'];
+let lvLang = 'en';
+try { lvLang = localStorage.getItem('parent_lang') === 'ta' ? 'ta' : 'en'; } catch (e) {}
+let lvReason = '';
+let lvPhoto = null;   // shrunk data URL
+let lvRows = [];
+
+function lvT(key) { return (LV_TEXT[lvLang] && LV_TEXT[lvLang][key]) || LV_TEXT.en[key] || key; }
+function lvServerMsg(msg) { return lvLang === 'ta' && LV_SERVER_TA[msg] ? LV_SERVER_TA[msg] : msg; }
+function lvEsc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+function lvToday() {
+  const n = new Date(); n.setMinutes(n.getMinutes() - n.getTimezoneOffset());
+  return n.toISOString().slice(0, 10);
+}
+
+async function leaveApi(action, extra) {
+  try {
+    const res = await fetch('/api/leave-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('parent_token') || '', action: action }, extra || {}))
+    });
+    const out = await res.json();
+    if (res.status === 401) {
+      sessionStorage.removeItem('parent_token');
+      sessionStorage.removeItem('parent_session');
+      window.location.href = 'index.html';
+      return { ok: false, error: 'Session expired' };
+    }
+    return out;
+  } catch (e) {
+    return { ok: false, error: 'Network error — please check your connection.' };
+  }
+}
+
+function setLeaveLang(lang) {
+  lvLang = lang === 'ta' ? 'ta' : 'en';
+  try { localStorage.setItem('parent_lang', lvLang); } catch (e) {}
+  applyLeaveLang();
+}
+
+function applyLeaveLang() {
+  document.querySelectorAll('[data-lv]').forEach(el => { el.textContent = lvT(el.getAttribute('data-lv')); });
+  const en = document.getElementById('lv-lang-en'), ta = document.getElementById('lv-lang-ta');
+  if (en && ta) {
+    en.style.background = lvLang === 'en' ? 'var(--maroon)' : '#fff';
+    en.style.color = lvLang === 'en' ? 'var(--sandal)' : 'var(--maroon)';
+    ta.style.background = lvLang === 'ta' ? 'var(--maroon)' : '#fff';
+    ta.style.color = lvLang === 'ta' ? 'var(--sandal)' : 'var(--maroon)';
+  }
+  lvRenderReasons();
+  lvRenderPhotoBox();
+  lvRenderList();
+  const btn = document.getElementById('lv-submit');
+  if (btn && btn.disabled) btn.textContent = lvT('sending');
+}
+
+function lvRenderReasons() {
+  const box = document.getElementById('lv-reasons');
+  if (!box) return;
+  box.innerHTML = LV_REASONS.map(r => {
+    const sel = r === lvReason;
+    return '<button onclick="lvPickReason(\'' + r + '\')" style="padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:1.5px solid '
+      + (sel ? 'var(--maroon);background:var(--maroon);color:var(--sandal)' : 'var(--border);background:#fff;color:var(--text)')
+      + '">' + lvEsc(lvT(r)) + '</button>';
+  }).join('');
+}
+
+function lvPickReason(r) { lvReason = r; lvRenderReasons(); }
+
+function lvFromChanged() {
+  const f = document.getElementById('lv-from').value;
+  const t = document.getElementById('lv-to');
+  if (f && (!t.value || t.value < f)) t.value = f;
+}
+
+function lvShowMsg(text, good) {
+  const m = document.getElementById('lv-msg');
+  m.textContent = text;
+  m.style.display = text ? 'block' : 'none';
+  m.style.background = good ? '#E8F5EA' : '#FCEBEB';
+  m.style.color = good ? '#2D7A3A' : '#A32D2D';
+}
+
+// Shrink the photo on the phone: ~1200px wide, ~200KB, always JPEG
+function lvShrink(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('decode'));
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        const max = 1200;
+        if (w > max || h > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let q = 0.75, url = c.toDataURL('image/jpeg', q);
+        while (url.length > 330000 && q > 0.35) { q -= 0.1; url = c.toDataURL('image/jpeg', q); }
+        resolve(url);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function lvPickPhoto(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  lvShowMsg(lvT('shrinking'), true);
+  try {
+    lvPhoto = await lvShrink(file);
+    lvShowMsg('', true);
+  } catch (e) {
+    lvPhoto = null;
+    lvShowMsg(lvT('photoFail') + ' (' + (e.message || e) + ')', false);
+  }
+  lvRenderPhotoBox();
+}
+
+function lvRemovePhoto() { lvPhoto = null; lvRenderPhotoBox(); }
+
+function lvRenderPhotoBox() {
+  const box = document.getElementById('lv-photo-box');
+  if (!box) return;
+  if (lvPhoto) {
+    box.innerHTML = '<div style="display:flex;align-items:center;gap:10px">'
+      + '<img src="' + lvPhoto + '" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">'
+      + '<button onclick="lvRemovePhoto()" style="padding:7px 12px;border:1.5px solid #A32D2D;border-radius:8px;background:#fff;color:#A32D2D;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">'
+      + lvEsc(lvT('removePhoto')) + '</button></div>';
+  } else {
+    box.innerHTML = '<button onclick="document.getElementById(\'lv-photo-input\').click()" style="padding:9px 14px;border:1.5px dashed var(--maroon);border-radius:10px;background:var(--sandal-light);color:var(--maroon);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">'
+      + lvEsc(lvT('addPhoto')) + '</button>';
+  }
+}
+
+async function submitLeave() {
+  const from = document.getElementById('lv-from').value;
+  const to = document.getElementById('lv-to').value || from;
+  const note = document.getElementById('lv-note').value.trim();
+  if (!from) return lvShowMsg(lvT('pickDates'), false);
+  if (to < from) return lvShowMsg(lvT('badOrder'), false);
+  if (!lvReason) return lvShowMsg(lvT('pickReason'), false);
+  if (lvReason === 'Other' && !note) return lvShowMsg(lvT('needNote'), false);
+
+  const btn = document.getElementById('lv-submit');
+  btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = lvT('sending');
+  lvShowMsg('', true);
+
+  const out = await leaveApi('apply', { from_date: from, to_date: to, reason: lvReason, note: note, photo: lvPhoto || '' });
+
+  btn.disabled = false; btn.style.opacity = '1'; btn.textContent = lvT('submit');
+  if (!out.ok) return lvShowMsg(lvServerMsg(out.error || 'Error'), false);
+
+  lvShowMsg(lvT('sent'), true);
+  lvReason = ''; lvPhoto = null;
+  document.getElementById('lv-note').value = '';
+  document.getElementById('lv-from').value = lvToday();
+  document.getElementById('lv-to').value = lvToday();
+  lvRenderReasons(); lvRenderPhotoBox();
+  loadLeaveList();
+}
+
+function lvDate(d) {
+  if (!d) return '—';
+  return new Date(d + 'T00:00:00').toLocaleDateString(lvLang === 'ta' ? 'ta-IN' : 'en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function lvRenderList() {
+  const box = document.getElementById('lv-list');
+  if (!box) return;
+  if (lvRows === null) {
+    box.innerHTML = '<div class="empty-state"><div class="empty-text">' + lvEsc(lvT('loading')) + '</div></div>';
+    return;
+  }
+  if (!lvRows.length) {
+    box.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><div class="empty-text">' + lvEsc(lvT('empty')) + '</div></div>';
+    return;
+  }
+  const colors = { pending: ['#FFF4E0', '#8B5E00'], approved: ['#E8F5EA', '#2D7A3A'], rejected: ['#FCEBEB', '#A32D2D'] };
+  box.innerHTML = lvRows.map(r => {
+    const n = Math.round((new Date(r.to_date + 'T00:00:00') - new Date(r.from_date + 'T00:00:00')) / 86400000) + 1;
+    const c = colors[r.status] || colors.pending;
+    const dates = r.from_date === r.to_date ? lvDate(r.from_date) : lvDate(r.from_date) + ' → ' + lvDate(r.to_date);
+    return '<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+      + '<div><div style="font-weight:700;font-size:14px;color:var(--text)">' + lvEsc(dates) + '</div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + lvEsc(lvT(r.reason)) + ' · ' + n + ' ' + lvEsc(n === 1 ? lvT('day') : lvT('days')) + '</div></div>'
+      + '<span style="font-size:11px;font-weight:700;padding:4px 9px;border-radius:10px;white-space:nowrap;background:' + c[0] + ';color:' + c[1] + '">' + lvEsc(lvT(r.status)) + '</span>'
+      + '</div>'
+      + (r.note ? '<div style="font-size:13px;color:var(--text);margin-top:8px">' + lvEsc(r.note) + '</div>' : '')
+      + (r.office_reply ? '<div style="font-size:13px;margin-top:8px;padding:8px 10px;background:var(--sandal-light);border-radius:8px"><b style="color:var(--maroon)">' + lvEsc(lvT('reply')) + ':</b> ' + lvEsc(r.office_reply) + '</div>' : '')
+      + (r.has_photo ? '<div style="margin-top:8px"><span onclick="lvViewPhoto(\'' + lvEsc(r.id) + '\')" style="font-size:12px;font-weight:600;color:var(--maroon);cursor:pointer">' + lvEsc(lvT('viewPhoto')) + '</span></div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+async function loadLeaveList() {
+  lvRows = null; lvRenderList();
+  const out = await leaveApi('my_list');
+  if (!out.ok) {
+    lvRows = [];
+    document.getElementById('lv-list').innerHTML = '<div class="empty-state"><div class="empty-text" style="color:#A32D2D">' + lvEsc(lvServerMsg(out.error || 'Error')) + '</div></div>';
+    return;
+  }
+  lvRows = out.rows || [];
+  lvRenderList();
+}
+
+async function lvViewPhoto(id) {
+  const out = await leaveApi('photo_link', { id: id });
+  if (!out.ok) { showToastNative(out.error || 'Error'); return; }
+  openPhoto(out.url);
+}
+
+function openLeave() {
+  showTab('leave');
+  const f = document.getElementById('lv-from'), t = document.getElementById('lv-to');
+  if (!f.value) f.value = lvToday();
+  if (!t.value) t.value = f.value;
+  applyLeaveLang();
+  loadLeaveList();
+  window.scrollTo(0, 0);
+}
+
+// Show the home card in the chosen language straight away
+applyLeaveLang();
 </script>
 </body>
 </html>
