@@ -1189,15 +1189,197 @@ async function loadFees() {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div class="empty-text">No payments recorded yet</div></div>';
     return;
   }
-  list.innerHTML = pays.map(p => {
+  // One card per receipt (a receipt can cover several fee items)
+  const receipts = [];
+  const byNo = {};
+  pays.forEach(p => {
+    const key = p.receipt_no || ('_' + receipts.length);
+    if (!byNo[key]) { byNo[key] = { receipt_no: p.receipt_no, payment_date: p.payment_date, payment_mode: p.payment_mode, total: 0 }; receipts.push(byNo[key]); }
+    byNo[key].total += parseFloat(p.amount_paid) || 0;
+  });
+  list.innerHTML = receipts.map(p => {
     const d = p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const btn = p.receipt_no
+      ? '<button onclick="downloadReceipt(\'' + String(p.receipt_no).replace(/[\\'"<>]/g, '') + '\', this)" style="margin-top:6px;background:#FDF6E8;color:#7A1F2B;border:1px solid #E8D5A8;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">📄 Download Receipt</button>'
+      : '';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 12px;background:#fff;border:1px solid var(--border);border-radius:10px;margin-bottom:6px">' +
       '<div><div style="font-size:13px;font-weight:600">' + d + '</div>' +
-      '<div style="font-size:11px;color:#9B928A">Receipt: ' + (p.receipt_no || '—') + (p.payment_mode ? ' · ' + p.payment_mode : '') + '</div></div>' +
-      '<div style="font-size:14px;font-weight:800;color:#2D7A3A">' + inr(parseFloat(p.amount_paid)) + '</div>' +
+      '<div style="font-size:11px;color:#9B928A">Receipt: ' + (p.receipt_no || '—') + (p.payment_mode ? ' · ' + p.payment_mode : '') + '</div>' + btn + '</div>' +
+      '<div style="font-size:14px;font-weight:800;color:#2D7A3A">' + inr(p.total) + '</div>' +
     '</div>';
   }).join('');
 }
+
+// ══ PDF RECEIPT DOWNLOAD ══
+let jsPdfLoading = null;
+function loadJsPdf() {
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+  if (!jsPdfLoading) {
+    jsPdfLoading = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      sc.onload = () => (window.jspdf && window.jspdf.jsPDF) ? resolve(window.jspdf.jsPDF) : reject(new Error('PDF tool missing'));
+      sc.onerror = () => { jsPdfLoading = null; reject(new Error('Could not load PDF tool')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return jsPdfLoading;
+}
+async function imageToDataUrl(url) {
+  if (!url) return '';
+  try {
+    const r = await fetch(url, { mode: 'cors' });
+    if (!r.ok) return '';
+    const blob = await r.blob();
+    if (!/^image\/(png|jpe?g)/.test(blob.type)) return '';
+    return await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(''); fr.readAsDataURL(blob); });
+  } catch (e) { return ''; }
+}
+function modeText(m) {
+  const map = { cash: 'Cash', upi: 'UPI', cheque: 'Cheque', card: 'Card', bank_transfer: 'Bank Transfer', neft: 'NEFT', online: 'Online' };
+  if (!m) return '-';
+  return map[String(m).toLowerCase()] || String(m).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+async function downloadReceipt(receiptNo, btn) {
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparing...'; }
+  try {
+    const out = await parentApi('receipt', { receipt_no: receiptNo });
+    if (!out || !out.ok) { alert((out && out.error) || 'Could not load the receipt. Please try again.'); return; }
+    const rc = out.receipt;
+    const [JsPDF, logo] = await Promise.all([loadJsPdf(), imageToDataUrl(rc.logo_url)]);
+    const dateText = rc.payment_date ? new Date(rc.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+    const doc = buildReceiptPdf(JsPDF, {
+      receipt_no: rc.receipt_no, date_text: dateText,
+      school: rc.school, student: rc.student, items: rc.items, total: rc.total,
+      mode_text: modeText(rc.payment_mode), reference_no: rc.reference_no
+    }, logo);
+    const fileName = 'Receipt-' + String(rc.receipt_no).replace(/[^A-Za-z0-9-]/g, '_') + '.pdf';
+    // Phones: open the share sheet (WhatsApp, Files...) when possible; otherwise download
+    const blob = doc.output('blob');
+    const file = (typeof File !== 'undefined') ? new File([blob], fileName, { type: 'application/pdf' }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] }) && /android|iphone|ipad/i.test(navigator.userAgent)) {
+      try { await navigator.share({ files: [file], title: fileName }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    doc.save(fileName);
+  } catch (e) {
+    alert('Could not create the receipt PDF. Please check your internet and try again.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = oldText; }
+  }
+}
+
+// ── RECEIPT PDF ──
+// Indian-style amount in words: 16500 → "Sixteen Thousand Five Hundred Rupees Only"
+function amountInWords(num) {
+  num = Math.round(Number(num) || 0);
+  if (num === 0) return 'Zero Rupees Only';
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve',
+    'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function two(n) { return n < 20 ? ones[n] : tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : ''); }
+  function three(n) { return (n >= 100 ? ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' : '') : '') + (n % 100 ? two(n % 100) : ''); }
+  const parts = [];
+  const crore = Math.floor(num / 10000000); num %= 10000000;
+  const lakh = Math.floor(num / 100000); num %= 100000;
+  const thousand = Math.floor(num / 1000); num %= 1000;
+  if (crore) parts.push(three(crore) + ' Crore');
+  if (lakh) parts.push(two(lakh) + ' Lakh');
+  if (thousand) parts.push(two(thousand) + ' Thousand');
+  if (num) parts.push(three(num));
+  return parts.join(' ') + ' Rupees Only';
+}
+
+function buildReceiptPdf(JsPDF, r, logoDataUrl) {
+  const doc = new JsPDF({ unit: 'mm', format: 'a5' });
+  const W = 148, M = 12;
+  const maroon = [122, 31, 43], gold = [212, 168, 67], grey = [110, 104, 98], dark = [40, 36, 33];
+  const rs = n => 'Rs. ' + Number(n || 0).toLocaleString('en-IN');
+  let y = 12;
+
+  // Header band
+  doc.setFillColor(...maroon); doc.rect(0, 0, W, 4, 'F');
+  if (logoDataUrl) { try { doc.addImage(logoDataUrl, M, y, 18, 18); } catch (e) {} }
+  const tx = logoDataUrl ? M + 22 : W / 2;
+  const align = logoDataUrl ? 'left' : 'center';
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(...maroon);
+  const nameLines = doc.splitTextToSize(r.school.name || 'School Fee Receipt', logoDataUrl ? W - tx - M : W - 2 * M);
+  doc.text(nameLines, tx, y + 5, { align });
+  let hy = y + 5 + nameLines.length * 5.5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...grey);
+  if (r.school.address) {
+    const al = doc.splitTextToSize(r.school.address, logoDataUrl ? W - tx - M : W - 2 * M);
+    doc.text(al, tx, hy, { align }); hy += al.length * 3.6;
+  }
+  if (r.school.contact) { doc.text(r.school.contact, tx, hy, { align }); hy += 3.6; }
+  y = (logoDataUrl ? Math.max(hy, y + 20) : hy) + 3;
+
+  // Title
+  doc.setDrawColor(...gold); doc.setLineWidth(0.6); doc.line(M, y, W - M, y);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...dark);
+  doc.text('FEE RECEIPT', W / 2, y + 6, { align: 'center' });
+  y += 11;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold'); doc.text('Receipt No:', M, y);
+  doc.setTextColor(...maroon); doc.text(String(r.receipt_no), M + 20, y);
+  doc.setTextColor(...dark); doc.text('Date:', W - M - 30, y);
+  doc.setFont('helvetica', 'normal'); doc.text(r.date_text || '-', W - M, y, { align: 'right' });
+  y += 6;
+
+  // Student box
+  doc.setFillColor(248, 242, 232); doc.roundedRect(M, y, W - 2 * M, 25, 2, 2, 'F');
+  const rows = [
+    ['Student Name', r.student.name], ['Admission No', r.student.admission_no],
+    ['Class', r.student.class_text], ["Father's Name", r.student.father_name]
+  ];
+  doc.setFontSize(9);
+  rows.forEach((row, i) => {
+    const ry = y + 6 + i * 5.2;
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...grey); doc.text(row[0], M + 4, ry);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...dark); doc.text(String(row[1] || '-'), W - M - 4, ry, { align: 'right' });
+  });
+  y += 31;
+
+  // Items table
+  doc.setFillColor(...maroon); doc.rect(M, y, W - 2 * M, 7, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255, 255, 255);
+  doc.text('Fee Details', M + 3, y + 4.8); doc.text('Amount', W - M - 3, y + 4.8, { align: 'right' });
+  y += 7;
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(...dark); doc.setFontSize(9);
+  r.items.forEach((it, i) => {
+    const label = doc.splitTextToSize(it.label, W - 2 * M - 40);
+    const h = Math.max(7, label.length * 4 + 3);
+    if (y + h > 190) { doc.addPage(); y = 15; }
+    if (i % 2) { doc.setFillColor(250, 247, 242); doc.rect(M, y, W - 2 * M, h, 'F'); }
+    doc.text(label, M + 3, y + 4.8);
+    doc.text(rs(it.amount), W - M - 3, y + 4.8, { align: 'right' });
+    y += h;
+  });
+  doc.setDrawColor(...maroon); doc.setLineWidth(0.5); doc.line(M, y, W - M, y);
+  y += 7;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...maroon);
+  doc.text('Total Paid', M + 3, y); doc.text(rs(r.total), W - M - 3, y, { align: 'right' });
+  y += 6;
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor(...grey);
+  const words = doc.splitTextToSize('(' + amountInWords(r.total) + ')', W - 2 * M - 6);
+  doc.text(words, M + 3, y); y += words.length * 4 + 4;
+
+  // Payment info
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...dark);
+  doc.text('Payment Mode: ' + (r.mode_text || '-'), M + 3, y);
+  if (r.reference_no) { y += 5; doc.text('Reference No: ' + r.reference_no, M + 3, y); }
+
+  // Footer
+  const fy = 196;
+  doc.setDrawColor(200, 190, 180); doc.setLineDashPattern([1, 1], 0); doc.line(M, fy - 6, W - M, fy - 6); doc.setLineDashPattern([], 0);
+  doc.setFontSize(7.5); doc.setTextColor(...grey);
+  doc.text('This is a computer-generated receipt and does not need a signature.', W / 2, fy - 1, { align: 'center' });
+  doc.text('Thank you for your payment.', W / 2, fy + 3, { align: 'center' });
+  doc.setFillColor(...maroon); doc.rect(0, 206, W, 4, 'F');
+  return doc;
+}
+
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
