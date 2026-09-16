@@ -236,6 +236,20 @@ module.exports = async (req, res) => {
         logo = (ic && ic.logo_url) || '';
       } catch (e) { logo = ''; }
 
+      // Online payments: show the convenience fee the parent paid on top of the fees
+      const items = lines.map(l => ({
+        label: (l.fee_head_name || (l.is_late_fee ? 'Late Fee' : 'Fee')) + (l.period ? ' (' + l.period + ')' : ''),
+        amount: parseFloat(l.amount_paid) || 0
+      }));
+      if (rno.indexOf('ONL-') === 0) {
+        try {
+          const op = (await sb('GET', 'online_payments?receipt_no=eq.' + encodeURIComponent(rno) +
+            '&student_id=eq.' + encodeURIComponent(studentId) + '&select=conv_fee&limit=1') || [])[0];
+          const cf = op ? parseFloat(op.conv_fee) || 0 : 0;
+          if (cf > 0) items.push({ label: 'Online convenience fee', amount: cf });
+        } catch (e) { /* table may not exist yet */ }
+      }
+
       return res.status(200).json({
         ok: true,
         receipt: {
@@ -243,11 +257,8 @@ module.exports = async (req, res) => {
           payment_date: lines[0].payment_date,
           payment_mode: lines[0].payment_mode,
           reference_no: lines[0].reference_no || '',
-          items: lines.map(l => ({
-            label: (l.fee_head_name || (l.is_late_fee ? 'Late Fee' : 'Fee')) + (l.period ? ' (' + l.period + ')' : ''),
-            amount: parseFloat(l.amount_paid) || 0
-          })),
-          total: lines.reduce((t, l) => t + (parseFloat(l.amount_paid) || 0), 0),
+          items: items,
+          total: items.reduce((t, it) => t + (Number(it.amount) || 0), 0),
           student: {
             name: stu.full_name || '', admission_no: stu.admission_no || '',
             class_text: (stu.class || '') + (stu.section ? ' ' + stu.section : ''),
