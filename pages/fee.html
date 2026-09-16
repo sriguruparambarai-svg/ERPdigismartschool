@@ -273,6 +273,58 @@
         </div>
 
 
+        <!-- Online Payment (Cashfree) -->
+        <div class="card" id="op-card" style="margin-bottom:16px;display:none">
+          <div class="card-header">
+            <div>
+              <div class="card-title">💳 Online Fee Payment (Cashfree)</div>
+              <div class="card-subtitle">Parents pay from the parent app by UPI, cards or netbanking. Money goes straight to your school's own Cashfree account and bank.</div>
+            </div>
+            <span id="op-badge" class="badge" style="font-size:11px">Not set up</span>
+          </div>
+          <div id="op-alert" class="hidden"></div>
+          <div style="background:var(--sandal-light);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.7;margin-bottom:14px">
+            <b>How to connect:</b> 1. Open your Cashfree Merchant Dashboard → <b>Developers → API Keys</b>.
+            2. Copy the <b>App ID</b> and <b>Secret Key</b> and paste them below.
+            3. Start in <b>Test mode</b> with Test keys, make a ₹1 practice payment, then switch to <b>Live</b> with Live keys.
+          </div>
+          <div class="form-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+            <div class="form-group">
+              <label class="form-label">Mode</label>
+              <select id="op-mode" class="form-control">
+                <option value="sandbox">🧪 Test mode (practice, no real money)</option>
+                <option value="production">✅ Live (real payments)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">App ID (Client ID)</label>
+              <input id="op-client-id" class="form-control" autocomplete="off" placeholder="Paste App ID">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Secret Key</label>
+              <input id="op-secret" type="password" class="form-control" autocomplete="new-password" placeholder="Paste Secret Key">
+              <div id="op-secret-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Convenience fee paid by parents (%)</label>
+              <input id="op-fee" type="number" class="form-control" min="0" max="5" step="0.01" value="2.3">
+              <div style="font-size:11px;color:var(--text-muted);margin-top:3px">Cashfree's normal charge is 1.95% + GST ≈ 2.3%. Set 0 if the school pays it.</div>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0 12px;cursor:pointer">
+            <input type="checkbox" id="op-enabled" style="width:16px;height:16px;cursor:pointer">
+            <b>Show "Pay Fees Online" to parents</b>
+          </label>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-gold" id="op-save" onclick="saveOnlinePay()">✓ Check Keys & Save</button>
+            <span id="op-updated" style="font-size:11px;color:var(--text-muted)"></span>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6">
+            🔒 The Secret Key is checked with Cashfree, stored encrypted, and can never be viewed again — not even by DigiSmart.
+            Online receipts are numbered <b>ONL-</b> and appear in the Receipts tab automatically.
+          </div>
+        </div>
+
         <!-- Late Fee Rules -->
         <div class="card" style="margin-bottom:16px">
           <div class="card-header">
@@ -907,11 +959,75 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('tx-from').value = today.slice(0,7) + '-01';
   document.getElementById('tx-to').value = today;
   await loadSchoolInfo();
+  loadOnlinePay();
   await loadSettings();
   await loadFeeHeads();
   await loadStats();
   await loadReceipts();
 });
+
+// ── ONLINE PAYMENT SETTINGS (Cashfree) ──
+// Only the owner and Fee Management (full) staff see this card; the server
+// enforces the same rule, and never returns the Secret Key.
+async function onlinePayApi(action, extra) {
+  try {
+    const r = await fetch('/api/online-pay', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action: action }, extra || {}))
+    });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'Network error' }; }
+}
+function showOpAlert(kind, text) {
+  const el = document.getElementById('op-alert');
+  if (!el) return;
+  el.className = 'alert alert-' + kind;
+  el.style.marginBottom = '12px';
+  el.textContent = text;
+}
+async function loadOnlinePay() {
+  const card = document.getElementById('op-card');
+  if (!card) return;
+  const out = await onlinePayApi('get_settings');
+  if (!out || !out.ok) return;               // no permission → card stays hidden
+  card.style.display = '';
+  const st = out.settings;
+  const badge = document.getElementById('op-badge');
+  const hint = document.getElementById('op-secret-hint');
+  if (st) {
+    document.getElementById('op-mode').value = st.mode === 'production' ? 'production' : 'sandbox';
+    document.getElementById('op-client-id').value = st.client_id || '';
+    document.getElementById('op-fee').value = st.conv_fee_percent != null ? st.conv_fee_percent : 0;
+    document.getElementById('op-enabled').checked = !!st.enabled;
+    document.getElementById('op-secret').placeholder = st.has_secret ? '•••••••• saved — leave blank to keep' : 'Paste Secret Key';
+    if (hint) hint.textContent = st.has_secret ? 'A Secret Key is saved. Paste a new one only to replace it.' : '';
+    if (st.updated_at) document.getElementById('op-updated').textContent = 'Last saved ' + new Date(st.updated_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    if (badge) {
+      if (!st.enabled) { badge.textContent = 'Switched off'; badge.className = 'badge'; }
+      else if (st.mode === 'production') { badge.textContent = '✅ Live'; badge.className = 'badge badge-green'; }
+      else { badge.textContent = '🧪 Test mode'; badge.className = 'badge badge-amber'; }
+    }
+  }
+}
+async function saveOnlinePay() {
+  const btn = document.getElementById('op-save');
+  const mode = document.getElementById('op-mode').value;
+  const enabled = document.getElementById('op-enabled').checked;
+  if (mode === 'production' && enabled && !confirm('Switch on LIVE online payments?\n\nParents will be able to pay real money. Make sure you have tested in Test mode first.')) return;
+  btn.disabled = true; btn.textContent = 'Checking with Cashfree...';
+  const out = await onlinePayApi('save_settings', {
+    mode: mode,
+    client_id: document.getElementById('op-client-id').value.trim(),
+    client_secret: document.getElementById('op-secret').value.trim(),
+    conv_fee_percent: parseFloat(document.getElementById('op-fee').value) || 0,
+    enabled: enabled
+  });
+  btn.disabled = false; btn.textContent = '✓ Check Keys & Save';
+  if (!out || !out.ok) { showOpAlert('danger', '⚠️ ' + ((out && out.error) || 'Could not save.')); return; }
+  document.getElementById('op-secret').value = '';
+  showOpAlert('success', '✅ Keys verified with Cashfree and saved.' + (enabled ? ' Parents can now see "Pay Fees Online".' : ' Online payment is switched off for parents.'));
+  loadOnlinePay();
+}
 
 // ── SCHOOL DETAILS (for the receipt header) ──
 // Falls back to the login session, then to a neutral label, so the
