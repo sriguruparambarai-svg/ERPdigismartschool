@@ -9,6 +9,7 @@
 // POST { token (parent), action: 'status', endpoint }         → is this phone on?
 // POST { token (staff),  action: 'notify_comm', comm_id }     → notice / homework / event / consent
 // POST { token (staff),  action: 'notify_results', exam_id }  → results published
+// POST { token (staff),  action: 'notify_defaulters', ids }   → homework / class test messages
 // POST { token (staff),  action: 'stats' }                    → how many parents are on
 // GET  /api/push?job=absent  (Vercel cron, Bearer CRON_SECRET) → today's absent alerts
 //
@@ -318,6 +319,43 @@ module.exports = async (req, res) => {
         url: parentUrl(schoolId)
       }), c.priority === 'urgent');
       return res.status(200).json(Object.assign({ ok: true }, out));
+    }
+
+    // Homework / class test messages: each goes only to that one child's parent
+    if (action === 'notify_defaulters') {
+      const ids = (Array.isArray(body.ids) ? body.ids : []).map(String).filter(Boolean).slice(0, 500);
+      if (!ids.length) return res.status(400).json({ ok: false, error: 'Nothing to notify.' });
+      let rows = [];
+      for (let i = 0; i < ids.length; i += 80) {
+        const part = ids.slice(i, i + 80).map(enc).join(',');
+        rows = rows.concat(await sb('GET', 'defaulter_entries?school_id=eq.' + enc(schoolId)
+          + '&status=eq.sent&id=in.(' + part + ')&select=id,kind,student_id,subject,message') || []);
+      }
+      if (!rows.length) return res.status(200).json({ ok: true, sent: 0 });
+
+      const stuIds = [...new Set(rows.map(r => String(r.student_id)))];
+      let subs = [];
+      for (let i = 0; i < stuIds.length; i += 80) {
+        const part = stuIds.slice(i, i + 80).map(enc).join(',');
+        subs = subs.concat(await sb('GET', 'push_subscriptions?school_id=eq.' + enc(schoolId)
+          + '&student_id=in.(' + part + ')&select=id,student_id,endpoint,p256dh,auth') || []);
+      }
+
+      const heads = { homework: '📚 Homework not written', test_not_written: '📝 Class test', test_absent: '📝 Absent for class test', test_low_marks: '📝 Class test marks' };
+      let sent = 0, noPhone = 0;
+      for (const d of rows) {
+        const mine = subs.filter(s => String(s.student_id) === String(d.student_id));
+        if (!mine.length) { noPhone++; continue; }
+        if (!(await logOnce(schoolId, 'defaulter', String(d.id)))) continue;
+        const out = await sendToSubs(mine, () => ({
+          title: (heads[d.kind] || '📝 Message from school') + ' · ' + short(d.subject, 30),
+          body: short(d.message, 160),
+          tag: 'defaulter-' + d.id,
+          url: parentUrl(schoolId)
+        }), false);
+        sent += out.sent;
+      }
+      return res.status(200).json({ ok: true, sent: sent, no_alerts_on: noPhone });
     }
 
     if (action === 'notify_results') {
