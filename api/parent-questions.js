@@ -44,6 +44,7 @@ function verifySessionToken(token) {
 // Owners always. Staff only if they hold the Parent Communication module.
 function mayUse(session) {
   if (!session) return false;
+  if (session.role === 'parent') return false;   // parent logins never allowed here
   if (session.role !== 'staff') return true;
   const mods = Array.isArray(session.mods) ? session.mods : [];
   return mods.some(m => String(m).split(':')[0] === 'communication');
@@ -167,6 +168,20 @@ function validatePaper(paper, schoolId) {
   return { rows: rows, batch_id: batchId, label: label };
 }
 
+// A login may only work on its own school. The browser can name the school by
+// either its id or its short code, so both are accepted — but only if they
+// belong to the school this login was issued for.
+async function sameSchool(session, schoolId) {
+  const sid = String((session && session.sid) || '');
+  if (!sid || !schoolId) return false;
+  if (schoolId === sid) return true;
+  const r = await sb('GET', 'schools?or=(school_id.eq.' + encodeURIComponent(sid)
+    + ',school_code.eq.' + encodeURIComponent(sid) + ')&select=school_id,school_code&limit=1');
+  const s = r.ok && r.data && r.data[0];
+  if (!s) return false;
+  return schoolId === String(s.school_id || '') || schoolId === String(s.school_code || '');
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST only' });
@@ -197,6 +212,7 @@ module.exports = async (req, res) => {
       if (!mayUse(who)) return res.status(401).json({ ok: false, error: 'Not allowed.' });
       onlySchool = String(body.school_id || '').trim();
       if (!onlySchool) return res.status(400).json({ ok: false, error: 'School missing.' });
+      if (!(await sameSchool(who, onlySchool))) return res.status(403).json({ ok: false, error: 'Not allowed.' });
     }
     const today = new Date().toISOString().split('T')[0];
 
@@ -253,6 +269,9 @@ module.exports = async (req, res) => {
 
   const schoolId = String(body.school_id || '').trim();
   if (!schoolId) return res.status(400).json({ ok: false, error: 'School missing.' });
+  if (!(await sameSchool(session, schoolId))) {
+    return res.status(403).json({ ok: false, error: 'This login cannot change another school.' });
+  }
 
   try {
     if (action === 'upload') {
