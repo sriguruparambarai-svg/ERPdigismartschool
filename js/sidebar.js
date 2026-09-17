@@ -24,6 +24,7 @@ async function renderSidebar(activePage) {
       { id: 'exam', icon: '📝', label: 'TN Term Card', href: 'tn-term-card.html' },
       { id: 'icard', icon: '🪪', label: 'I-Card & Timetable', href: 'icard.html' },
       { id: 'certificates', icon: '📜', label: 'Certificates', href: 'certificates.html' },
+      { id: 'defaulters', icon: '📋', label: 'HW & Test Defaulters', href: 'defaulters.html' },
     ]},
     { group: 'Finance', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },
