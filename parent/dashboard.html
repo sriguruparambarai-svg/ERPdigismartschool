@@ -221,6 +221,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
 
+    <!-- Homework / class test messages for this child -->
+    <div id="dnote-section" class="hidden">
+      <div class="section-title">
+        <span>📋 Messages from Class Teacher</span>
+      </div>
+      <div id="dnote-list"></div>
+    </div>
+
     <!-- Urgent notices -->
     <div id="urgent-section" class="hidden">
       <div class="section-title">
@@ -2064,6 +2072,31 @@ function openLeave() {
 
 // Show the home card in the chosen language straight away
 applyLeaveLang();
+</script>
+<script>
+// ══ HOMEWORK / CLASS TEST MESSAGES (this child only, from the server) ══
+document.addEventListener('DOMContentLoaded', async () => {
+  const tok = sessionStorage.getItem('parent_token') || '';
+  if (!tok) return;
+  try {
+    const res = await fetch('/api/defaulters', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: tok, action: 'my_notes' })
+    });
+    const out = await res.json();
+    const rows = (out && out.ok && out.rows) || [];
+    if (rows.length === 0) return;
+    const icon = { homework: '📚', test_not_written: '📝', test_absent: '🚫', test_low_marks: '📉' };
+    const safe = t => { const el = document.createElement('div'); el.textContent = t == null ? '' : String(t); return el.innerHTML; };
+    const show = rows.slice(0, 5);
+    document.getElementById('dnote-list').innerHTML = show.map(r =>
+      '<div style="background:#fff;border:1px solid #E8E0D5;border-left:4px solid #C9A84C;border-radius:10px;padding:11px 12px;margin-bottom:8px">'
+      + '<div style="font-size:12px;font-weight:700;color:#6B1A1A">' + (icon[r.kind] || '📋') + ' ' + safe(r.subject) + ' · ' + safe(r.work_date) + '</div>'
+      + '<div style="font-size:13px;color:#3B332C;line-height:1.5;margin-top:4px">' + safe(r.message) + '</div>'
+      + '</div>').join('');
+    document.getElementById('dnote-section').classList.remove('hidden');
+  } catch (e) { /* the rest of the dashboard keeps working */ }
+});
 </script>
 </body>
 </html>
