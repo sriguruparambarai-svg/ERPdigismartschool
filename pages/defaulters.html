@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homework & Test Defaulters — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.d-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+.d-tab{padding:8px 14px;border:1px solid var(--border);border-radius:20px;background:var(--white);font-size:13px;font-weight:600;color:var(--maroon);cursor:pointer}
+.d-tab.on{background:var(--maroon);color:#E8C99A;border-color:var(--maroon)}
+.d-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+.d-label{font-size:13px;font-weight:700;color:var(--maroon)}
+.d-meta{font-size:11.5px;color:#9B928A;margin-top:3px}
+.d-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-top:12px}
+.d-kinds{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}
+.d-kind{border:1.5px solid var(--border);border-radius:10px;padding:10px;cursor:pointer;font-size:13px;font-weight:600;color:#3B332C;background:#FDFAF4}
+.d-kind.on{border-color:var(--maroon);background:#F7EDE3;color:var(--maroon)}
+.d-kind small{display:block;font-weight:400;color:#9B928A;font-size:11px;margin-top:2px}
+.d-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid #F0EDE8;font-size:13.5px}
+.d-row:last-child{border-bottom:0}
+.d-row input[type=checkbox]{width:20px;height:20px;accent-color:#6B1A1A}
+.d-row .nm{flex:1}
+.d-row .adm{font-size:11px;color:#9B928A}
+.d-row input.mk{width:70px;padding:6px;border:1px solid var(--border);border-radius:7px;font-size:14px;text-align:center}
+.d-row.low .nm{color:#A32D2D;font-weight:600}
+.d-msg{font-size:12.5px;color:#5C534B;line-height:1.5;margin-top:4px}
+.d-chip{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:10px;background:#F7EDE3;color:var(--maroon);font-weight:600}
+.d-chip.sent{background:#E6F2E8;color:#2D7A3A}
+.hidden{display:none}
+table.d-t{width:100%;border-collapse:collapse;font-size:13px}
+table.d-t th,table.d-t td{padding:8px;border-bottom:1px solid #F0EDE8;text-align:left}
+table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Homework & Test Defaulters</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academic → Messages to Parents</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="d-tabs">
+        <div class="d-tab on" data-tab="mark" onclick="showTab('mark')">✏️ Mark defaulters</div>
+        <div class="d-tab office hidden" data-tab="send" onclick="showTab('send')">📤 Send to parents <span id="pend-count"></span></div>
+        <div class="d-tab office hidden" data-tab="repeat" onclick="showTab('repeat')">🔁 Repeat defaulters</div>
+      </div>
+
+      <!-- ═════ MARK ═════ -->
+      <div id="tab-mark">
+        <div class="d-card">
+          <div class="d-label">1. Which class and lesson?</div>
+          <div class="d-grid">
+            <div><label class="form-label">Class</label>
+              <select id="m-class" class="form-control" onchange="loadStudents()"><option value="">-- Select --</option></select></div>
+            <div><label class="form-label">Section</label>
+              <select id="m-section" class="form-control" onchange="loadStudents()">
+                <option value="">All</option><option>A</option><option>B</option><option>C</option></select></div>
+            <div><label class="form-label">Date work was given</label>
+              <input id="m-date" type="date" class="form-control" onchange="loadDayList()"></div>
+            <div><label class="form-label">Subject</label>
+              <select id="m-subject" class="form-control"><option value="">-- Select --</option></select></div>
+            <div style="grid-column:span 2"><label class="form-label">Lesson</label>
+              <input id="m-lesson" class="form-control" placeholder="e.g. Lesson 3 – The Little Bird"></div>
+          </div>
+
+          <div class="d-label" style="margin-top:16px">2. What happened?</div>
+          <div class="d-kinds">
+            <div class="d-kind on" data-kind="homework" onclick="pickKind('homework')">📚 Homework not written<small>Tick who did not write</small></div>
+            <div class="d-kind" data-kind="test_not_written" onclick="pickKind('test_not_written')">📝 Test – not written / not prepared<small>Tick who did not write</small></div>
+            <div class="d-kind" data-kind="test_absent" onclick="pickKind('test_absent')">🚫 Test – absent<small>Tick who was absent</small></div>
+            <div class="d-kind" data-kind="test_low_marks" onclick="pickKind('test_low_marks')">📉 Test – low marks<small id="pass-hint">Enter marks; below 35% is flagged</small></div>
+          </div>
+        </div>
+
+        <div class="d-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <div class="d-label" id="list-title">3. Students</div>
+            <div id="total-box" class="hidden" style="display:flex;align-items:center;gap:6px;font-size:13px">
+              Total marks <input id="m-total" type="number" min="1" class="form-control" style="width:80px" oninput="refreshLow()">
+            </div>
+          </div>
+          <div id="stu-list" class="d-meta" style="margin-top:10px">Pick a class to see students.</div>
+          <button class="btn btn-primary" style="margin-top:12px" onclick="saveMarks()">💾 Save</button>
+          <div class="d-meta">Saving does not message parents. The office checks the list and sends it.</div>
+        </div>
+
+        <div class="d-card">
+          <div class="d-label">Already marked for this class and date</div>
+          <div id="day-list" class="d-meta" style="margin-top:8px">—</div>
+        </div>
+      </div>
+
+      <!-- ═════ SEND (office) ═════ -->
+      <div id="tab-send" class="hidden">
+        <div class="d-card">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+            <div><div class="d-label">Waiting to be sent</div>
+              <div class="d-meta">Remove any wrong entry, then press Send. Each parent sees only their own child.</div></div>
+            <button class="btn btn-gold" onclick="sendAll()">📤 Send all to parents</button>
+          </div>
+        </div>
+        <div id="pend-list"><div class="d-meta">Loading…</div></div>
+      </div>
+
+      <!-- ═════ REPEAT (office) ═════ -->
+      <div id="tab-repeat" class="hidden">
+        <div class="d-card">
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+            <div><label class="form-label">Month</label>
+              <input id="r-month" type="month" class="form-control" onchange="loadRepeat()"></div>
+          </div>
+          <div id="rep-list" style="margin-top:12px" class="d-meta">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const API = '/api/defaulters';
+const KIND_NAMES = { homework: 'Homework not written', test_not_written: 'Test – not written', test_absent: 'Test – absent', test_low_marks: 'Test – low marks' };
+let kind = 'homework';
+let students = [];
+let passPercent = 35;
+
+// Office = owner, or staff whose "defaulters" access is Full (not "Mark only")
+const IS_OFFICE = (typeof USER_ROLE === 'undefined' || USER_ROLE !== 'staff') || moduleLevel('defaulters') === 'full';
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+
+async function call(action, extra) {
+  const r = await fetch(API, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ action: action, token: token() }, extra || {}))
+  });
+  let data;
+  try { data = await r.json(); } catch (e) { throw new Error('The server sent back something unreadable (status ' + r.status + ').'); }
+  if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function istDate(offsetDays) {
+  const d = new Date(Date.now() + 5.5 * 3600 * 1000 + (offsetDays || 0) * 86400000);
+  return d.toISOString().slice(0, 10);
+}
+
+function showTab(t) {
+  document.querySelectorAll('.d-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
+  ['mark', 'send', 'repeat'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  if (t === 'send') loadPending();
+  if (t === 'repeat') loadRepeat();
+}
+
+function pickKind(k) {
+  kind = k;
+  document.querySelectorAll('.d-kind').forEach(x => x.classList.toggle('on', x.dataset.kind === k));
+  document.getElementById('total-box').classList.toggle('hidden', k !== 'test_low_marks');
+  renderStudents();
+}
+
+async function loadStudents() {
+  const cls = document.getElementById('m-class').value;
+  const box = document.getElementById('stu-list');
+  students = [];
+  if (!cls) { box.innerHTML = 'Pick a class to see students.'; return; }
+  box.innerHTML = 'Loading students…';
+  try {
+    const res = await call('students', { class: cls, section: document.getElementById('m-section').value });
+    students = res.rows || [];
+    passPercent = res.pass_percent || 35;
+    document.getElementById('pass-hint').textContent = 'Enter marks; below ' + passPercent + '% is flagged';
+    renderStudents();
+    loadDayList();
+  } catch (e) {
+    box.innerHTML = '<span style="color:#A32D2D">Could not load students: ' + esc(e.message) + '</span>';
+  }
+}
+
+function renderStudents() {
+  const box = document.getElementById('stu-list');
+  if (!document.getElementById('m-class').value) return;
+  if (students.length === 0) { box.innerHTML = 'No active students found in this class.'; return; }
+  const low = kind === 'test_low_marks';
+  document.getElementById('list-title').textContent = '3. Students (' + students.length + ')'
+    + (low ? ' — enter each mark' : ' — tick the defaulters');
+  box.innerHTML = students.map(s =>
+    '<div class="d-row" id="row-' + esc(s.id) + '">'
+    + (low
+      ? '<input class="mk" type="number" min="0" data-id="' + esc(s.id) + '" oninput="refreshLow()">'
+      : '<input type="checkbox" data-id="' + esc(s.id) + '">')
+    + '<div class="nm">' + esc(s.full_name) + ' <span class="adm">' + esc(s.admission_no || '') + '</span></div>'
+    + '</div>').join('');
+  refreshLow();
+}
+
+// Show in red who is below the pass mark, as the teacher types
+function refreshLow() {
+  const total = Number(document.getElementById('m-total').value);
+  document.querySelectorAll('input.mk').forEach(inp => {
+    const row = inp.closest('.d-row');
+    const v = inp.value.trim();
+    row.classList.toggle('low', total > 0 && v !== '' && (Number(v) / total) * 100 < passPercent);
+  });
+}
+
+async function saveMarks() {
+  const payload = {
+    work_date: document.getElementById('m-date').value,
+    kind: kind,
+    class: document.getElementById('m-class').value,
+    section: document.getElementById('m-section').value,
+    subject: document.getElementById('m-subject').value,
+    lesson: document.getElementById('m-lesson').value.trim(),
+    staff_name: (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : ''
+  };
+  if (!payload.class) return showToast('⚠️ Please pick a class.', 'error');
+  if (!payload.subject) return showToast('⚠️ Please pick the subject.', 'error');
+  if (!payload.lesson) return showToast('⚠️ Please type the lesson name.', 'error');
+
+  if (kind === 'test_low_marks') {
+    payload.total_marks = document.getElementById('m-total').value;
+    if (!(Number(payload.total_marks) > 0)) return showToast('⚠️ Please enter the total marks.', 'error');
+    payload.marks = {};
+    document.querySelectorAll('input.mk').forEach(i => { if (i.value.trim() !== '') payload.marks[i.dataset.id] = i.value.trim(); });
+  } else {
+    payload.student_ids = Array.from(document.querySelectorAll('#stu-list input[type=checkbox]:checked')).map(i => i.dataset.id);
+    if (payload.student_ids.length === 0) return showToast('⚠️ No student ticked.', 'error');
+  }
+
+  try {
+    showLoading('Saving...');
+    const res = await call('save', payload);
+    hideLoading();
+    if (res.note) { showToast(res.note, 'success'); return; }
+    showToast('Saved ' + res.saved + (res.already ? ' (' + res.already + ' were already marked)' : '') + '.', 'success');
+    renderStudents();
+    loadDayList();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+async function loadDayList() {
+  const cls = document.getElementById('m-class').value;
+  const box = document.getElementById('day-list');
+  if (!cls) { box.innerHTML = '—'; return; }
+  try {
+    const res = await call('day_list', { class: cls, section: document.getElementById('m-section').value, work_date: document.getElementById('m-date').value });
+    const rows = res.rows || [];
+    box.innerHTML = rows.length === 0 ? 'Nothing marked yet.' : rows.map(entryHtml).join('');
+  } catch (e) {
+    box.innerHTML = '<span style="color:#A32D2D">' + esc(e.message) + '</span>';
+  }
+}
+
+function entryHtml(r) {
+  const sent = r.status === 'sent';
+  return '<div class="d-row" style="align-items:flex-start">'
+    + '<div class="nm"><b>' + esc(r.student_name) + '</b> '
+    + '<span class="d-chip' + (sent ? ' sent' : '') + '">' + (sent ? 'Sent' : 'Waiting') + '</span> '
+    + '<span class="d-chip">' + esc(KIND_NAMES[r.kind] || r.kind) + '</span>'
+    + '<div class="d-msg">' + esc(r.message) + '</div>'
+    + '<div class="d-meta">' + esc(r.subject) + ' · ' + esc(r.work_date) + ' · marked by ' + esc(r.marked_by || '') + '</div></div>'
+    + (sent ? '' : '<button class="btn btn-secondary btn-sm" onclick="removeEntry(\'' + esc(r.id) + '\')">✕ Remove</button>')
+    + '</div>';
+}
+
+async function removeEntry(id) {
+  if (!confirmAction('Remove this entry? The parent will not get this message.')) return;
+  try {
+    await call('remove', { id: id });
+    showToast('Removed.', 'success');
+    loadDayList();
+    if (IS_OFFICE) loadPending();
+  } catch (e) { showToast('⚠️ ' + e.message, 'error'); }
+}
+
+// ═════ OFFICE ═════
+let pendingRows = [];
+
+async function loadPending() {
+  const box = document.getElementById('pend-list');
+  try {
+    const res = await call('pending', {});
+    pendingRows = res.rows || [];
+    document.getElementById('pend-count').textContent = pendingRows.length ? '(' + pendingRows.length + ')' : '';
+    if (pendingRows.length === 0) {
+      box.innerHTML = '<div class="d-card d-meta">Nothing waiting. All messages have been sent.</div>';
+      return;
+    }
+    const byClass = {};
+    pendingRows.forEach(r => { const k = r.class + (r.section ? ' ' + r.section : ''); (byClass[k] = byClass[k] || []).push(r); });
+    box.innerHTML = Object.keys(byClass).map(k =>
+      '<div class="d-card"><div class="d-label">' + esc(k) + ' · ' + byClass[k].length + '</div>'
+      + byClass[k].map(entryHtml).join('') + '</div>').join('');
+  } catch (e) {
+    box.innerHTML = '<div class="d-card" style="color:#A32D2D;font-size:13px">Could not load: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function sendAll() {
+  if (pendingRows.length === 0) return showToast('Nothing to send.', 'success');
+  if (!confirmAction('Send ' + pendingRows.length + ' message(s) to parents now?')) return;
+  try {
+    showLoading('Sending...');
+    const res = await call('send', { ids: pendingRows.map(r => r.id) });
+    // Phone alerts. If this part fails, the messages are still on the parent app.
+    let phoneNote = '';
+    try {
+      const pr = await fetch('/api/push', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'notify_defaulters', token: token(), ids: res.sent_ids })
+      });
+      const pd = await pr.json();
+      phoneNote = pd.ok ? ' Phone alerts: ' + (pd.sent || 0) + '.' : ' Phone alerts not sent: ' + (pd.error || 'unknown error');
+    } catch (e) { phoneNote = ' Phone alerts not sent: ' + e.message; }
+    hideLoading();
+    showToast('Sent ' + res.sent + ' message(s).' + phoneNote, 'success');
+    loadPending();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+async function loadRepeat() {
+  const box = document.getElementById('rep-list');
+  box.innerHTML = 'Loading…';
+  try {
+    const res = await call('repeat', { month: document.getElementById('r-month').value });
+    const rows = res.rows || [];
+    if (rows.length === 0) { box.innerHTML = 'No defaulters recorded this month.'; return; }
+    box.innerHTML = '<div class="table-wrap"><table class="d-t"><tr><th>Student</th><th>Class</th><th>Homework</th><th>Test not written</th><th>Test absent</th><th>Low marks</th><th>Total</th></tr>'
+      + rows.map(r => '<tr><td><b>' + esc(r.student_name) + '</b></td><td>' + esc(r.class) + (r.section ? ' ' + esc(r.section) : '') + '</td>'
+        + '<td>' + r.homework + '</td><td>' + r.test_not_written + '</td><td>' + r.test_absent + '</td><td>' + r.test_low_marks + '</td>'
+        + '<td><b style="color:' + (r.total >= 3 ? '#A32D2D' : '#3B332C') + '">' + r.total + '</b></td></tr>').join('')
+      + '</table></div><div class="d-meta" style="margin-top:8px">Red = 3 or more times this month.</div>';
+  } catch (e) {
+    box.innerHTML = '<span style="color:#A32D2D">' + esc(e.message) + '</span>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderSidebar('defaulters');
+  const d = document.getElementById('today-date');
+  if (d) d.textContent = new Date().toDateString();
+
+  document.getElementById('m-class').innerHTML += ALL_CLASSES.map(c => '<option>' + esc(c) + '</option>').join('');
+  document.getElementById('m-subject').innerHTML += ALL_SUBJECTS.map(s => '<option>' + esc(s) + '</option>').join('');
+  document.getElementById('m-date').value = istDate(-1);   // yesterday by default
+  document.getElementById('m-date').max = istDate(0);
+  document.getElementById('r-month').value = istDate(0).slice(0, 7);
+
+  if (IS_OFFICE) {
+    document.querySelectorAll('.d-tab.office').forEach(t => t.classList.remove('hidden'));
+    call('pending', {}).then(r => {
+      const n = (r.rows || []).length;
+      document.getElementById('pend-count').textContent = n ? '(' + n + ')' : '';
+    }).catch(() => {});
+  }
+});
+</script>
+</body>
+</html>
