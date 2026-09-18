@@ -961,7 +961,8 @@ async function toggleAlertsFromSettings() {
 
 function setupUI() {
   const initials = session.student_name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-  document.getElementById('top-school-name').textContent = session.school_id || 'DigiSmart ERP';
+  // Show the school's real name, not its internal id (older logins may not have it)
+  document.getElementById('top-school-name').textContent = session.school_name || 'DigiSmart ERP';
   document.getElementById('top-child-name').textContent = session.student_name + ' · ' + session.class + (session.section?' '+session.section:'');
   document.getElementById('top-avatar').textContent = initials;
   document.getElementById('stu-avatar').textContent = initials;
