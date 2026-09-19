@@ -11,7 +11,8 @@
 // POST { token (staff),  action: 'notify_results', exam_id }  → results published
 // POST { token (staff),  action: 'notify_defaulters', ids }   → homework / class test messages
 // POST { token (staff),  action: 'stats' }                    → how many parents are on
-// GET  /api/push?job=absent  (Vercel cron, Bearer CRON_SECRET) → today's absent alerts
+// GET  /api/push?job=absent    (Vercel cron, Bearer CRON_SECRET) → today's absent alerts
+// GET  /api/push?job=birthday  (Vercel cron, Bearer CRON_SECRET) → today's birthday wishes
 //
 // Vercel settings needed: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY (and the existing
 // SUPABASE_SERVICE_KEY, CRON_SECRET).
@@ -186,6 +187,65 @@ async function subsForClass(schoolId, cls, section) {
   return subs.filter(s => ids.has(String(s.student_id)));
 }
 
+// ══ Birthday wishes (cron, morning) ══
+// Every active child whose date of birth falls on today gets one wish: a row
+// saved for the parent dashboard to show, and a notification on the parents'
+// phones. The same guard as the absent alert stops it going twice, so a manual
+// re-run during the day is safe.
+function firstName(full) {
+  const n = String(full || '').trim().split(/\s+/)[0];
+  return n || 'your child';
+}
+
+async function runBirthdayJob() {
+  const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
+  const today = ist.toISOString().slice(0, 10);
+  const md = today.slice(5);                       // MM-DD
+
+  // The database cannot filter on month and day alone, so the day's children
+  // are picked out here. At a few hundred students this costs nothing.
+  const stu = await sb('GET', 'students?status=eq.active&dob=not.is.null&select=id,school_id,full_name,class,dob') || [];
+  const born = stu.filter(s => String(s.dob || '').slice(5, 10) === md);
+  if (!born.length) return { date: today, birthdays: 0, sent: 0 };
+
+  const ids = born.map(s => String(s.id));
+  let subs = [];
+  for (let i = 0; i < ids.length; i += 80) {
+    const part = ids.slice(i, i + 80).map(enc).join(',');
+    subs = subs.concat(await sb('GET', 'push_subscriptions?student_id=in.(' + part + ')&select=id,student_id,endpoint,p256dh,auth') || []);
+  }
+
+  let sent = 0, skipped = 0, saved = 0;
+  for (const s of born) {
+    const fresh = await logOnce(s.school_id, 'birthday', today + ':' + s.id);
+    if (!fresh) { skipped++; continue; }
+
+    const name = firstName(s.full_name);
+    const msg = 'Happy birthday, ' + name + '! Wishing you a very happy year ahead. With love, from everyone at school.';
+
+    // The row is what the parent dashboard shows, so it is saved even for
+    // parents who have not turned notifications on.
+    try {
+      await sb('POST', 'birthday_wishes?on_conflict=student_id,wish_date',
+        [{ school_id: s.school_id, student_id: s.id, student_name: s.full_name,
+           student_class: s.class || null, wish_date: today, message: msg }],
+        'return=minimal,resolution=ignore-duplicates');
+      saved++;
+    } catch (e) { /* a saved wish already there is fine */ }
+
+    const mine = subs.filter(x => String(x.student_id) === String(s.id));
+    if (!mine.length) continue;
+    const out = await sendToSubs(mine, () => ({
+      title: '🎂 Happy birthday ' + name + '!',
+      body: msg,
+      tag: 'bday-' + s.id + '-' + today,
+      url: parentUrl(s.school_id)
+    }), false);
+    sent += out.sent;
+  }
+  return { date: today, birthdays: born.length, saved, sent, already_sent: skipped };
+}
+
 // ══ Absent alerts (cron) ══
 async function runAbsentJob() {
   const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
@@ -236,7 +296,14 @@ module.exports = async (req, res) => {
       return res.status(500).json({ ok: false, error: 'VAPID keys not set in Vercel.' });
     }
     // The cron calls plain /api/push; ?job=absent also works for a manual run
-    if (q.job && q.job !== 'absent') return res.status(400).json({ ok: false, error: 'Unknown job' });
+    if (q.job && q.job !== 'absent' && q.job !== 'birthday') return res.status(400).json({ ok: false, error: 'Unknown job' });
+
+    // A birthday is wished on every day of the year, Sundays and holidays too.
+    if (q.job === 'birthday') {
+      try { return res.status(200).json(Object.assign({ ok: true }, await runBirthdayJob())); }
+      catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e) }); }
+    }
+
     const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
     if (ist.getUTCDay() === 0) return res.status(200).json({ ok: true, skipped: 'Sunday' });
     try { return res.status(200).json(Object.assign({ ok: true }, await runAbsentJob())); }
