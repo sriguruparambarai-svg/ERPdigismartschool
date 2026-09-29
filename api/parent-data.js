@@ -171,6 +171,10 @@ module.exports = async (req, res) => {
       if (!isRte) {
         structure = structure.filter(s => !(headById[s.fee_head_id] && headById[s.fee_head_id].category === 'rte'));
       }
+      // Notebook fee only for 5-Year Scheme students with Free Books (others' book fee covers notebooks)
+      if (!(scheme && scheme.free_books)) {
+        structure = structure.filter(s => !(headById[s.fee_head_id] && headById[s.fee_head_id].category === 'notebooks'));
+      }
 
       // Paid amount per fee head
       const paidByHead = {};

@@ -133,6 +133,8 @@ async function computeDues(sb, schoolId, studentId) {
     const h = headById[s.fee_head_id];
     if (h && h.category === 'transport') return;           // van handled below
     if (!stu.is_rte && h && h.category === 'rte') return;  // RTE fee only for RTE students
+    // Notebook fee only for 5-Year Scheme students with Free Books (others' book fee covers notebooks)
+    if (h && h.category === 'notebooks' && !(scheme && scheme.free_books)) return;
     if (isRteFree(s.fee_head_id) || isSchemeFree(s.fee_head_id)) return;
     periods.forEach(p => {
       const amt = amountForPeriod(s, p);
