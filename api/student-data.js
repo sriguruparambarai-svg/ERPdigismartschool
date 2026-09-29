@@ -1,4 +1,4 @@
-// DigiSmart ERP — Secure School Data API (Database Lockdown, Group 1: Students + Group 2: Staff)
+// DigiSmart ERP — Secure School Data API (Database Lockdown: Group 1 Students, Group 2 Staff, Group 3 Transport & Settings)
 // The ONLY door to these tables once their "Allow all" rules are removed.
 // Same method as api/fee-data.js:
 //   • verifies the signed session token issued at login (owner or staff)
@@ -30,10 +30,21 @@ const WRITE_MODULES = {
   birthday_wishes:      ['communication'],
   // Group 2: Staff — HRM manages staff; the attendance page adds staff, saves face photos and marks attendance
   staff:                ['hrm', 'face'],
-  staff_attendance:     ['face']
+  staff_attendance:     ['face'],
+  // Group 3: Transport
+  buses:                ['transport'],
+  bus_routes:           ['transport'],
+  bus_gps:              ['transport'],
+  trip_log:             ['transport'],
+  transport_notifications: ['transport'],
+  // Group 3: Settings used by single modules
+  cert_settings:        ['certificates'],
+  icard_settings:       ['icard'],
+  tt_settings:          ['icard'],
+  timetables:           ['icard']
 };
 const ALLOWED_TABLES = Object.keys(WRITE_MODULES);
-const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete'];
+const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete', 'upsert'];
 const ALLOWED_FILTER_OPS = ['eq', 'in', 'gte', 'lte', 'like'];
 
 // Never sent to any browser, and never changeable through this door
@@ -245,7 +256,7 @@ module.exports = async (req, res) => {
         params.push(encodeURIComponent(f.col) + '=' + f.op + '.' + encodeURIComponent(f.val === null ? 'null' : String(f.val)));
       }
     });
-    params.push('school_id=eq.' + encodeURIComponent(schoolId));
+    if (q.action !== 'insert' && q.action !== 'upsert') params.push('school_id=eq.' + encodeURIComponent(schoolId));
 
     if (q.orFilter) {
       // search filter (e.g. name / roll search) — keep letters (any language), digits, . , % * - _ space
@@ -262,7 +273,13 @@ module.exports = async (req, res) => {
 
     // ── 4. Prepare values (stamp the school on writes, never let secrets be written here) ──
     let payload = null;
-    if (q.action === 'insert') {
+    if (q.action === 'upsert') {
+      // insert-or-update on the given key columns (e.g. one timetable per class, one GPS row per bus)
+      const oc = String(q.onConflict || '');
+      if (oc && !/^[a-zA-Z0-9_]+(,[a-zA-Z0-9_]+)*$/.test(oc)) return res.status(400).json({ ok: false, error: 'Invalid key columns.' });
+      if (oc) params.push('on_conflict=' + oc);
+    }
+    if (q.action === 'insert' || q.action === 'upsert') {
       const rows = Array.isArray(q.values) ? q.values : [q.values];
       payload = rows.map(function (r) { return Object.assign(stripSecrets(r), { school_id: schoolId }); });
     } else if (q.action === 'update') {
@@ -270,8 +287,9 @@ module.exports = async (req, res) => {
       delete payload.school_id;               // school can never be changed
     }
 
-    const methodMap = { select: 'GET', insert: 'POST', update: 'PATCH', delete: 'DELETE' };
+    const methodMap = { select: 'GET', insert: 'POST', update: 'PATCH', delete: 'DELETE', upsert: 'POST' };
     const extra = {};
+    if (q.action === 'upsert') extra.Prefer = 'resolution=merge-duplicates,return=representation';
     const wantCount = q.action === 'select' && q.count === 'exact';
     if (wantCount) {
       extra.Prefer = 'count=exact';
