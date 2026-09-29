@@ -1,4 +1,40 @@
 // DigiSmart ERP — Sidebar Component
+
+// ── Top of the sidebar: this school's name (saved at login) and logo ──
+function sbSchoolName() {
+  var n = '';
+  try { n = sessionStorage.getItem('school_name') || ''; } catch (e) {}
+  return (n && n !== 'undefined' && n !== 'null') ? n : 'DigiSmart ERP';
+}
+function sbTagline() {
+  var staff = (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : '';
+  return staff ? 'Staff: ' + staff : 'DigiSmart ERP';
+}
+function sbInitials(name) {
+  // a short capital first word is the school's own short name: "A.R.K. Global…" / "ARK Global…" -> ARK
+  var first = String(name || '').trim().split(/\s+/)[0].replace(/\./g, '');
+  if (/^[A-Z]{2,4}$/.test(first)) return first;
+  return String(name || 'DS').replace(/[^A-Za-z\s]/g, ' ').trim().split(/\s+/)
+    .filter(function (w) { return w.length > 0; }).slice(0, 2)
+    .map(function (w) { return w[0]; }).join('').toUpperCase() || 'DS';
+}
+function sbEsc(t) {
+  return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+// The school logo saved in I-Card settings, if there is one
+async function sbLoadLogo() {
+  try {
+    if (typeof supabase === 'undefined' || typeof SCHOOL_ID === 'undefined') return;
+    var r = await supabase.from('icard_settings').select('logo_url').eq('school_id', SCHOOL_ID).limit(1);
+    var url = r && r.data && r.data[0] && r.data[0].logo_url;
+    var box = document.getElementById('brand-logo');
+    if (url && box && /^(https:|data:image\/)/.test(url)) {
+      box.innerHTML = '<img src="' + sbEsc(url) + '" alt="" style="width:100%;height:100%;object-fit:contain;border-radius:inherit;background:#fff">';
+    }
+  } catch (e) {}
+}
 // Call renderSidebar('admission') to highlight the correct nav item
 
 async function renderSidebar(activePage) {
@@ -69,10 +105,10 @@ async function renderSidebar(activePage) {
 
   let html = `
     <div class="sidebar-brand">
-      <div class="brand-logo">DS</div>
+      <div class="brand-logo" id="brand-logo">${sbEsc(sbInitials(sbSchoolName()))}</div>
       <div class="brand-text">
-        <div class="name">DigiSmart ERP</div>
-        <div class="tagline">School Management</div>
+        <div class="name" style="line-height:1.3">${sbEsc(sbSchoolName())}</div>
+        <div class="tagline">${sbEsc(sbTagline())}</div>
       </div>
     </div>
     <div style="margin:0 14px 12px">
@@ -101,6 +137,7 @@ async function renderSidebar(activePage) {
   });
 
   document.getElementById('sidebar').innerHTML = html;
+  sbLoadLogo();
 
   // Build the mobile menu button + overlay (phones only)
   mountMobileMenu();
