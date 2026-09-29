@@ -136,9 +136,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const alias = params.get('alias');
   if (alias) {
     try {
-      const { data } = await sbClient.from('schools')
-        .select('school_id').ilike('portal_alias', alias).limit(1);
-      if (data && data[0]) schoolId = data[0].school_id;
+      const found = await schoolLookup({ alias: alias });
+      if (found.ok) schoolId = found.school_id;
     } catch (e) { /* fall through to the long link below */ }
   }
 
@@ -173,8 +172,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+// The school's name and id come from the server (the schools table is locked)
+async function schoolLookup(q) {
+  try {
+    const r = await fetch('/api/parent-login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ action: 'school_lookup' }, q)) });
+    return await r.json();
+  } catch (e) { return { ok: false }; }
+}
+
 async function loadSchoolInfo(sid) {
-  const { data } = await sbClient.from('schools').select('name').eq('school_id', sid).single();
+  const found = await schoolLookup({ school_id: sid });
+  const data = found.ok ? { name: found.name } : null;
   if (data) {
     document.getElementById('school-name-badge').textContent = data.name;
     document.getElementById('school-name-badge').style.display = 'inline-block';

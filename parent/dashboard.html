@@ -1053,10 +1053,7 @@ async function saveFirstPassword() {
 let galAlbums = [];
 
 async function loadGallery() {
-  const { data } = await sbClient.from('gallery_albums')
-    .select('*').eq('school_code', session.school_id)
-    .or(`target_class.eq.all,target_class.eq.${session.class}`)
-    .order('event_date', { ascending: false }).limit(30);
+  const { data } = await parentApi('gallery');
 
   galAlbums = data || [];
   if (galAlbums.length === 0) return;
