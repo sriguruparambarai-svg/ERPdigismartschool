@@ -679,6 +679,7 @@
         <option value="uniform">Uniform</option>
         <option value="books">Books</option>
         <option value="rte">RTE Annual Fee (only RTE students pay)</option>
+        <option value="notebooks">Notebooks (only 5-Year Scheme students with Free Books pay)</option>
       </select>
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Used to match with scheme waivers (e.g. "Free Van" applies to any fee head tagged Transport/Van)</div>
     </div>
@@ -1706,7 +1707,7 @@ function renderFeeHeads() {
         <div style="font-size:11px;color:var(--text-muted)">${h.type === 'per_period' ? 'Charged per period' : h.type === 'annual' ? 'Annual (once per year)' : 'One-time'} ${h.description ? '· ' + h.description : ''}</div>
       </div>
       <span class="badge badge-maroon" style="font-size:10px">${h.type}</span>
-      ${h.category && h.category !== 'general' ? `<span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${h.category === 'rte' ? 'RTE Fee' : h.category}</span>` : ''}
+      ${h.category && h.category !== 'general' ? `<span class="badge badge-blue" style="font-size:10px;text-transform:capitalize">${h.category === 'rte' ? 'RTE Fee' : h.category === 'notebooks' ? 'Notebooks — scheme free-books only' : h.category}</span>` : ''}
       <button class="btn btn-danger btn-sm btn-icon" onclick="deleteFeeHead('${h.id}')">🗑</button>
     </div>
   `).join('');
@@ -2186,9 +2187,25 @@ function isRteFree(student, feeHeadId) {
   if (!h) return false;
   return !h.category || h.category === 'general';
 }
-function structureForStudent(student, structure) {
-  if (student && student.is_rte) return structure || [];
-  return (structure || []).filter(s => !isRteHead(s.fee_head_id));
+// ── NOTEBOOK FEE (5-Year Scheme) ──
+// Heads tagged 'notebooks' are charged ONLY to 5-Year Scheme students who get
+// Free Books: their books are free, but they still pay for notebooks, term-wise.
+// Everyone else's book fee already covers books AND notebooks, so they skip it.
+function isNotebookHead(feeHeadId) {
+  const h = feeHeads.find(x => x.id === feeHeadId);
+  return !!h && h.category === 'notebooks';
+}
+function paysNotebookFee(scheme) {
+  return !!(scheme && scheme.free_books);
+}
+
+// scheme: pass the student's active 5-Year Scheme (or null) to apply the notebook
+// rule; leave it out only where every head should be listed (custom amounts)
+function structureForStudent(student, structure, scheme) {
+  let list = structure || [];
+  if (!(student && student.is_rte)) list = list.filter(s => !isRteHead(s.fee_head_id));
+  if (scheme !== undefined) list = list.filter(s => !isNotebookHead(s.fee_head_id) || paysNotebookFee(scheme));
+  return list;
 }
 
 async function selectStudentForFee(studentId) {
@@ -2229,7 +2246,7 @@ async function selectStudentForFee(studentId) {
   }
 
   // Transport heads are drawn in their own van block below, not in this table
-  const mainStructure = structureForStudent(student, structure).filter(s => {
+  const mainStructure = structureForStudent(student, structure, activeScheme || null).filter(s => {
     const h = feeHeads.find(x => x.id === s.fee_head_id);
     return !h || h.category !== 'transport';
   });
@@ -2383,7 +2400,7 @@ async function openCollectModal(studentId) {
 
   // Transport heads are drawn in their own van block below, never as an
   // ordinary class fee line — otherwise van money would be charged twice.
-  const collectStructure = structureForStudent(student, structure).filter(function (s) {
+  const collectStructure = structureForStudent(student, structure, currentActiveScheme || null).filter(function (s) {
     const h = feeHeads.find(x => x.id === s.fee_head_id);
     return !h || h.category !== 'transport';
   });
@@ -3071,7 +3088,7 @@ async function loadDefaulters() {
 
     // ── Class fee heads (skipped when Van Fee is chosen) ──
     if (!vanMode) {
-      const structs = structureForStudent(student, structMap[student.class] || []);
+      const structs = structureForStudent(student, structMap[student.class] || [], stuScheme);
       const periods = period ? [period] : getPeriods();
       structs.forEach(s => {
         // Only the chosen fee head, if one was picked
