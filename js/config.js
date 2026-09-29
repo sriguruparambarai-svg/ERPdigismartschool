@@ -77,7 +77,9 @@ var SECURE_STUDENT_TABLES = ['students', 'student_attendance', 'exams', 'exam_ma
   'staff', 'staff_attendance',
   // Group 3: Transport and settings
   'buses', 'bus_routes', 'bus_gps', 'trip_log', 'transport_notifications',
-  'cert_settings', 'icard_settings', 'tt_settings', 'timetables'];
+  'cert_settings', 'icard_settings', 'tt_settings', 'timetables',
+  // Group 4: this school's own details (read only)
+  'schools'];
 
 function secureStudentFrom(table) {
   var req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null,
@@ -129,6 +131,7 @@ function secureStudentFrom(table) {
 
 (function () {
   var realFrom = supabase.from.bind(supabase);
+  supabase._realFrom = realFrom;   // for the keep-alive ping only
   supabase.from = function (table) {
     return SECURE_STUDENT_TABLES.indexOf(table) !== -1 ? secureStudentFrom(table) : realFrom(table);
   };
@@ -136,7 +139,9 @@ function secureStudentFrom(table) {
 
 // ── Supabase Keepalive ──
 async function pingSupabase() {
-  try { await supabase.from('schools').select('id').limit(1); } catch(e) {}
+  // A tiny request so the free database never goes to sleep. It uses the plain
+  // public connection (not the secure door), so it also works before login.
+  try { await (supabase._realFrom || supabase.from)('schools').select('id').limit(1); } catch(e) {}
 }
 pingSupabase();
 setInterval(pingSupabase, 4 * 60 * 1000);
