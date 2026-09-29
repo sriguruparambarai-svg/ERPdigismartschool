@@ -549,9 +549,35 @@ function showAbsentFor(date, rows) {
   const came = {}; (rows || []).forEach(r => { came[r.staff_id] = 1; });
   const away = staffList.filter(s => !came[s.id]);
   const day = date === today ? 'today (so far)' : 'on ' + formatDate(date);
-  box.innerHTML = away.length
+  const absentHtml = away.length
     ? '<b style="color:#A32D2D">Absent ' + day + ' (' + away.length + '):</b> ' + away.map(s => s.name + ' <span style="color:var(--text-muted)">(' + (s.role || '') + ')</span>').join(', ')
     : '<b style="color:#2D7A3A">Everyone marked attendance ' + day + '.</b>';
+  // Late comers: marked late, with the time they came and how late against their own start time
+  const byId = {}; staffList.forEach(s => { byId[s.id] = s; });
+  const late = (rows || []).filter(r => r.status === 'late');
+  const lateHtml = late.length
+    ? '<div style="margin-top:6px"><b style="color:#B7791F">Late ' + day.replace(' (so far)', '') + ' (' + late.length + '):</b> '
+      + late.map(r => {
+          const exp = byId[r.staff_id] && byId[r.staff_id].expected_check_in;
+          const mins = lateMinutes(r.check_in, exp);
+          return r.staff_name + ' <span style="color:var(--text-muted)">(came ' + (r.check_in || '—') + (mins > 0 ? ', ' + mins + ' min late' : '') + ')</span>';
+        }).join(', ') + '</div>'
+    : '<div style="margin-top:6px;color:var(--text-muted)">No late comers ' + day.replace(' (so far)', '') + '.</div>';
+  box.innerHTML = absentHtml + lateHtml;
+}
+
+// minutes between the expected start (e.g. "09:00") and the check-in time (e.g. "09:17 AM" or "09:17")
+function lateMinutes(checkIn, expected) {
+  function mins(t) {
+    const m = String(t || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+    if (!m) return null;
+    let h = parseInt(m[1], 10); const mi = parseInt(m[2], 10), ap = (m[3] || '').toUpperCase();
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return h * 60 + mi;
+  }
+  const a = mins(checkIn), b = mins(expected);
+  return (a === null || b === null) ? 0 : a - b;
 }
 
 async function loadTodayLog() {
