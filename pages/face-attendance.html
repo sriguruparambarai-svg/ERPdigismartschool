@@ -213,6 +213,7 @@
               </div>
             </div>
             <div id="today-log"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+            <div id="absent-log" style="margin-top:10px;font-size:12.5px;line-height:1.6"></div>
           </div>
 
           <div class="card" id="card-month-report">
@@ -540,9 +541,23 @@ async function recordPunch(staffId, staffName, staffRole, type, method, customTi
 }
 
 // ── Today's Log ──
+// Who did NOT mark attendance on the chosen day (active staff with no record that day)
+function showAbsentFor(date, rows) {
+  const box = document.getElementById('absent-log'); if (!box) return;
+  if (FACE_MARK_ONLY || !staffList.length) { box.innerHTML = ''; return; }
+  const today = new Date().toISOString().split('T')[0];
+  const came = {}; (rows || []).forEach(r => { came[r.staff_id] = 1; });
+  const away = staffList.filter(s => !came[s.id]);
+  const day = date === today ? 'today (so far)' : 'on ' + formatDate(date);
+  box.innerHTML = away.length
+    ? '<b style="color:#A32D2D">Absent ' + day + ' (' + away.length + '):</b> ' + away.map(s => s.name + ' <span style="color:var(--text-muted)">(' + (s.role || '') + ')</span>').join(', ')
+    : '<b style="color:#2D7A3A">Everyone marked attendance ' + day + '.</b>';
+}
+
 async function loadTodayLog() {
   const date = document.getElementById('log-date').value;
   let { data } = await supabase.from('staff_attendance').select('*').eq('school_id',SCHOOL_ID).eq('date',date).order('check_in',{ascending:true});
+  showAbsentFor(date, data);
   // 'Mark attendance only' → hide everyone who checked in by QR
   if (FACE_MARK_ONLY && data) data = data.filter(r => r.method === 'face');
   if (!data||data.length===0) {
