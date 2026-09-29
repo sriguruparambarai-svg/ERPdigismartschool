@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parent PINs — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Parent PINs</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Parents → Parent PINs</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start">
+          <!-- Parent PINs -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🔒 Parent PINs</div>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">
+              Parents log in with the child's roll number and this 4-digit PIN. Give each slip only to the parent — not in the diary.
+              A PIN is shown only once, when it is made, so print the slips straight away.
+              Until a child has a PIN, the date of birth still works for that child.
+            </div>
+            <div id="pin-status" style="font-size:12.5px;font-weight:600;margin-bottom:10px">Checking…</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Class</label>
+              <select id="pin-class" class="form-control"><option value="">All classes</option></select>
+            </div>
+            <button class="btn btn-primary w-full" onclick="makeParentPins('missing')">Make PINs for children without one</button>
+            <button class="btn btn-gold btn-sm w-full" onclick="makeParentPins('all')" style="margin-top:8px">New PINs for everyone in this class</button>
+            <div id="pin-msg" style="font-size:12px;margin-top:8px"></div>
+          </div>
+
+          <!-- Reset Password -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Parent Forgot PIN or Password</div>
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Find the child, then give the parent a new PIN. Any password the parent chose is removed, so the new PIN works.</div>
+            <div class="form-group" style="margin-bottom:10px">
+              <label class="form-label">Search Student</label>
+              <input type="text" id="pw-reset-search" class="form-control" placeholder="Admission No or name..." oninput="searchResetStudent()" style="margin-top:4px">
+              <div id="pw-reset-results" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:4px;display:none"></div>
+            </div>
+            <div id="pw-reset-student-info" style="display:none;background:var(--sandal-light);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px"></div>
+            <button class="btn btn-primary w-full" id="pw-reset-btn" onclick="resetParentPassword()" style="display:none">Give a new PIN (prints a slip)</button>
+            <div id="pw-reset-msg" class="hidden"></div>
+          </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+// ── Parent PINs (made on the server: api/student-data.js) ──
+async function pinApi(body) {
+  try {
+    const r = await fetch('/api/student-data', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '' }, body)) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'Network error — please check your connection.' }; }
+}
+async function loadPinStatus() {
+  const el = document.getElementById('pin-status'); if (!el) return;
+  const d = await pinApi({ special: 'pin_status' });
+  if (!d.ok) { el.innerHTML = '<span style="color:#A32D2D">' + escPin(d.error || 'Could not check PINs.') + '</span>'; return; }
+  el.innerHTML = d.without_pin
+    ? '<span style="color:#A32D2D">' + d.without_pin + ' of ' + d.total + ' children have no PIN yet</span> — their parents can still log in with the date of birth.'
+    : '<span style="color:#2D7A3A">Every child has a PIN (' + d.total + ').</span>';
+}
+async function loadPinClasses() {
+  const sel = document.getElementById('pin-class'); if (!sel) return;
+  const { data } = await supabase.from('students').select('class').eq('school_id', SCHOOL_ID).eq('status', 'active');
+  const seen = {};
+  (data || []).forEach(function (r) { if (r.class && !seen[r.class]) { seen[r.class] = 1;
+    const o = document.createElement('option'); o.value = r.class; o.textContent = r.class; sel.appendChild(o); } });
+}
+async function makeParentPins(mode) {
+  const cls = document.getElementById('pin-class').value;
+  const what = cls || 'all classes';
+  if (mode === 'all' && !confirm('Make NEW PINs for every child in ' + what + '? Their old PINs stop working, so every parent needs a new slip.')) return;
+  const msg = document.getElementById('pin-msg');
+  msg.style.color = 'var(--text-muted)'; msg.textContent = 'Making PINs…';
+  const d = await pinApi({ special: 'generate_pins', class_name: cls, mode: mode });
+  if (!d.ok) { msg.style.color = '#A32D2D'; msg.textContent = d.error || 'Could not make PINs.'; return; }
+  if (!d.pins.length) { msg.style.color = '#2D7A3A'; msg.textContent = 'Every child in ' + what + ' already has a PIN.'; return; }
+  msg.style.color = '#2D7A3A'; msg.textContent = d.pins.length + ' PIN(s) made. Print the slips now — they will not be shown again.';
+  printPinSlips(d.pins);
+  loadPinStatus();
+}
+function escPin(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); }
+function printPinSlips(list) {
+  const link = location.origin + '/parent/';
+  const slips = list.map(function (p) {
+    return '<div class="slip"><div class="t">Parent Portal — Parent PIN</div>'
+      + '<table><tr><td>Student</td><td><b>' + escPin(p.name) + '</b></td></tr>'
+      + '<tr><td>Class</td><td>' + escPin(p.class + (p.section ? ' - ' + p.section : '')) + '</td></tr>'
+      + '<tr><td>Roll No (login)</td><td><b>' + escPin(p.roll_no || p.admission_no) + '</b></td></tr>'
+      + '<tr><td>Parent PIN</td><td class="pin">' + escPin(p.pin) + '</td></tr></table>'
+      + '<div class="n">Open ' + escPin(link) + ' and log in with the roll number and this PIN. Keep it private — do not write it in the diary.<br>'
+      + 'இந்த PIN-ஐ ரகசியமாக வைத்திருங்கள். டைரியில் எழுத வேண்டாம்.</div></div>';
+  }).join('');
+  const w = window.open('', '_blank');
+  if (!w) { alert('Allow pop-ups for this site to print the PIN slips.'); return; }
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Parent PIN slips</title><style>'
+    + 'body{font-family:Arial,sans-serif;margin:10mm;} .slip{display:inline-block;width:88mm;margin:0 4mm 6mm 0;padding:5mm;border:1px dashed #888;vertical-align:top;break-inside:avoid;page-break-inside:avoid;}'
+    + '.t{font-weight:bold;color:#6B1A1A;margin-bottom:4px;} table{font-size:12px;border-collapse:collapse;width:100%;} td{padding:2px 4px;}'
+    + '.pin{font-size:20px;font-weight:bold;letter-spacing:4px;} .n{font-size:10px;color:#444;margin-top:4px;line-height:1.4;}'
+    + '@media print{button{display:none;}}</style></head><body><button onclick="window.print()" style="padding:8px 16px;margin-bottom:10px;">Print slips</button><br>'
+    + slips + '</body></html>');
+  w.document.close();
+}
+
+// Password reset
+let resetStudentId = null;
+async function searchResetStudent() {
+  const q = document.getElementById('pw-reset-search').value.trim();
+  const res = document.getElementById('pw-reset-results');
+  if (q.length < 2) { res.style.display='none'; return; }
+  const { data } = await supabase.from('students').select('id,full_name,admission_no,roll_no,class,dob').eq('school_id',SCHOOL_ID).or(`full_name.ilike.%${q}%,admission_no.ilike.%${q}%,roll_no.ilike.%${q}%`).limit(5);
+  if (!data||data.length===0) { res.style.display='none'; return; }
+  res.style.display='block';
+  res.innerHTML = data.map(s=>`
+    <div onclick="selectResetStudent('${s.id}','${s.full_name.replace(/'/g,"\\'")}','${s.roll_no || s.admission_no || ''}','${s.class}','${s.dob||''}')" style="padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px" onmouseover="this.style.background='var(--sandal-light)'" onmouseout="this.style.background=''">
+      <b>${s.full_name}</b> · ${s.roll_no || s.admission_no || ''} · ${s.class}
+    </div>
+  `).join('');
+}
+
+function selectResetStudent(id, name, admNo, cls, dob) {
+  resetStudentId = id;
+  document.getElementById('pw-reset-search').value = name;
+  document.getElementById('pw-reset-results').style.display = 'none';
+  const info = document.getElementById('pw-reset-student-info');
+  info.style.display = 'block';
+  info.innerHTML = `<b>${name}</b> · ${admNo} · ${cls}<br><span style="color:var(--text-muted)">The old PIN and any password the parent chose will stop working.</span>`;
+  document.getElementById('pw-reset-btn').style.display = 'block';
+}
+
+async function resetParentPassword() {
+  if (!resetStudentId) return;
+  if (!confirm('Give this parent a new PIN? The old PIN and any password they chose will stop working.')) return;
+  const a = await pinApi({ special: 'reset_password', student_id: resetStudentId });
+  if (!a.ok) { showToast(a.error || 'Could not reset.', 'error'); return; }
+  const b = await pinApi({ special: 'reset_pin', student_id: resetStudentId });
+  if (!b.ok) { showToast(b.error || 'Could not make a PIN.', 'error'); return; }
+  printPinSlips(b.pins);
+  loadPinStatus();
+  showToast('New PIN made — print the slip for the parent.','success');
+  document.getElementById('pw-reset-student-info').style.display = 'none';
+  document.getElementById('pw-reset-btn').style.display = 'none';
+  document.getElementById('pw-reset-search').value = '';
+  resetStudentId = null;
+}
+
+
+document.addEventListener('DOMContentLoaded', function () {
+  renderSidebar('communication');
+  const d = document.getElementById('today-date');
+  if (d) d.textContent = new Date().toDateString();
+  loadPinStatus();
+  loadPinClasses();
+});
+</script>
+</body>
+</html>

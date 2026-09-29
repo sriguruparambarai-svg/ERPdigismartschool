@@ -90,7 +90,7 @@
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title">I-Card & Timetable</div>
-        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academic → I-Card & Timetable</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Students → I-Card · Academics → Timetable</div>
       </div>
       <div class="topbar-right">
         <div style="font-size:12px;color:#9B928A" id="today-date"></div>
@@ -1240,7 +1240,19 @@ function switchTab(tab, el) {
   if (tab==='icard-settings') updateSettingsPreview();
   if (tab==='tt-settings') { renderPeriodRows(); renderSubjectSettings(); renderTeacherMap(); }
   if (tab==='timetable') renderSubjectPalette();
+  // The menu has separate "I-Card" and "Timetable" items for this one page
+  const wantHash = (tab === 'timetable' || tab === 'tt-settings') ? '#timetable' : '';
+  if (location.hash !== wantHash) history.replaceState(null, '', location.pathname + wantHash);
+  if (typeof sbMarkCurrent === 'function') sbMarkCurrent();
 }
+
+// Opened from the menu's "Timetable" item: go straight to the timetable tab
+window.addEventListener('load', function () {
+  if (location.hash === '#timetable') {
+    const t = document.querySelector(".tab-bar .tab[onclick*=\"'timetable'\"]");
+    if (t) switchTab('timetable', t);
+  }
+});
 
 document.getElementById('cell-modal').addEventListener('click', function(e){ if(e.target===this) closeCellModal(); });
 </script>
