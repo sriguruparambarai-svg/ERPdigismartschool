@@ -36,6 +36,16 @@ function verifyParentToken(token) {
   } catch (e) { return null; }
 }
 
+// Parent PIN (made by the office in Parent Communication) — same scrambling as api/student-data.js
+function pinHash(studentId, pin) {
+  return crypto.createHmac('sha256', getServiceKey()).update('parent-pin:' + studentId + ':' + String(pin)).digest('hex');
+}
+
+// Everything a child's class can see: items for "all" or for this class
+function forClass(cls) {
+  return '&target_class=in.(' + ['all', cls].map(function (v) { return '"' + String(v || '').replace(/"/g, '') + '"'; }).join(',') + ')';
+}
+
 function dobMatches(dob, pw) {
   if (!dob) return false;
   const clean = String(dob).split('T')[0];
@@ -331,6 +341,62 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, exams: out });
     }
 
+    // ══ SCHOOL NOTICES, HOMEWORK, EVENTS, CONSENT FORMS, FOUNDATION QUESTION ══
+    // Read on the server for THIS child's class only (the page used to read the
+    // whole communications table straight from the database).
+    if (action === 'comms') {
+      const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
+      if (!me || !me.length) return res.status(404).json({ ok: false, error: 'Student record not found.' });
+      const cls = me[0].class;
+      const today = new Date().toISOString().split('T')[0];
+      const base = 'communications?school_id=eq.' + encodeURIComponent(schoolId) + '&select=*';
+      let path;
+      switch (body.kind) {
+        case 'foundation': path = base + '&type=eq.foundation_question' + forClass(cls) + '&order=created_at.desc&limit=1'; break;
+        case 'notices':    path = base + '&type=in.(circular,announcement,holiday,event_notice)' + forClass(cls) + '&order=created_at.desc&limit=30'; break;
+        case 'homework':   path = base + '&type=eq.homework' + forClass(cls) + '&due_date=gte.' + today + '&order=due_date.asc&limit=20'; break;
+        case 'events':     path = base + '&type=eq.event&event_date=gte.' + today + '&order=event_date.asc&limit=10'; break;
+        case 'consent':    path = base + '&type=eq.consent_form' + forClass(cls) + '&order=created_at.desc&limit=10'; break;
+        default: return res.status(400).json({ ok: false, error: 'Unknown list.' });
+      }
+      const rows = await sb('GET', path);
+      let responses = [];
+      if (body.kind === 'consent' && rows && rows.length) {
+        const ids = rows.map(function (r) { return '"' + String(r.id).replace(/"/g, '') + '"'; }).join(',');
+        responses = await sb('GET', 'consent_responses?student_id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&comm_id=in.(' + ids + ')&select=*') || [];
+      }
+      return res.status(200).json({ ok: true, data: rows || [], responses: responses });
+    }
+
+    // ══ ANSWER A CONSENT FORM / MARK HOMEWORK DONE — only for this child ══
+    if (action === 'consent_submit' || action === 'hw_done') {
+      const commId = String(body.comm_id || '');
+      const wantType = action === 'consent_submit' ? 'consent_form' : 'homework';
+      const comm = await sb('GET', 'communications?id=eq.' + encodeURIComponent(commId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&type=eq.' + wantType + '&select=id&limit=1');
+      if (!comm || !comm.length) return res.status(404).json({ ok: false, error: 'This item was not found.' });
+      const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=full_name,class&limit=1');
+      const kid = (me && me[0]) || {};
+      const now = new Date().toISOString();
+      try {
+        if (action === 'consent_submit') {
+          const answer = String(body.response || '').substring(0, 60);
+          if (!answer) return res.status(400).json({ ok: false, error: 'Please choose an answer.' });
+          await sb('POST', 'consent_responses', [{ school_id: schoolId, comm_id: commId, student_id: studentId,
+            student_name: kid.full_name || '', class: kid.class || '', response: answer, responded_at: now }]);
+        } else {
+          await sb('POST', 'hw_completions', [{ school_id: schoolId, comm_id: commId, student_id: studentId,
+            student_name: kid.full_name || '', completed_at: now }]);
+        }
+      } catch (e) {
+        if (!/duplicate/i.test(String(e.message))) throw e;   // already answered: fine
+      }
+      return res.status(200).json({ ok: true });
+    }
+
     // ══ CHANGE PASSWORD ══
     if (action === 'change_password') {
       const oldPw = String(body.old_password || '');
@@ -339,8 +405,14 @@ module.exports = async (req, res) => {
         return res.status(400).json({ ok: false, error: 'New password must be at least 6 characters.' });
       }
 
-      const rows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
-        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=parent_password_hash,dob&limit=1');
+      let rows;
+      try {
+        rows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=parent_password_hash,parent_pin_hash,dob&limit=1');
+      } catch (e) {   // PIN columns not added yet
+        rows = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=parent_password_hash,dob&limit=1');
+      }
       if (!rows || rows.length === 0) {
         return res.status(404).json({ ok: false, error: 'Student record not found.' });
       }
@@ -348,6 +420,7 @@ module.exports = async (req, res) => {
 
       let oldOk = false;
       if (s.parent_password_hash) oldOk = s.parent_password_hash === sha256(oldPw);
+      else if (s.parent_pin_hash) oldOk = s.parent_pin_hash === pinHash(studentId, oldPw);
       else oldOk = dobMatches(s.dob, oldPw);
       if (!oldOk) {
         return res.status(401).json({ ok: false, error: 'Current password is incorrect.' });

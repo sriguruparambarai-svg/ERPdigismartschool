@@ -1,7 +1,10 @@
 // DigiSmart ERP — Parent Login API (Parent Portal 2.0)
 // Verifies the parent's password on the SERVER. Passwords are stored
 // hashed; the browser never sees hashes, other children's data, or DOBs.
-// Default password remains the child's DOB (DDMMYYYY, or YYYYMMDD).
+// A parent logs in with the PIN the school gave them, or the password they
+// chose later. The child's date of birth works ONLY until the school makes a
+// PIN for that child (so nobody is locked out during the change-over).
+// 5 wrong tries lock that child's login for 15 minutes.
 // POST { roll_no, password, school_id? }
 // (admission_no is still accepted for older saved links)
 
@@ -41,6 +44,25 @@ function dobMatches(dob, pw) {
   return pw === dmy || pw === ymd;
 }
 
+// Same scrambling as api/student-data.js, where the office makes PINs
+function pinHash(studentId, pin) {
+  return crypto.createHmac('sha256', getServiceKey()).update('parent-pin:' + studentId + ':' + String(pin)).digest('hex');
+}
+function sameHash(a, b) {
+  const x = Buffer.from(String(a || ''), 'utf8'), y = Buffer.from(String(b || ''), 'utf8');
+  return x.length > 0 && x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+async function sbPatch(path, obj) {
+  const key = getServiceKey();
+  try {
+    await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+      method: 'PATCH',
+      headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(obj)
+    });
+  } catch (e) {}
+}
+
 async function sbGet(path) {
   const key = getServiceKey();
   const r = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
@@ -69,14 +91,23 @@ module.exports = async (req, res) => {
     }
 
     // 1. Find the student — by roll number first, then admission number
-    const SELECT = '&select=id,full_name,class,section,school_id,roll_no,admission_no,parent_password_hash,dob,status';
+    const BASE_SELECT = '&select=id,full_name,class,section,school_id,roll_no,admission_no,parent_password_hash,dob,status';
+    const PIN_SELECT = BASE_SELECT + ',parent_pin_hash,pin_fails,pin_lock_until';
     const scope = schoolId ? '&school_id=eq.' + encodeURIComponent(schoolId) : '';
+    let hasPinColumns = true;
+    async function find(field) {
+      if (hasPinColumns) {
+        try { return await sbGet('students?' + field + '=eq.' + encodeURIComponent(loginId) + PIN_SELECT + scope); }
+        catch (e) { hasPinColumns = false; }   // PIN setup SQL not run yet: work the old way
+      }
+      return sbGet('students?' + field + '=eq.' + encodeURIComponent(loginId) + BASE_SELECT + scope);
+    }
 
-    let students = await sbGet('students?roll_no=eq.' + encodeURIComponent(loginId) + SELECT + scope);
+    let students = await find('roll_no');
 
     // Fall back to admission number so older logins keep working
     if (!students || students.length === 0) {
-      students = await sbGet('students?admission_no=eq.' + encodeURIComponent(loginId) + SELECT + scope);
+      students = await find('admission_no');
     }
 
     if (!students || students.length === 0) {
@@ -91,15 +122,32 @@ module.exports = async (req, res) => {
       return res.status(403).json({ ok: false, error: 'This student record is not active. Please contact the school office.' });
     }
 
-    // 2. Check password — stored hash first, DOB default otherwise
-    let passwordOk = false;
-    if (student.parent_password_hash) {
-      passwordOk = student.parent_password_hash === sha256(password);
-    } else {
-      passwordOk = dobMatches(student.dob, password);
+    // 2. Too many wrong tries recently?
+    const now = Date.now();
+    if (student.pin_lock_until && new Date(student.pin_lock_until).getTime() > now) {
+      return res.status(429).json({ ok: false, error: 'Too many wrong tries. Please wait 15 minutes, or ask the school office for a new PIN.' });
     }
+
+    // 3. Check: the parent's own password, or the school PIN.
+    //    The date of birth works only for a child who has neither yet.
+    let passwordOk = false;
+    if (student.parent_password_hash && sameHash(student.parent_password_hash, sha256(password))) passwordOk = true;
+    if (!passwordOk && student.parent_pin_hash && sameHash(student.parent_pin_hash, pinHash(student.id, password))) passwordOk = true;
+    if (!passwordOk && !student.parent_password_hash && !student.parent_pin_hash && dobMatches(student.dob, password)) passwordOk = true;
+
     if (!passwordOk) {
-      return res.status(401).json({ ok: false, error: 'Incorrect password. Default password is your child\'s date of birth (DDMMYYYY). Example: 15042012' });
+      if (hasPinColumns) {
+        const fails = (parseInt(student.pin_fails, 10) || 0) + 1;
+        await sbPatch('students?id=eq.' + encodeURIComponent(student.id),
+          fails >= 5 ? { pin_fails: 0, pin_lock_until: new Date(now + 15 * 60 * 1000).toISOString() } : { pin_fails: fails });
+        if (fails >= 5) {
+          return res.status(429).json({ ok: false, error: 'Too many wrong tries. Please wait 15 minutes, or ask the school office for a new PIN.' });
+        }
+      }
+      return res.status(401).json({ ok: false, error: 'Incorrect PIN or password. Please use the parent PIN given by the school.' });
+    }
+    if (hasPinColumns && student.pin_fails) {
+      await sbPatch('students?id=eq.' + encodeURIComponent(student.id), { pin_fails: 0 });
     }
 
     // 3. Check the school is active
