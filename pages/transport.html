@@ -903,7 +903,7 @@ function startLocationSharing() {
       latitude, longitude,
       speed: speed || 0, accuracy,
       updated_at: new Date().toISOString()
-    }], { onConflict: 'bus_id,school_id' });
+    }], { onConflict: 'bus_id,school_id' }).then(function () {});   // a database request is only sent once it is awaited or .then() is called
   };
 
   watchId = navigator.geolocation.watchPosition(sendLocation, (err) => {
