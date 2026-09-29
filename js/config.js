@@ -74,7 +74,10 @@ var SECURE_STUDENT_TABLES = ['students', 'student_attendance', 'exams', 'exam_ma
   'student_transport', 'certificates_issued', 'communications', 'consent_responses',
   'hw_completions', 'birthday_wishes',
   // Group 2: Staff
-  'staff', 'staff_attendance'];
+  'staff', 'staff_attendance',
+  // Group 3: Transport and settings
+  'buses', 'bus_routes', 'bus_gps', 'trip_log', 'transport_notifications',
+  'cert_settings', 'icard_settings', 'tt_settings', 'timetables'];
 
 function secureStudentFrom(table) {
   var req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null,
@@ -87,6 +90,7 @@ function secureStudentFrom(table) {
     },
     insert: function (vals) { req.action = 'insert'; req.values = vals; return b; },
     update: function (vals) { req.action = 'update'; req.values = vals; return b; },
+    upsert: function (vals, opts) { req.action = 'upsert'; req.values = vals; req.onConflict = (opts && opts.onConflict) || ''; return b; },
     delete: function () { req.action = 'delete'; return b; },
     eq:   function (col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
     in:   function (col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
