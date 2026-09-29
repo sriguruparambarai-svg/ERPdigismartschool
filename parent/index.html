@@ -90,7 +90,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <label class="input-label">Password</label>
       <div class="input-wrap">
         <span class="input-icon">🔑</span>
-        <input type="password" id="parent-pw" class="inp pw" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doParentLogin()">
+        <input type="password" id="parent-pw" class="inp pw" placeholder="Parent PIN or your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doParentLogin()">
         <button class="pw-toggle" onclick="togglePw()" id="pw-eye">👁</button>
       </div>
     </div>
@@ -105,8 +105,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div class="help-text">
     <b>First time login?</b><br>
     Roll No: Found on your child's I-Card or ask the class teacher<br>
-    Default Password: Child's date of birth (DDMMYYYY)<br>
-    Example: 15042012 for 15 April 2012
+    Password: the Parent PIN given to you by the school office<br>
+    (or the password you chose later)
   </div>
 
   <!-- PWA Install Banner -->
@@ -227,7 +227,7 @@ function showAlert(msg) {
 }
 
 function showForgot() {
-  alert('Please contact your school office to reset your parent portal password.\n\nDefault password is your child\'s date of birth in format: DDMMYYYY\nExample: 15042012 for 15 April 2012');
+  alert('Please contact your school office. They can give you a new Parent PIN.');
 }
 
 function togglePw() {

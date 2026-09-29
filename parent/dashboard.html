@@ -279,8 +279,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <div style="background:#fff;border-radius:14px;padding:20px;max-width:340px;width:100%">
       <div style="font-size:15px;font-weight:700;color:#6B1A1A">Set your password</div>
       <div style="font-size:12.5px;color:#6B6259;line-height:1.6;margin-top:7px">
-        Your password is still your child's date of birth, which other people may know.
-        Please choose a new one to keep your child's marks and fees private.
+        You logged in with a starting password from the school. Please choose your own
+        password (6 or more letters or numbers) to keep your child's marks and fees private.
       </div>
       <input id="pw-new" type="password" placeholder="New password (6 or more)" autocomplete="new-password"
         style="width:100%;box-sizing:border-box;margin-top:13px;padding:11px;border:1px solid #E8E0D5;border-radius:9px;font-size:14px">
@@ -978,11 +978,8 @@ function setupUI() {
 
 // ── LOAD DATA ──
 async function loadFoundation() {
-  const { data } = await sbClient.from('communications')
-    .select('*').eq('school_id', session.school_id)
-    .eq('type', 'foundation_question')
-    .or(`target_class.eq.all,target_class.eq.${session.class}`)
-    .order('created_at', { ascending: false }).limit(1);
+  // read on the server, for this child's class only (api/parent-data.js)
+  const { data } = await parentApi('comms', { kind: 'foundation' });
 
   const q = (data || [])[0];
   if (!q) return;
@@ -1099,11 +1096,7 @@ function closePhoto() {
 }
 
 async function loadNotices() {
-  const { data } = await sbClient.from('communications')
-    .select('*').eq('school_id', session.school_id)
-    .in('type', ['circular','announcement','holiday','event_notice'])
-    .or(`target_class.eq.all,target_class.eq.${session.class}`)
-    .order('created_at', { ascending: false }).limit(30);
+  const { data } = await parentApi('comms', { kind: 'notices' });
 
   allNotices = data || [];
   const urgent = allNotices.filter(n => n.priority === 'urgent');
@@ -1119,12 +1112,7 @@ async function loadNotices() {
 
 async function loadHomework() {
   const today = new Date().toISOString().split('T')[0];
-  const { data } = await sbClient.from('communications')
-    .select('*').eq('school_id', session.school_id)
-    .eq('type', 'homework')
-    .or(`target_class.eq.all,target_class.eq.${session.class}`)
-    .gte('due_date', today)
-    .order('due_date', { ascending: true }).limit(20);
+  const { data } = await parentApi('comms', { kind: 'homework' });
 
   allHomework = data || [];
 
@@ -1139,11 +1127,7 @@ async function loadHomework() {
 
 async function loadEvents() {
   const today = new Date().toISOString().split('T')[0];
-  const { data } = await sbClient.from('communications')
-    .select('*').eq('school_id', session.school_id)
-    .eq('type', 'event')
-    .gte('event_date', today)
-    .order('event_date', { ascending: true }).limit(10);
+  const { data } = await parentApi('comms', { kind: 'events' });
 
   const events = data || [];
   const evHtml = events.slice(0,3).map(e => buildEventCard(e)).join('');
@@ -1154,11 +1138,8 @@ async function loadEvents() {
 }
 
 async function loadConsent() {
-  const { data } = await sbClient.from('communications')
-    .select('*').eq('school_id', session.school_id)
-    .eq('type', 'consent_form')
-    .or(`target_class.eq.all,target_class.eq.${session.class}`)
-    .order('created_at', { ascending: false }).limit(10);
+  const consentOut = await parentApi('comms', { kind: 'consent' });
+  const data = consentOut.data;
 
   const forms = data || [];
   if (forms.length === 0) {
@@ -1167,8 +1148,7 @@ async function loadConsent() {
   }
 
   // Load existing responses for this student
-  const ids = forms.map(f => f.id);
-  const { data: responses } = await sbClient.from('consent_responses').select('*').eq('student_id', session.student_id).in('comm_id', ids);
+  const responses = consentOut.responses || [];
   const respMap = {};
   if (responses) responses.forEach(r => { respMap[r.comm_id] = r; });
 
@@ -1322,17 +1302,9 @@ async function submitConsent(formId) {
   const selected = document.querySelector(`[name="consent-${formId}"]:checked`);
   if (!selected) { alert('Please select an option before submitting.'); return; }
 
-  const { error } = await sbClient.from('consent_responses').insert([{
-    school_id: session.school_id,
-    comm_id: formId,
-    student_id: session.student_id,
-    student_name: session.student_name,
-    class: session.class,
-    response: selected.value,
-    responded_at: new Date().toISOString(),
-  }]);
+  const sent = await parentApi('consent_submit', { comm_id: formId, response: selected.value });
 
-  if (error && !error.message.includes('duplicate')) {
+  if (!sent.ok) {
     alert('Error submitting. Please try again.'); return;
   }
 
@@ -1346,13 +1318,7 @@ async function markHWDone(id, btn) {
   btn.className = 'btn-done submitted';
   btn.disabled = true;
   // Record completion
-  await sbClient.from('hw_completions').insert([{
-    school_id: session.school_id,
-    comm_id: id,
-    student_id: session.student_id,
-    student_name: session.student_name,
-    completed_at: new Date().toISOString(),
-  }]).catch(() => {});
+  await parentApi('hw_done', { comm_id: id });
   showToastNative('Homework marked as done! ✓');
 }
 
