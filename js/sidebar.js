@@ -23,6 +23,23 @@ function sbEsc(t) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
+// Re-mark the open item after a page changes its #tab (e.g. I-Card <-> Timetable)
+function sbMarkCurrent() {
+  document.querySelectorAll('#sidebar a.nav-item').forEach(function (a) {
+    a.classList.toggle('active', sbIsCurrent(a.getAttribute('href')));
+  });
+}
+
+// Is this menu item the page that is open? (by file name; the Timetable item is
+// the I-Card page opened on its #timetable tab)
+function sbIsCurrent(href) {
+  var here = (location.pathname.split('/').pop() || '').toLowerCase();
+  var parts = String(href).toLowerCase().split('#');
+  if (parts[0] !== here) return false;
+  var hash = (location.hash || '').replace('#', '').toLowerCase();
+  return (parts[1] || '') === hash;
+}
+
 // The school logo saved in I-Card settings, if there is one
 async function sbLoadLogo() {
   try {
@@ -46,37 +63,42 @@ async function renderSidebar(activePage) {
     return;
   }
 
+  // Menu grouped the way the school office works through a day.
+  // Only the menu is arranged here: every item keeps its module id, so each
+  // staff login's permissions work exactly as before.
   const nav = [
-    { group: 'Overview', items: [
+    { group: 'Home', items: [
       { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard.html' },
     ]},
-    { group: 'Attendance', items: [
-      { id: 'face', icon: '🧑‍🏫', label: 'Staff Attendance', href: 'face-attendance.html' },
-      { id: 'student-att', icon: '✅', label: 'Student Attendance', href: 'student-attendance.html' },
-    ]},
-    { group: 'Academic', items: [
+    { group: 'Students', items: [
       { id: 'admission', icon: '📝', label: 'Admission', href: 'admission.html' },
-      { id: 'exam', icon: '📄', label: 'Exam Management', href: 'exam.html' },
-      { id: 'exam', icon: '📝', label: 'TN Term Card', href: 'tn-term-card.html' },
-      { id: 'icard', icon: '🪪', label: 'I-Card & Timetable', href: 'icard.html' },
+      { id: 'student-att', icon: '✅', label: 'Student Attendance', href: 'student-attendance.html' },
+      { id: 'icard', icon: '🪪', label: 'I-Card', href: 'icard.html' },
       { id: 'certificates', icon: '📜', label: 'Certificates', href: 'certificates.html' },
+    ]},
+    { group: 'Academics', items: [
+      { id: 'exam', icon: '📄', label: 'Exams & Marks', href: 'exam.html' },
+      { id: 'exam', icon: '📝', label: 'TN Term Card', href: 'tn-term-card.html' },
+      { id: 'icard', icon: '🗓', label: 'Timetable', href: 'icard.html#timetable' },
       { id: 'defaulters', icon: '📋', label: 'HW & Test Defaulters', href: 'defaulters.html' },
     ]},
-    { group: 'Finance', items: [
+    { group: 'Fees & Accounts', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },
       { id: 'billing', icon: '🧾', label: 'Billing & Accounts', href: 'billing.html' },
     ]},
-    { group: 'Staff & HR', items: [
+    { group: 'Staff', items: [
+      { id: 'face', icon: '🧑‍🏫', label: 'Staff Attendance', href: 'face-attendance.html' },
       { id: 'hrm', icon: '👥', label: 'HRM & Salary', href: 'hrm.html' },
-      { id: 'frontoffice', icon: '🏢', label: 'Front Office', href: 'frontoffice.html' },
     ]},
-    { group: 'Transport', items: [
-      { id: 'transport', icon: '🚌', label: 'Transport & GPS', href: 'transport.html' },
-    ]},
-    { group: 'Communication', items: [
+    { group: 'Parents', items: [
       { id: 'communication', icon: '📣', label: 'Parent Communication', href: 'communication.html' },
-      { id: 'communication', icon: '🎯', label: 'Foundation Questions', href: 'foundation-questions.html' },
       { id: 'communication', icon: '📸', label: 'School Gallery', href: 'gallery.html' },
+      { id: 'communication', icon: '🎯', label: 'Foundation Questions', href: 'foundation-questions.html' },
+      { id: 'communication', icon: '🔒', label: 'Parent PINs', href: 'parent-pins.html' },
+    ]},
+    { group: 'Office', items: [
+      { id: 'frontoffice', icon: '🏢', label: 'Front Office', href: 'frontoffice.html' },
+      { id: 'transport', icon: '🚌', label: 'Transport & GPS', href: 'transport.html' },
     ]},
   ];
 
@@ -84,7 +106,7 @@ async function renderSidebar(activePage) {
   try {
     const { data } = await supabase.from('schools').select('has_scheme').eq('school_id', SCHOOL_ID).single();
     if (data && data.has_scheme) {
-      nav.find(g => g.group === 'Finance').items.push({ id:'scheme', icon:'🎓', label:'5-Year Scheme', href:'scheme.html' });
+      nav.find(g => g.group === 'Fees & Accounts').items.push({ id:'scheme', icon:'🎓', label:'5-Year Scheme', href:'scheme.html' });
     }
   } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
 
@@ -128,7 +150,7 @@ async function renderSidebar(activePage) {
   visibleNav.forEach(group => {
     html += `<div class="nav-group"><div class="nav-group-label">${group.group}</div>`;
     group.items.forEach(item => {
-      const isActive = item.id === activePage;
+      const isActive = sbIsCurrent(item.href);
       html += `<a href="${item.href}" class="nav-item ${isActive ? 'active' : ''}">
         <span class="icon">${item.icon}</span>${item.label}
       </a>`;
