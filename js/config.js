@@ -65,6 +65,69 @@ function isFeeCollectionOnly() {
 // Initialize Supabase client
 var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── Database Lockdown, Group 1: Students ──
+// These tables are read and changed only through the secure server door
+// (/api/student-data), which checks the signed login and locks every request
+// to this school. Pages keep writing supabase.from('students')… exactly as
+// before — this switch sends those calls through the door instead.
+var SECURE_STUDENT_TABLES = ['students', 'student_attendance', 'exams', 'exam_marks', 'exam_grading',
+  'student_transport', 'certificates_issued', 'communications', 'consent_responses',
+  'hw_completions', 'birthday_wishes'];
+
+function secureStudentFrom(table) {
+  var req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null,
+              single: false, limit: null, orFilter: null, count: null, head: false };
+  var b = {
+    select: function (cols, opts) {
+      req.select = cols || '*';
+      if (opts && opts.count) { req.count = opts.count; req.head = !!opts.head; }
+      return b;
+    },
+    insert: function (vals) { req.action = 'insert'; req.values = vals; return b; },
+    update: function (vals) { req.action = 'update'; req.values = vals; return b; },
+    delete: function () { req.action = 'delete'; return b; },
+    eq:   function (col, val) { req.filters.push({ op: 'eq', col: col, val: val }); return b; },
+    in:   function (col, val) { req.filters.push({ op: 'in', col: col, val: val }); return b; },
+    gte:  function (col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
+    lte:  function (col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
+    like: function (col, val) { req.filters.push({ op: 'like', col: col, val: val }); return b; },
+    or:   function (expr) { req.orFilter = expr; return b; },
+    order: function (col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
+    limit: function (n) { req.limit = n; return b; },
+    single: function () { req.single = true; return b; },
+    then: function (resolve, reject) {
+      var token = sessionStorage.getItem('digismart_session_token') || '';
+      return fetch('/api/student-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token, req: req })
+      })
+      .then(function (r) { return r.json().then(function (out) { return { status: r.status, out: out }; }); })
+      .then(function (x) {
+        if (x.status === 401) {
+          showToast('Session expired — please log in again', 'error');
+          setTimeout(function () { window.location.href = '../index.html'; }, 1500);
+        }
+        var ok = x.out && x.out.ok;
+        return { data: ok ? x.out.data : null, count: ok ? x.out.count : null,
+                 error: ok ? null : { message: (x.out && x.out.error) || 'Request failed' } };
+      })
+      .catch(function () { return { data: null, count: null, error: { message: 'Network error — please check your connection.' } }; })
+      .then(resolve, reject);
+    },
+    catch: function (fn) { return Promise.resolve(b).catch(fn); },
+    finally: function (fn) { return Promise.resolve(b).finally(fn); }
+  };
+  return b;
+}
+
+(function () {
+  var realFrom = supabase.from.bind(supabase);
+  supabase.from = function (table) {
+    return SECURE_STUDENT_TABLES.indexOf(table) !== -1 ? secureStudentFrom(table) : realFrom(table);
+  };
+})();
+
 // ── Supabase Keepalive ──
 async function pingSupabase() {
   try { await supabase.from('schools').select('id').limit(1); } catch(e) {}
