@@ -1,5 +1,5 @@
-// DigiSmart ERP — Secure Student Data API (Database Lockdown, Group 1: Students)
-// The ONLY door to the student tables once their "Allow all" rules are removed.
+// DigiSmart ERP — Secure School Data API (Database Lockdown, Group 1: Students + Group 2: Staff)
+// The ONLY door to these tables once their "Allow all" rules are removed.
 // Same method as api/fee-data.js:
 //   • verifies the signed session token issued at login (owner or staff)
 //   • FORCES every read and write to the token's own school
@@ -27,7 +27,10 @@ const WRITE_MODULES = {
   communications:       ['communication'],
   consent_responses:    ['communication'],
   hw_completions:       ['communication'],
-  birthday_wishes:      ['communication']
+  birthday_wishes:      ['communication'],
+  // Group 2: Staff — HRM manages staff; the attendance page adds staff, saves face photos and marks attendance
+  staff:                ['hrm', 'face'],
+  staff_attendance:     ['face']
 };
 const ALLOWED_TABLES = Object.keys(WRITE_MODULES);
 const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete'];
@@ -35,7 +38,9 @@ const ALLOWED_FILTER_OPS = ['eq', 'in', 'gte', 'lte', 'like'];
 
 // Never sent to any browser, and never changeable through this door
 // (parent passwords and PINs are changed only by the parent login / PIN actions)
-const SECRET_COLUMNS = ['parent_password', 'parent_password_hash', 'parent_pin_hash', 'pin_fails', 'pin_lock_until'];
+// (staff login passwords and QR PINs are changed only by Staff Logins / the QR attendance server)
+const SECRET_COLUMNS = ['parent_password', 'parent_password_hash', 'parent_pin_hash', 'pin_fails', 'pin_lock_until',
+                        'password_hash', 'password', 'qr_pin'];
 
 function getServiceKey() {
   return process.env.SUPABASE_SERVICE_KEY
