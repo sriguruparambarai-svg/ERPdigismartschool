@@ -72,7 +72,9 @@ var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // before — this switch sends those calls through the door instead.
 var SECURE_STUDENT_TABLES = ['students', 'student_attendance', 'exams', 'exam_marks', 'exam_grading',
   'student_transport', 'certificates_issued', 'communications', 'consent_responses',
-  'hw_completions', 'birthday_wishes'];
+  'hw_completions', 'birthday_wishes',
+  // Group 2: Staff
+  'staff', 'staff_attendance'];
 
 function secureStudentFrom(table) {
   var req = { table: table, action: 'select', select: '*', filters: [], order: [], values: null,
