@@ -82,6 +82,21 @@ module.exports = async (req, res) => {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+
+    // ── Before login: which school is this link for? Only id and name are given out. ──
+    if (body.action === 'school_lookup') {
+      const alias = String(body.alias || '').trim().toLowerCase();
+      const sid = String(body.school_id || '').trim();
+      let rows = [];
+      if (alias && /^[a-z0-9_-]{1,40}$/.test(alias)) {
+        rows = await sbGet('schools?portal_alias=ilike.' + encodeURIComponent(alias) + '&select=school_id,name&limit=1');
+      } else if (sid && /^[A-Za-z0-9_-]{1,64}$/.test(sid)) {
+        rows = await sbGet('schools?school_id=eq.' + encodeURIComponent(sid) + '&select=school_id,name&limit=1');
+      }
+      const s = rows && rows[0];
+      return res.status(200).json(s ? { ok: true, school_id: s.school_id, name: s.name } : { ok: false });
+    }
+
     const loginId = String(body.roll_no || body.admission_no || '').trim().toUpperCase();
     const password = String(body.password || '');
     const schoolId = String(body.school_id || '').trim();

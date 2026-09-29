@@ -370,6 +370,16 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, data: rows || [], responses: responses });
     }
 
+    // ══ SCHOOL GALLERY — albums for everyone or this child's class ══
+    if (action === 'gallery') {
+      const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
+      if (!me || !me.length) return res.status(404).json({ ok: false, error: 'Student record not found.' });
+      const rows = await sb('GET', 'gallery_albums?school_code=eq.' + encodeURIComponent(schoolId) +
+        '&select=*' + forClass(me[0].class) + '&order=event_date.desc&limit=30');
+      return res.status(200).json({ ok: true, data: rows || [] });
+    }
+
     // ══ ANSWER A CONSENT FORM / MARK HOMEWORK DONE — only for this child ══
     if (action === 'consent_submit' || action === 'hw_done') {
       const commId = String(body.comm_id || '');

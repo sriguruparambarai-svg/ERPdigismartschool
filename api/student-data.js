@@ -41,8 +41,11 @@ const WRITE_MODULES = {
   cert_settings:        ['certificates'],
   icard_settings:       ['icard'],
   tt_settings:          ['icard'],
-  timetables:           ['icard']
+  timetables:           ['icard'],
+  // Group 4: the school's own details — READ ONLY here (only the super admin changes schools)
+  schools:              []
 };
+const READ_ONLY_TABLES = ['schools'];
 const ALLOWED_TABLES = Object.keys(WRITE_MODULES);
 const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete', 'upsert'];
 const ALLOWED_FILTER_OPS = ['eq', 'in', 'gte', 'lte', 'like'];
@@ -226,6 +229,9 @@ module.exports = async (req, res) => {
     }
     if (ALLOWED_ACTIONS.indexOf(q.action) === -1) {
       return res.status(400).json({ ok: false, error: 'Action not allowed.' });
+    }
+    if (q.action !== 'select' && READ_ONLY_TABLES.indexOf(q.table) !== -1) {
+      return res.status(403).json({ ok: false, error: 'School details can only be changed by the super admin.' });
     }
     if (q.action !== 'select' && !isOwner) {
       const allowed = WRITE_MODULES[q.table].some(function (m) { return mods.indexOf(m) !== -1; });
