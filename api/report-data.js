@@ -14,6 +14,8 @@
 //   • Percentage is rounded to one decimal place
 //   • Grades come from the school's grading bands
 //   • Rank is by total marks within the class for that exam; equal totals share a rank
+//   • Only students present and passed in every subject get a rank (others: Not ranked)
+//   • Attendance counts from 1 June of the academic year up to the exam (Late = present)
 
 const crypto = require('crypto');
 
@@ -79,7 +81,7 @@ const round1 = n => Math.round(n * 10) / 10;
 // Build the full report card for one student in one exam
 async function buildCard(schoolId, examId, studentId, parentOnly) {
   const exam = (await sb('GET', 'exams?id=eq.' + enc(examId) + '&school_id=eq.' + enc(schoolId)
-    + '&select=id,name,type,academic_year,start_date,classes,published_to_parents&limit=1') || [])[0];
+    + '&select=id,name,type,academic_year,start_date,end_date,classes,published_to_parents&limit=1') || [])[0];
   if (!exam) return { error: 'Exam not found.' };
   if (parentOnly && !exam.published_to_parents) return { error: 'Results for this exam are not published yet.' };
 
@@ -143,6 +145,43 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
     logo = (ic && ic.logo_url) || '';
   } catch (e) { logo = ''; }
 
+  // Attendance for the whole year so far: from 1 June of the academic year
+  // up to the exam's end date (or start date, or today).
+  //   working days = days attendance was taken for this class
+  //   days present = days this student was marked Present or Late
+  let attendance = null;
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const upto = String(exam.end_date || exam.start_date || today).slice(0, 10);
+    let yr = parseInt(String(exam.academic_year || '').slice(0, 4), 10);
+    if (!yr) { const d = new Date(upto); yr = d.getMonth() >= 5 ? d.getFullYear() : d.getFullYear() - 1; }
+    const from = yr + '-06-01';
+    const range = '&date=gte.' + from + '&date=lte.' + upto;
+    // Working days: every date this class has attendance (read in pages of 1000)
+    const days = new Set();
+    for (let off = 0; off < 30000; off += 1000) {
+      const page = await sb('GET', 'student_attendance?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(stu.class)
+        + range + '&select=date&order=date.asc&limit=1000&offset=' + off) || [];
+      page.forEach(r => days.add(String(r.date).slice(0, 10)));
+      if (page.length < 1000) break;
+    }
+    if (days.size) {
+      const mineAtt = await sb('GET', 'student_attendance?school_id=eq.' + enc(schoolId) + '&student_id=eq.' + enc(studentId)
+        + range + '&select=date,status&limit=1000') || [];
+      const presentDays = new Set();
+      mineAtt.forEach(r => {
+        const s = String(r.status || '').toLowerCase();
+        if (s === 'present' || s === 'late') presentDays.add(String(r.date).slice(0, 10));
+      });
+      attendance = {
+        working_days: days.size,
+        present: presentDays.size,
+        pct: round1((presentDays.size / days.size) * 100),
+        from: from, to: upto
+      };
+    }
+  } catch (e) { attendance = null; }
+
   const rem = (await sb('GET', 'report_remarks?exam_id=eq.' + enc(examId) + '&student_id=eq.' + enc(studentId)
     + '&select=remarks,updated_by,updated_at&limit=1') || [])[0];
 
@@ -165,6 +204,7 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
       total: total, max_total: maxTotal, pct: pct, grade: gradeFor(pct),
       result: anyFail ? 'FAIL' : (anyAbsent ? 'ABSENT IN SOME SUBJECTS' : 'PASS'),
       rank: rank, class_size: all.length,
+      attendance: attendance,
       remarks: rem ? rem.remarks : '',
       remarks_updated_at: rem ? rem.updated_at : null
     }
