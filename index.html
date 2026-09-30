@@ -698,6 +698,7 @@ function renderSA(list) {
         <div style="display:flex;gap:4px">
           ${(s.subscription_status||s.status) !== 'active' ? `<button onclick="changeStatus('${s.school_code}','active')" style="padding:3px 8px;background:#E8F5EB;color:#2D7A3A;border:1px solid #b8dfc0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600">Activate</button>` : ''}
           ${(s.subscription_status||s.status) !== 'suspended' ? `<button onclick="changeStatus('${s.school_code}','suspended')" style="padding:3px 8px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Suspend</button>` : ''}
+          <button onclick="toggleTnCard('${s.school_code}', ${s.has_tn_card ? 'false' : 'true'})" title="TN State Board term card (FA 40 + SA 60) — only for Tamil Nadu board schools" style="padding:3px 8px;background:${s.has_tn_card ? '#E8F5EB' : '#FFF8E6'};color:${s.has_tn_card ? '#2D7A3A' : '#8B5E00'};border:1px solid ${s.has_tn_card ? '#b8dfc0' : '#EDD9A3'};border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap">TN Card: ${s.has_tn_card ? 'On' : 'Off'}</button>
           <button onclick="delSchool('${s.school_code}')" style="padding:3px 7px;background:#F1EFE8;color:#888;border:1px solid #ddd;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Del</button>
         </div>
       </td>
@@ -717,6 +718,22 @@ function filterSA() {
 async function changeStatus(id, status) {
   await db.from('schools').update({ subscription_status: status }).eq('school_code', id);
   toast(status === 'active' ? '✅ School activated!' : 'School suspended.');
+  await loadSA();
+}
+
+// Switch the TN Term Card on or off for one school (column schools.has_tn_card)
+async function toggleTnCard(code, on) {
+  const msg = on
+    ? 'Switch ON the TN Term Card for this school?\n\nOnly for Tamil Nadu State Board schools.'
+    : 'Switch OFF the TN Term Card for this school?\n\nIts saved TN marks are kept, only the menu is hidden.';
+  if (!confirm(msg)) return;
+  const { data, error } = await db.from('schools').update({ has_tn_card: on }).eq('school_code', code).select('school_code');
+  if (error) {
+    toast('⚠️ Could not change: ' + error.message + (/has_tn_card/.test(error.message) ? ' — run the has_tn_card SQL line in Supabase first.' : ''));
+    return;
+  }
+  if (!data || !data.length) { toast('⚠️ Nothing changed — school not found.'); return; }
+  toast(on ? '✅ TN Term Card switched ON' : 'TN Term Card switched OFF');
   await loadSA();
 }
 
