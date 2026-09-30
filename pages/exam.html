@@ -1469,6 +1469,12 @@ function rcRender() {
     +   '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">Class Rank</div><div style="font-size:20px;font-weight:700;color:var(--maroon)">' + (c.rank == null ? '<span style="font-size:14px">Not ranked</span>' : rcEsc(c.rank) + '<span style="font-size:12px;color:var(--text-muted)"> / ' + rcEsc(c.class_size) + '</span>') + '</div></div>'
     +   '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">Overall Grade</div><div style="font-size:20px;font-weight:700;color:' + getGradeColor(c.grade) + '">' + rcEsc(c.grade || '—') + '</div></div>'
     + '</div>'
+    + (c.attendance
+        ? '<div style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:8px;background:var(--sandal-light);border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px">'
+          + '<div>📅 Working days: <b>' + rcEsc(c.attendance.working_days) + '</b></div>'
+          + '<div>Days present: <b>' + rcEsc(c.attendance.present) + '</b></div>'
+          + '<div>Attendance: <b style="color:var(--maroon)">' + rcEsc(c.attendance.pct) + '%</b></div></div>'
+        : '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">📅 Attendance: no attendance recorded for this class yet.</div>')
     + '<div class="rc-remarks">'
     +   '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;flex-wrap:wrap">'
     +     '<div style="font-size:11px;font-weight:600;color:var(--maroon)">TEACHER\'S REMARKS</div>'
@@ -2257,6 +2263,12 @@ function rcPrintCardHtml(c) {
     +   sum('Result', e(c.result), resCls + (String(c.result).length > 6 ? ' rcp-sv-sm' : ''))
     + '</tr></table>'
     // Remarks
+    + '<table class="rcp-att"><tr>'
+    +   '<td class="rcp-att-h">ATTENDANCE<div>June to exam</div></td>'
+    +   '<td>Working Days<b>' + (c.attendance ? e(c.attendance.working_days) : '—') + '</b></td>'
+    +   '<td>Days Present<b>' + (c.attendance ? e(c.attendance.present) : '—') + '</b></td>'
+    +   '<td>Attendance %<b>' + (c.attendance ? e(c.attendance.pct) + '%' : '—') + '</b></td>'
+    + '</tr></table>'
     + '<div class="rcp-rem"><div class="rcp-rem-h">CLASS TEACHER\'S REMARKS</div>'
     +   '<div class="rcp-rem-t">' + e(c.remarks || '') + '</div></div>'
     // Signatures — three equal columns, lines all on one level
@@ -2304,6 +2316,11 @@ function rcPrintCardHtml(c) {
     + '.rcp-sl{font-size:10px;color:#7a6a55;text-transform:uppercase;letter-spacing:.5px;font-family:"Segoe UI",Arial,sans-serif}'
     + '.rcp-sv{font-size:17px;font-weight:700;color:' + M + ';margin-top:3px}'
     + '.rcp-sv-sm{font-size:11px;line-height:1.3}'
+    + '.rcp-att{margin:10px 14px 0;width:calc(100% - 28px)!important;table-layout:fixed}'
+    + '.rcp-att td{border:1px solid ' + G + ';padding:7px 6px;text-align:center;font-size:10px;color:#7a6a55;text-transform:uppercase;letter-spacing:.5px;font-family:"Segoe UI",Arial,sans-serif}'
+    + '.rcp-att td b{display:block;font-size:15px;color:' + M + ';letter-spacing:0;margin-top:2px;font-family:Georgia,serif}'
+    + '.rcp-att .rcp-att-h{background:' + M + ';color:' + G + ';font-weight:700;letter-spacing:1px}'
+    + '.rcp-att .rcp-att-h div{font-size:9px;color:' + S + ';font-weight:400;letter-spacing:0;text-transform:none;margin-top:2px}'
     + '.rcp-rem{margin:14px 14px 0;border:1px solid ' + G + ';border-left:4px solid ' + M + ';background:' + SL + ';padding:10px 12px;min-height:66px}'
     + '.rcp-rem-h{font-size:10px;font-weight:700;letter-spacing:1px;color:' + M + ';font-family:"Segoe UI",Arial,sans-serif;margin-bottom:5px}'
     + '.rcp-rem-t{font-size:13px;line-height:1.6;white-space:pre-wrap;font-style:italic}'
