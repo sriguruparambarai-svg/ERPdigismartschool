@@ -225,10 +225,11 @@
         <div class="card" style="margin-top:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
             <div>
-              <div style="font-weight:700;font-size:14px;color:var(--maroon)">📥 Whole class from Excel — all subjects</div>
+              <div style="font-weight:700;font-size:14px;color:var(--maroon)">📥 Whole class — all subjects at once</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:3px">Choose Exam and Class above (no subject needed). Type marks, <b>AB</b> for absent, leave empty if not done yet.</div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-gold btn-sm" onclick="xlTypeIn()">✏️ Type all subjects</button>
               <button class="btn btn-secondary btn-sm" onclick="xlDownload()">⬇ Download Excel</button>
               <button class="btn btn-primary btn-sm" onclick="document.getElementById('xl-file').click()">📤 Upload Excel</button>
               <input type="file" id="xl-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="xlUpload(this)">
@@ -1690,7 +1691,7 @@ function xlRender(cells, notFound, missing, unknownCols) {
           <td style="color:var(--maroon);font-size:12px">${xlEsc(st.admission_no)}</td>
           ${subjects.map((s, j) => {
             const v = cells[st.id + '|' + s.name] || '';
-            return `<td style="text-align:center"><input class="marks-input xl-cell" data-sid="${st.id}" data-sub="${j}" value="${xlEsc(v)}" oninput="xlMark(this)" placeholder="—"></td>`;
+            return `<td style="text-align:center"><input class="marks-input xl-cell" data-sid="${st.id}" data-sub="${j}" value="${xlEsc(v)}" oninput="xlMark(this)" onkeydown="xlKey(event,this)" placeholder="—"></td>`;
           }).join('')}
         </tr>`).join('')}
       </tbody>
@@ -1798,6 +1799,36 @@ async function xlSave() {
   if (typeof loadStats === 'function' && !isMarksOnly()) await loadStats();
 }
 
+</script>
+<script>
+// ══ TYPE ALL SUBJECTS — same checked grid as Excel, no file needed ══
+// All active students of the class appear automatically (no typing names),
+// with every subject of the exam as a column. Marks already saved are filled in.
+async function xlTypeIn() {
+  const pick = xlPick(); if (!pick) return;
+  const students = await xlStudents(pick.cls); if (!students) return;
+  const { data: saved, error } = await supabase.from('exam_marks').select('student_id,subject,marks_obtained,is_absent')
+    .eq('exam_id', pick.examId).eq('class', pick.cls);
+  if (error) { showToast('Could not load saved marks: ' + error.message, 'error'); return; }
+  const cells = {};
+  (saved || []).forEach(m => {
+    const v = m.is_absent ? 'AB' : (m.marks_obtained == null ? '' : String(m.marks_obtained));
+    if (v !== '') cells[m.student_id + '|' + m.subject] = v;
+  });
+  xlData = { pick, students, subjects: pick.subjects };
+  xlRender(cells, [], [], []);
+  const first = document.querySelector('.xl-cell');
+  if (first) first.focus();
+}
+
+// Enter key moves down to the next student in the same subject
+function xlKey(e, inp) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const all = Array.from(document.querySelectorAll('.xl-cell[data-sub="' + inp.dataset.sub + '"]'));
+  const next = all[all.indexOf(inp) + 1];
+  if (next) { next.focus(); next.select(); }
+}
 </script>
 </body>
 </html>
