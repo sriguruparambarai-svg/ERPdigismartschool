@@ -292,6 +292,7 @@
           <div style="margin-top:20px;display:flex;gap:8px">
             <button class="btn btn-primary" onclick="generateReportCardV2()">Generate</button>
             <button class="btn btn-secondary no-print" onclick="rcPrint()">🖨 Print</button>
+            <button class="btn btn-secondary no-print" onclick="rcWaOne()">📱 WhatsApp</button>
           </div>
         </div>
         <!-- ══ WHOLE CLASS: AI remarks + print all ══ -->
@@ -303,6 +304,11 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" onclick="rcAllRemarks()">✨ Write remarks for all</button>
             <button class="btn btn-gold btn-sm" onclick="rcAllPrint()">🖨 Print all report cards</button>
+            <button class="btn btn-secondary btn-sm" onclick="rcSummaryExcel()">📊 Summary Excel</button>
+            <button class="btn btn-secondary btn-sm" onclick="rcWaList()">📱 WhatsApp list</button>
+            <button class="btn btn-secondary btn-sm" onclick="rcSignOpen()">✍️ Signature names</button>
+            <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px">Report date
+              <input type="date" id="rc-report-date" class="form-control" style="width:150px;padding:4px 8px;font-size:12px"></label>
           </div>
         </div>
         <div id="rc-all-area"></div>
@@ -2205,7 +2211,8 @@ function rcAllDoPrint() {
 // Built with tables, not grids, so the phone layout rules in style.css
 // can't squash it into one column when the page is printed on A4.
 function rcpDate() {
-  const d = new Date();
+  const pickDate = (document.getElementById('rc-report-date') || {}).value;
+  const d = pickDate ? new Date(pickDate + 'T00:00:00') : new Date();
   return String(d.getDate()).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + d.getFullYear();
 }
 function rcPrintCardHtml(c) {
@@ -2273,11 +2280,14 @@ function rcPrintCardHtml(c) {
     + '</tr></table>'
     + '<div class="rcp-rem"><div class="rcp-rem-h">CLASS TEACHER\'S REMARKS</div>'
     +   '<div class="rcp-rem-t">' + e(c.remarks || '') + '</div></div>'
-    // Signatures — three equal columns, lines all on one level
-    + '<table class="rcp-sign"><tr><td></td><td></td><td></td></tr>'
-    +   '<tr><td><div class="rcp-line">Class Teacher</div></td>'
-    +   '<td><div class="rcp-line">Principal</div></td>'
-    +   '<td><div class="rcp-line">Parent / Guardian</div></td></tr></table>'
+    // Signatures — four equal columns, lines all on one level, name under each
+    + (function () {
+        const sg = c.signatures || {};
+        const one = (role, name) => '<td><div class="rcp-line">' + role + '</div><div class="rcp-sname">' + (name ? e(name) : '&nbsp;') + '</div></td>';
+        return '<table class="rcp-sign rcp-sign4"><tr><td></td><td></td><td></td><td></td></tr><tr>'
+          + one('Class Teacher', sg.class_teacher) + one('Principal', sg.principal)
+          + one('Correspondent', sg.correspondent) + one('Parent / Guardian', '') + '</tr></table>';
+      })()
     + '<div class="rcp-foot">Date: ' + rcpDate() + '</div>'
     + '</div></div>';
 }
@@ -2323,6 +2333,8 @@ function rcPrintCardHtml(c) {
     + '.rcp-att td b{display:block;font-size:15px;color:' + M + ';letter-spacing:0;margin-top:2px;font-family:Georgia,serif}'
     + '.rcp-att .rcp-att-h{background:' + M + ';color:' + G + ';font-weight:700;letter-spacing:1px}'
     + '.rcp-att .rcp-att-h div{font-size:9px;color:' + S + ';font-weight:400;letter-spacing:0;text-transform:none;margin-top:2px}'
+    + '.rcp-sign4 td{width:25%!important;padding:0 10px!important}'
+    + '.rcp-sname{font-size:11px;color:#444;margin-top:2px;font-family:"Segoe UI",Arial,sans-serif;min-height:14px}'
     + '.rcp-rem{margin:14px 14px 0;border:1px solid ' + G + ';border-left:4px solid ' + M + ';background:' + SL + ';padding:10px 12px;min-height:66px}'
     + '.rcp-rem-h{font-size:10px;font-weight:700;letter-spacing:1px;color:' + M + ';font-family:"Segoe UI",Arial,sans-serif;margin-bottom:5px}'
     + '.rcp-rem-t{font-size:13px;line-height:1.6;white-space:pre-wrap;font-style:italic}'
@@ -2438,6 +2450,165 @@ async function phRead(input) {
     + (unsureCount ? '<br><span style="color:#8B5E00">' + unsureCount + ' mark(s) with a <b>gold border</b> were hard to read.</span>' : '')
     + (out.note ? '<br>AI note: ' + xlEsc(out.note) : '');
   box.insertBefore(head, box.firstChild);
+}
+</script>
+<script>
+// ══ SUMMARY EXCEL · WHATSAPP · SIGNATURE NAMES ══
+// All three use the same report card server, so the numbers match the printed cards.
+
+// Fetch every student's card for the chosen exam + class (4 at a time)
+async function rcAllFetch(label) {
+  const pick = rcAllPick(); if (!pick) return null;
+  const students = await rcAllStudents(pick.cls); if (!students) return null;
+  if (rcAll.busy) return null;
+  rcAll.busy = true;
+  const cards = [], skipped = [];
+  await rcAllRun(students, async (s, k) => {
+    const out = await reportApi('card', { exam_id: pick.examId, student_id: s.id });
+    if (out.ok) cards[k] = out.card; else skipped.push(s.full_name + ' — ' + out.error);
+  }, (n, t) => rcAllProgress(label, n, t));
+  rcAll.busy = false;
+  rcAllMsg('');
+  return { pick, cards: cards.filter(Boolean), skipped };
+}
+
+// ── 1. Summary Excel ──
+async function rcSummaryExcel() {
+  const got = await rcAllFetch('Preparing summary'); if (!got) return;
+  if (!got.cards.length) { showToast('No report cards could be made for this class.', 'error'); return; }
+  const subjects = [];
+  got.cards.forEach(c => c.rows.forEach(r => { if (subjects.indexOf(r.subject) === -1) subjects.push(r.subject); }));
+  const head = ['S.No', 'Adm No', 'Student Name'].concat(subjects,
+    ['Total', 'Max', '%', 'Grade', 'Rank', 'Result', 'Working Days', 'Days Present', 'Attendance %', 'Remarks']);
+  const rows = got.cards.map((c, i) => {
+    const bySub = {}; c.rows.forEach(r => { bySub[r.subject] = r.marks === null ? 'AB' : r.marks; });
+    const a = c.attendance;
+    return [i + 1, c.student.admission_no, c.student.name].concat(subjects.map(s => bySub[s] === undefined ? '' : bySub[s]),
+      [c.total, c.max_total, c.pct, c.grade || '', c.rank == null ? 'Not ranked' : c.rank, c.result,
+       a ? a.working_days : '', a ? a.present : '', a ? a.pct : '', c.remarks || '']);
+  });
+  const ws = XLSX.utils.aoa_to_sheet([head].concat(rows));
+  ws['!cols'] = head.map(h => ({ wch: h === 'Remarks' ? 60 : (h === 'Student Name' ? 26 : Math.max(8, h.length + 2)) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Summary');
+  const exam = allExams.find(e => e.id === got.pick.examId) || { name: 'Exam' };
+  XLSX.writeFile(wb, ('Summary_' + exam.name + '_' + got.pick.cls).replace(/[^A-Za-z0-9_-]+/g, '_') + '.xlsx');
+  if (got.skipped.length) showToast('Left out: ' + got.skipped.join('; '), 'error');
+}
+
+// ── 2. WhatsApp ──
+function rcWaNumber(p) {
+  let n = String(p || '').replace(/\D/g, '');
+  if (n.length === 10) n = '91' + n;
+  if (n.length === 11 && n.charAt(0) === '0') n = '91' + n.slice(1);
+  return n.length >= 11 ? n : '';
+}
+function rcWaText(c) {
+  const lines = c.rows.map(r => '• ' + r.subject + ': ' + (r.marks === null ? 'Absent' : r.marks + '/' + r.max));
+  const a = c.attendance;
+  return 'Dear Parent,\n\n*' + c.school.name + '*\n' + c.exam.name + (c.exam.academic_year ? ' (' + c.exam.academic_year + ')' : '')
+    + ' — result of *' + c.student.name + '* (' + c.student.class_text + ')\n\n'
+    + lines.join('\n') + '\n\n'
+    + 'Total: ' + c.total + '/' + c.max_total + ' (' + c.pct + '%)\n'
+    + 'Grade: ' + (c.grade || '—') + '   Rank: ' + (c.rank == null ? 'Not ranked' : c.rank + '/' + c.class_size) + '\n'
+    + 'Result: ' + c.result + '\n'
+    + (a ? 'Attendance: ' + a.present + '/' + a.working_days + ' days (' + a.pct + '%)\n' : '')
+    + (c.remarks ? '\nRemarks: ' + c.remarks + '\n' : '')
+    + '\nFull report card: ' + window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
+}
+function rcWaOpen(c) {
+  const num = rcWaNumber(c.student.phone);
+  if (!num) { showToast('No valid parent mobile saved for ' + c.student.name + '.', 'error'); return false; }
+  window.open('https://wa.me/' + num + '?text=' + encodeURIComponent(rcWaText(c)), '_blank');
+  return true;
+}
+function rcWaPublishedWarning(examId) {
+  const ex = allExams.find(e => e.id === examId);
+  return ex && !ex.published_to_parents
+    ? 'This exam is <b>not published</b> yet, so the report card link will not open for parents. Publish it in the Exams tab first.' : '';
+}
+function rcWaOne() {
+  if (!rcCard) { showToast('Generate a report card first.', 'error'); return; }
+  const w = rcWaPublishedWarning(document.getElementById('rc-exam').value);
+  if (w && !confirm('This exam is not published yet, so the report card link will not open for parents. Send anyway?')) return;
+  rcWaOpen(rcCard);
+}
+let rcWaCards = [];
+async function rcWaList() {
+  const got = await rcAllFetch('Preparing WhatsApp list'); if (!got) return;
+  rcWaCards = got.cards;
+  const warn = rcWaPublishedWarning(got.pick.examId);
+  const notes = [];
+  if (warn) notes.push(warn);
+  if (got.skipped.length) notes.push('<b>Left out:</b> ' + got.skipped.map(rcEsc).join('; '));
+  rcAllMsg(`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div style="font-weight:700;color:var(--maroon)">📱 WhatsApp results to parents — ${rcWaCards.length} students</div>
+      <button class="btn btn-secondary btn-sm" onclick="rcAllMsg('')">Close</button></div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Tap Send for each parent. WhatsApp opens with the message ready — press send there, then come back for the next.</div>
+    ${notes.length ? '<div style="background:#FFF8E6;border:1px solid #EDD9A3;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px">⚠️ ' + notes.join('<br>') + '</div>' : ''}
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Student</th><th>Parent mobile</th><th style="text-align:center">%</th><th style="text-align:center"></th></tr></thead><tbody>
+    ${rcWaCards.map((c, i) => {
+      const num = rcWaNumber(c.student.phone);
+      return `<tr><td>${i + 1}</td><td style="font-weight:500">${rcEsc(c.student.name)}</td>
+        <td>${num ? rcEsc(c.student.phone) : '<span style="color:#A32D2D">No mobile saved</span>'}</td>
+        <td style="text-align:center">${rcEsc(c.pct)}%</td>
+        <td style="text-align:center">${num ? `<button class="btn btn-sm btn-primary" id="rc-wa-${i}" onclick="rcWaSend(${i})">Send</button>` : '—'}</td></tr>`;
+    }).join('')}
+    </tbody></table></div></div>`);
+}
+function rcWaSend(i) {
+  const c = rcWaCards[i]; if (!c) return;
+  if (rcWaOpen(c)) {
+    const b = document.getElementById('rc-wa-' + i);
+    if (b) { b.textContent = 'Sent ✓'; b.className = 'btn btn-sm btn-secondary'; }
+  }
+}
+
+// ── 3. Signature names (Correspondent + class teacher of each class) ──
+// Table: report_card_settings (school_id, correspondent_name, class_teachers {class: name}).
+// The Principal's name comes from I-Card settings, so it is set in one place only.
+let rcSign = null;
+async function rcSignOpen() {
+  const cls = document.getElementById('rc-class').value;
+  const { data, error } = await supabase.from('report_card_settings').select('correspondent_name,class_teachers').eq('school_id', SCHOOL_ID).maybeSingle();
+  if (error) { showToast('Could not load signature names: ' + error.message + ' — has the database step been run?', 'error'); return; }
+  const { data: ic } = await supabase.from('icard_settings').select('principal_name').eq('school_id', SCHOOL_ID).maybeSingle();
+  rcSign = { correspondent_name: (data && data.correspondent_name) || '', class_teachers: (data && data.class_teachers) || {} };
+  const classes = Array.from(document.getElementById('rc-class').options).map(o => o.value).filter(Boolean);
+  rcAllMsg(`<div class="card">
+    <div style="font-weight:700;color:var(--maroon);margin-bottom:4px">✍️ Names printed under the signature lines</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Saved for the whole school. Leave empty to show only the line.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
+      <div><label style="font-size:12px;font-weight:600">Principal</label>
+        <div class="form-control" style="background:var(--bg);font-size:13px">${rcEsc((ic && ic.principal_name) || '— not set —')}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px">Change it in I-Card → card settings</div></div>
+      <div><label style="font-size:12px;font-weight:600">Correspondent</label>
+        <input class="form-control" id="rc-sign-corr" maxlength="80" value="${rcEsc(rcSign.correspondent_name)}"></div>
+    </div>
+    <div style="font-size:12px;font-weight:600;margin-bottom:6px">Class teachers</div>
+    ${classes.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
+      ${classes.map((k, i) => `<div style="display:flex;align-items:center;gap:8px">
+        <div style="width:80px;font-size:12px;font-weight:600;color:var(--maroon)${k === cls ? ';text-decoration:underline' : ''}">${rcEsc(k)}</div>
+        <input class="form-control rc-sign-ct" data-cls="${rcEsc(k)}" maxlength="80" value="${rcEsc(rcSign.class_teachers[k] || '')}" style="flex:1"></div>`).join('')}
+    </div>` : '<div style="font-size:12px;color:var(--text-muted)">Choose an exam first to list its classes.</div>'}
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button class="btn btn-secondary" onclick="rcAllMsg('')">Close</button>
+      <button class="btn btn-gold" onclick="rcSignSave()">💾 Save names</button></div></div>`);
+}
+async function rcSignSave() {
+  const ct = Object.assign({}, (rcSign && rcSign.class_teachers) || {});
+  document.querySelectorAll('.rc-sign-ct').forEach(inp => {
+    const v = inp.value.trim();
+    if (v) ct[inp.dataset.cls] = v; else delete ct[inp.dataset.cls];
+  });
+  const { error } = await supabase.from('report_card_settings').upsert({
+    school_id: SCHOOL_ID, correspondent_name: document.getElementById('rc-sign-corr').value.trim(),
+    class_teachers: ct, updated_at: new Date().toISOString()
+  }, { onConflict: 'school_id' });
+  if (error) { showToast('Could not save: ' + error.message, 'error'); return; }
+  showToast('Signature names saved.', 'success');
+  rcAllMsg('');
 }
 </script>
 </body>
