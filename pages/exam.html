@@ -2578,10 +2578,15 @@ function rcWaSend(i) {
 // The Principal's name comes from I-Card settings, so it is set in one place only.
 let rcSign = null;
 async function rcSignOpen() {
+  try { await rcSignOpenInner(); }
+  catch (e) { showToast('Report card settings could not open: ' + (e.message || e), 'error'); console.error(e); }
+}
+async function rcSignOpenInner() {
   const cls = document.getElementById('rc-class').value;
   const { data, error } = await supabase.from('report_card_settings').select('correspondent_name,class_teachers,show_items').eq('school_id', SCHOOL_ID).maybeSingle();
   if (error) { showToast('Could not load signature names: ' + error.message + ' — has the database step been run?', 'error'); return; }
-  const { data: ic } = await supabase.from('icard_settings').select('principal_name').eq('school_id', SCHOOL_ID).maybeSingle();
+  const { data: icRows } = await supabase.from('icard_settings').select('principal_name').eq('school_id', SCHOOL_ID).limit(1);
+  const ic = (icRows || [])[0] || null;
   rcSign = { correspondent_name: (data && data.correspondent_name) || '', class_teachers: (data && data.class_teachers) || {}, show_items: (data && data.show_items) || {} };
   const classes = Array.from(document.getElementById('rc-class').options).map(o => o.value).filter(Boolean);
   rcAllMsg(`<div class="card">
@@ -2611,6 +2616,10 @@ async function rcSignOpen() {
       <button class="btn btn-gold" onclick="rcSignSave()">💾 Save names</button></div></div>`);
 }
 async function rcSignSave() {
+  try { await rcSignSaveInner(); }
+  catch (e) { showToast('Could not save report card settings: ' + (e.message || e), 'error'); console.error(e); }
+}
+async function rcSignSaveInner() {
   const ct = Object.assign({}, (rcSign && rcSign.class_teachers) || {});
   document.querySelectorAll('.rc-sign-ct').forEach(inp => {
     const v = inp.value.trim();
