@@ -78,7 +78,6 @@ async function renderSidebar(activePage) {
     ]},
     { group: 'Academics', items: [
       { id: 'exam', icon: '📄', label: 'Exams & Marks', href: 'exam.html' },
-      { id: 'exam', icon: '📝', label: 'TN Term Card', href: 'tn-term-card.html' },
       { id: 'icard', icon: '🗓', label: 'Timetable', href: 'icard.html#timetable' },
       { id: 'defaulters', icon: '📋', label: 'HW & Test Defaulters', href: 'defaulters.html' },
     ]},
@@ -109,6 +108,23 @@ async function renderSidebar(activePage) {
       nav.find(g => g.group === 'Fees & Accounts').items.push({ id:'scheme', icon:'🎓', label:'5-Year Scheme', href:'scheme.html' });
     }
   } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
+
+  // Feature-flagged: TN Term Card only shows for schools with has_tn_card = true
+  // (switched on per school by the super admin in Supabase, like 5-Year Scheme)
+  try {
+    const { data } = await supabase.from('schools').select('has_tn_card').eq('school_id', SCHOOL_ID).single();
+    if (data && data.has_tn_card) {
+      const ac = nav.find(g => g.group === 'Academics');
+      const at = ac.items.findIndex(it => it.href === 'exam.html');
+      ac.items.splice(at + 1, 0, { id: 'exam', icon: '📝', label: 'TN Term Card', href: 'tn-term-card.html' });
+    }
+  } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
+
+  // Staff with "Enter marks only" see Exams & Marks, not the TN Term Card
+  if (typeof moduleLevel === 'function' && moduleLevel('exam') === 'marks') {
+    const ac = nav.find(g => g.group === 'Academics');
+    if (ac) ac.items = ac.items.filter(it => it.href !== 'tn-term-card.html');
+  }
 
   // ── Owner-only: Staff Logins management page ──
   if (typeof USER_ROLE === 'undefined' || USER_ROLE !== 'staff') {
