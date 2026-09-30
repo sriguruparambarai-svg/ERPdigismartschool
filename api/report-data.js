@@ -8,6 +8,7 @@
 //   save_remarks    { exam_id, student_id, remarks }     staff
 //   ai_suggest      { exam_id, student_id }   staff → a draft only, not saved
 //   remarks_status  { exam_id, class }        staff → which students already have remarks
+//   read_marksheet  { exam_id, class, subjects[], images[] }  marks staff → AI reads a handwritten marksheet photo (not saved)
 //
 // Rules used everywhere:
 //   • An absent subject counts as 0 out of its full marks
@@ -51,6 +52,14 @@ function isExamStaff(s) {
   const mods = Array.isArray(s.mods) ? s.mods : [];
   // "Enter marks only" staff do not make report cards
   if (mods.indexOf('exam:marks') !== -1 && mods.indexOf('exam') === -1) return false;
+  return mods.some(m => String(m).split(':')[0] === 'exam');
+}
+
+// Owner always; staff with Exam or "Enter marks only" permission
+function canEnterMarks(s) {
+  if (!s || !s.sid || s.role === 'parent') return false;
+  if (s.role !== 'staff') return true;
+  const mods = Array.isArray(s.mods) ? s.mods : [];
   return mods.some(m => String(m).split(':')[0] === 'exam');
 }
 
@@ -243,6 +252,74 @@ module.exports = async (req, res) => {
       const out = await buildCard(schoolId, examId, studentId, parentOnly);
       if (out.error) return res.status(400).json({ ok: false, error: out.error });
       return res.status(200).json({ ok: true, card: out.card });
+    }
+
+    // ══ Read a photo of a handwritten marksheet ══
+    // Open to anyone who can enter marks (including "Enter marks only" staff).
+    // Returns what the AI read; nothing is saved here — the teacher checks
+    // the marks on screen and saves them from the Exam page as usual.
+    if (action === 'read_marksheet') {
+      if (!canEnterMarks(session)) return res.status(403).json({ ok: false, error: 'You do not have permission to enter marks.' });
+      const cls = String(body.class || '').trim();
+      const images = Array.isArray(body.images) ? body.images.slice(0, 3) : [];
+      const wanted = Array.isArray(body.subjects) ? body.subjects.map(s => String(s)) : [];
+      if (!examId || !cls) return res.status(400).json({ ok: false, error: 'Exam or class missing.' });
+      if (!images.length) return res.status(400).json({ ok: false, error: 'No photo received.' });
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return res.status(500).json({ ok: false, error: 'AI key not configured in Vercel.' });
+
+      const exam = (await sb('GET', 'exams?id=eq.' + enc(examId) + '&school_id=eq.' + enc(schoolId) + '&select=id,subjects&limit=1') || [])[0];
+      if (!exam) return res.status(400).json({ ok: false, error: 'Exam not found.' });
+      let subjects = (exam.subjects || []).map(s => ({ name: String(s.name), max: num(s.max_marks) || 100 }));
+      if (wanted.length) subjects = subjects.filter(s => wanted.indexOf(s.name) !== -1);
+      if (!subjects.length) return res.status(400).json({ ok: false, error: 'This exam has no subjects set up.' });
+
+      const students = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(cls)
+        + '&status=eq.active&select=full_name,admission_no,roll_no&order=full_name.asc&limit=500') || [];
+      if (!students.length) return res.status(400).json({ ok: false, error: 'No active students in this class.' });
+
+      const content = [];
+      for (const im of images) {
+        const mt = String(im.media_type || 'image/jpeg');
+        if (!/^image\/(jpeg|png|webp)$/.test(mt) || !im.data) return res.status(400).json({ ok: false, error: 'Please upload a JPG or PNG photo.' });
+        content.push({ type: 'image', source: { type: 'base64', media_type: mt, data: String(im.data) } });
+      }
+      content.push({ type: 'text', text:
+        'These are photos of a teacher\'s handwritten marksheet for class ' + cls + '.\n\n'
+        + 'STUDENTS IN THIS CLASS (admission no | name | roll no):\n'
+        + students.map(s => (s.admission_no || '') + ' | ' + (s.full_name || '') + ' | ' + (s.roll_no || '')).join('\n') + '\n\n'
+        + 'SUBJECTS (name — max marks):\n'
+        + subjects.map(s => s.name + ' — ' + s.max).join('\n') + '\n\n'
+        + 'Read every student row on the sheet. For each row:\n'
+        + '- Match it to ONE student from the list above using the name (and roll no if written). Spellings may differ. If you cannot match confidently, set adm_no to null.\n'
+        + '- Copy the mark for each subject exactly as written. Column headings may be short forms (Eng, Tam, Mat, Sci, Soc/SS, EVS, Hin, Comp, GK) — map them to the subject names above.\n'
+        + '- Write "AB" if the student was absent (AB, A, Ab, Absent). Write "" if the box is empty.\n'
+        + '- Never guess a number. If a mark is hard to read, give your best reading AND list it in "unsure".\n'
+        + '- Ignore total, percentage, rank and grade columns.\n\n'
+        + 'Reply with JSON only, no other text, in this exact shape:\n'
+        + '{"rows":[{"adm_no":"2026-0001","written_name":"Aathiran","marks":{"English":"45","Tamil":"AB"}}],'
+        + '"unsure":[{"adm_no":"2026-0001","subject":"English"}],"note":"anything the teacher should know, or empty"}\n'
+        + 'Use the subject names exactly as listed above as the keys in "marks".'
+      });
+
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: AI_MODEL, max_tokens: 8000, messages: [{ role: 'user', content: content }] })
+      });
+      const text = await r.text();
+      if (!r.ok) return res.status(502).json({ ok: false, error: 'AI could not read the photo: ' + text.slice(0, 300) });
+      let reply = '';
+      try { reply = (JSON.parse(text).content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim(); } catch (e) { reply = ''; }
+      let parsed = null;
+      try {
+        const a = reply.indexOf('{'), b = reply.lastIndexOf('}');
+        parsed = JSON.parse(reply.slice(a, b + 1));
+      } catch (e) { parsed = null; }
+      if (!parsed || !Array.isArray(parsed.rows)) {
+        return res.status(502).json({ ok: false, error: 'AI could not read the marksheet clearly. Please try a sharper, well-lit photo. (' + reply.slice(0, 150) + ')' });
+      }
+      return res.status(200).json({ ok: true, rows: parsed.rows, unsure: Array.isArray(parsed.unsure) ? parsed.unsure : [], note: String(parsed.note || '') });
     }
 
     // Everything below is office only
