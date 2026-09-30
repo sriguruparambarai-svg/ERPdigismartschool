@@ -122,14 +122,18 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
   });
   const pct = maxTotal > 0 ? round1((total / maxTotal) * 100) : 0;
 
-  // Rank: students with higher totals + 1
-  const totals = {};
+  // Rank: only students who were present AND passed in every subject get a rank
+  // (school rule). Among them: students with higher totals + 1, so equal totals share a rank.
+  // Anyone absent or failed in any subject is "Not ranked" (rank = null).
+  const totals = {}, notRanked = {};
   for (const m of classMarks) {
     const k = String(m.student_id);
     totals[k] = (totals[k] || 0) + (m.is_absent ? 0 : num(m.marks_obtained));
+    if (m.is_absent || m.is_pass === false) notRanked[k] = true;
   }
   const all = Object.values(totals);
-  const rank = all.filter(t => t > total + 1e-9).length + 1;
+  const rankedTotals = Object.keys(totals).filter(k => !notRanked[k]).map(k => totals[k]);
+  const rank = (anyFail || anyAbsent) ? null : rankedTotals.filter(t => t > total + 1e-9).length + 1;
 
   let school = {};
   try { school = (await sb('GET', 'schools?school_id=eq.' + enc(schoolId) + '&select=*&limit=1') || [])[0] || {}; } catch (e) { school = {}; }
