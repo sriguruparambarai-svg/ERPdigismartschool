@@ -1684,6 +1684,7 @@ function xlRender(cells, notFound, missing, unknownCols) {
     <table>
       <thead><tr><th style="width:40px">#</th><th>Student Name</th><th>Adm No</th>
         ${subjects.map(s => `<th style="text-align:center">${xlEsc(s.name)}<div style="font-size:10px;font-weight:400">/${s.max}</div></th>`).join('')}
+        <th style="text-align:center">Total</th><th style="text-align:center">%</th><th style="text-align:center">Grade</th><th style="text-align:center">Rank</th>
       </tr></thead>
       <tbody>
         ${students.map((st, i) => `<tr>
@@ -1694,6 +1695,10 @@ function xlRender(cells, notFound, missing, unknownCols) {
             const v = cells[st.id + '|' + s.name] || '';
             return `<td style="text-align:center"><input class="marks-input xl-cell" data-sid="${st.id}" data-sub="${j}" value="${xlEsc(v)}" oninput="xlMark(this)" onkeydown="xlKey(event,this)" placeholder="—"></td>`;
           }).join('')}
+          <td style="text-align:center;font-weight:600" id="xl-tot-${st.id}">—</td>
+          <td style="text-align:center" id="xl-pct-${st.id}">—</td>
+          <td style="text-align:center"><span class="grade-pill" id="xl-grd-${st.id}" style="background:var(--bg)">—</span></td>
+          <td style="text-align:center" id="xl-rnk-${st.id}">—</td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -1719,6 +1724,7 @@ function xlMark(inp) {
 }
 
 function xlStatus() {
+  if (typeof xlSummary === 'function') xlSummary();
   let bad = 0, filled = 0;
   document.querySelectorAll('.xl-cell').forEach(inp => {
     const s = xlData.subjects[+inp.dataset.sub];
@@ -1866,7 +1872,7 @@ function xlChips() {
   if (!xlData) return;
   const all = xlData.pick.allSubjects || xlData.subjects;
   const on = xlData.subjects.map(s => s.name);
-  const canEdit = !isMarksOnly();
+  const canEdit = true;   // anyone who enters marks may choose the class subjects
   const box = document.createElement('div');
   box.id = 'xl-chips';
   box.style.cssText = 'margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)';
@@ -1890,7 +1896,7 @@ function xlChips() {
 }
 
 async function xlToggleSub(name) {
-  if (!xlData || isMarksOnly()) return;
+  if (!xlData) return;
   const all = xlData.pick.allSubjects || xlData.subjects;
   let on = xlData.subjects.map(s => s.name);
   if (on.includes(name)) {
@@ -1918,6 +1924,51 @@ async function xlToggleSub(name) {
   showToast('Subjects for ' + xlData.pick.cls + ' saved.', 'success');
 }
 
+</script>
+<script>
+// ══ LIVE TOTAL / % / GRADE / RANK in the all-subjects grid ══
+// Total and % count only subjects filled for that student (AB counts as 0).
+// Rank is given only to students with every shown subject filled,
+// same rule as the Results tab (equal totals share a rank).
+function xlSummary() {
+  if (!xlData) return;
+  const { students, subjects } = xlData;
+  const rows = {};
+  document.querySelectorAll('.xl-cell').forEach(inp => {
+    const s = subjects[+inp.dataset.sub]; if (!s) return;
+    const r = xlCheck(inp.value, s.max);
+    const row = rows[inp.dataset.sid] = rows[inp.dataset.sid] || { tot: 0, max: 0, filled: 0, bad: false, anyAbsent: false };
+    if (!r.ok) { row.bad = true; return; }
+    if (r.empty) return;
+    row.filled++; row.max += s.max;
+    if (r.absent) row.anyAbsent = true; else row.tot += r.value;
+  });
+  const full = [];
+  students.forEach(st => {
+    const row = rows[st.id] || { filled: 0 };
+    const set = (id, v) => { const el = document.getElementById(id + st.id); if (el) el.textContent = v; };
+    const grd = document.getElementById('xl-grd-' + st.id);
+    if (!row.filled || row.bad) {
+      set('xl-tot-', '—'); set('xl-pct-', '—'); set('xl-rnk-', '—');
+      if (grd) { grd.textContent = '—'; grd.style.background = 'var(--bg)'; grd.style.color = 'var(--text-muted)'; }
+      return;
+    }
+    const pct = Math.round((row.tot / row.max) * 100);
+    const g = getGrade(pct);
+    set('xl-tot-', (Math.round(row.tot * 10) / 10) + '/' + row.max);
+    set('xl-pct-', pct + '%');
+    if (grd) { grd.textContent = g; grd.style.background = '#E8F5EB'; grd.style.color = getGradeColor(g); }
+    if (row.filled === subjects.length) full.push({ id: st.id, tot: row.tot }); else set('xl-rnk-', '—');
+  });
+  const totals = full.map(f => f.tot).sort((a, b) => b - a);
+  full.forEach(f => {
+    const rank = totals.indexOf(f.tot) + 1;
+    const el = document.getElementById('xl-rnk-' + f.id);
+    if (el) el.innerHTML = rank <= 3
+      ? `<span class="rank-badge ${rank === 1 ? 'r1' : rank === 2 ? 'r2' : 'r3'}" style="margin:0 auto">${rank}</span>`
+      : String(rank);
+  });
+}
 </script>
 </body>
 </html>
