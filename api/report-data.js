@@ -95,7 +95,7 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
   if (parentOnly && !exam.published_to_parents) return { error: 'Results for this exam are not published yet.' };
 
   const stu = (await sb('GET', 'students?id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId)
-    + '&select=id,full_name,admission_no,roll_no,class,section,father_name,dob&limit=1') || [])[0];
+    + '&select=id,full_name,admission_no,roll_no,class,section,father_name,dob,mobile,whatsapp&limit=1') || [])[0];
   if (!stu) return { error: 'Student not found.' };
   if (parentOnly && !(Array.isArray(exam.classes) && exam.classes.indexOf(stu.class) !== -1)) {
     return { error: 'This exam is not for your child\'s class.' };
@@ -148,11 +148,22 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
 
   let school = {};
   try { school = (await sb('GET', 'schools?school_id=eq.' + enc(schoolId) + '&select=*&limit=1') || [])[0] || {}; } catch (e) { school = {}; }
-  let logo = '';
+  let logo = '', principalName = '';
   try {
-    const ic = (await sb('GET', 'icard_settings?school_id=eq.' + enc(schoolId) + '&select=logo_url&limit=1') || [])[0];
+    const ic = (await sb('GET', 'icard_settings?school_id=eq.' + enc(schoolId) + '&select=logo_url,principal_name&limit=1') || [])[0];
     logo = (ic && ic.logo_url) || '';
+    principalName = (ic && ic.principal_name) || '';
   } catch (e) { logo = ''; }
+  // Names printed under the signature lines (Correspondent + class teacher per class)
+  let signatures = { class_teacher: '', principal: principalName, correspondent: '' };
+  try {
+    const rs = (await sb('GET', 'report_card_settings?school_id=eq.' + enc(schoolId) + '&select=correspondent_name,class_teachers&limit=1') || [])[0];
+    if (rs) {
+      signatures.correspondent = rs.correspondent_name || '';
+      const ct = rs.class_teachers || {};
+      signatures.class_teacher = ct[(stu.class || '') + (stu.section ? ' ' + stu.section : '')] || ct[stu.class || ''] || '';
+    }
+  } catch (e) { /* table not set up yet — names stay blank */ }
 
   // Attendance for the whole year so far: from 1 June of the academic year
   // up to the exam's end date (or start date, or today).
@@ -201,7 +212,9 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
         id: stu.id, name: stu.full_name || '', admission_no: stu.admission_no || '', roll_no: stu.roll_no || '',
         class: stu.class || '', section: stu.section || '',
         class_text: (stu.class || '') + (stu.section ? ' ' + stu.section : ''),
-        father_name: stu.father_name || ''
+        father_name: stu.father_name || '',
+        // parent's phone — office copy only, for the WhatsApp button
+        phone: parentOnly ? '' : String(stu.whatsapp || stu.mobile || '')
       },
       school: {
         name: school.name || '',
@@ -209,6 +222,7 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
         contact: [school.phone || school.mobile, school.email].filter(Boolean).join('  ·  ')
       },
       logo_url: logo,
+      signatures: signatures,
       rows: rows,
       total: total, max_total: maxTotal, pct: pct, grade: gradeFor(pct),
       result: anyFail ? 'FAIL' : (anyAbsent ? 'ABSENT IN SOME SUBJECTS' : 'PASS'),
