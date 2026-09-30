@@ -6,6 +6,7 @@
 <title>Exam Management — DigiSmart ERP</title>
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 .tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
 .tab{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
@@ -218,6 +219,22 @@
           <div id="marks-entry-content">
             <div class="empty-state"><div class="icon">✏️</div><p>Select exam, class and subject to enter marks</p></div>
           </div>
+        </div>
+
+        <!-- ══ WHOLE CLASS FROM EXCEL ══ -->
+        <div class="card" style="margin-top:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px">
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--maroon)">📥 Whole class from Excel — all subjects</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">Choose Exam and Class above (no subject needed). Type marks, <b>AB</b> for absent, leave empty if not done yet.</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="xlDownload()">⬇ Download Excel</button>
+              <button class="btn btn-primary btn-sm" onclick="document.getElementById('xl-file').click()">📤 Upload Excel</button>
+              <input type="file" id="xl-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="xlUpload(this)">
+            </div>
+          </div>
+          <div id="xl-content"></div>
         </div>
       </div>
 
@@ -886,7 +903,7 @@ async function saveMarks() {
 
   const records = students.map(s => {
     const isAbsent = document.getElementById('absent-'+s.id)?.checked || false;
-    const marksVal = isAbsent ? null : (parseFloat(document.getElementById('mark-'+s.id)?.value) || null);
+    const marksVal = isAbsent ? null : (() => { const v = parseFloat(document.getElementById('mark-'+s.id)?.value); return isNaN(v) ? null : v; })();
     const pct = marksVal !== null ? Math.round((marksVal/maxMarks)*100) : null;
     const grade = pct !== null ? getGrade(pct) : (isAbsent ? 'AB' : null);
     const pass = marksVal !== null ? marksVal >= passMarks : false;
@@ -1529,6 +1546,258 @@ function rcPrint() {
     + '}';
   document.head.appendChild(st);
 })();
+</script>
+<script>
+// ══ WHOLE CLASS FROM EXCEL — all subjects in one file ══
+// Students are matched by Admission No (not by name, since spellings differ).
+// In the file: a number = marks, AB = absent, empty = not done yet
+// (empty cells never wipe out marks that are already saved).
+// Nothing is saved until the teacher checks the table and presses Save.
+let xlData = null;
+
+function xlEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function xlNorm(s) { return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' '); }
+
+function xlPick() {
+  const examId = document.getElementById('me-exam').value;
+  const cls = document.getElementById('me-class').value;
+  if (!examId || !cls) { showToast('Please choose Exam and Class first.', 'error'); return null; }
+  const exam = allExams.find(e => e.id === examId);
+  if (!exam || !(exam.subjects || []).length) { showToast('This exam has no subjects set up.', 'error'); return null; }
+  const subjects = exam.subjects.map(s => {
+    const max = s.max_marks || 100;
+    return { name: s.name, max, pass: s.pass_marks || Math.round(max * passPercent / 100) };
+  });
+  return { examId, cls, exam, subjects };
+}
+
+async function xlStudents(cls) {
+  const { data, error } = await supabase.from('students').select('id,full_name,admission_no')
+    .eq('school_id', SCHOOL_ID).eq('class', cls).eq('status', 'active').order('full_name');
+  if (error) { showToast('Could not load students: ' + error.message, 'error'); return null; }
+  if (!data || !data.length) { showToast('No active students found for this class.', 'error'); return null; }
+  return data;
+}
+
+async function xlDownload() {
+  const pick = xlPick(); if (!pick) return;
+  const students = await xlStudents(pick.cls); if (!students) return;
+  // Fill in marks already saved, so the teacher can see and add to them
+  const { data: saved } = await supabase.from('exam_marks').select('student_id,subject,marks_obtained,is_absent')
+    .eq('exam_id', pick.examId).eq('class', pick.cls);
+  const map = {};
+  (saved || []).forEach(m => { map[m.student_id + '|' + m.subject] = m.is_absent ? 'AB' : (m.marks_obtained == null ? '' : m.marks_obtained); });
+  const head = ['Adm No', 'Student Name'].concat(pick.subjects.map(s => s.name + ' (/' + s.max + ')'));
+  const rows = students.map(st => [st.admission_no, st.full_name].concat(pick.subjects.map(s => {
+    const v = map[st.id + '|' + s.name]; return v === undefined ? '' : v;
+  })));
+  const ws = XLSX.utils.aoa_to_sheet([head].concat(rows));
+  ws['!cols'] = [{ wch: 12 }, { wch: 28 }].concat(pick.subjects.map(() => ({ wch: 16 })));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Marks');
+  const safe = (pick.exam.name + '_' + pick.cls).replace(/[^A-Za-z0-9_-]+/g, '_');
+  XLSX.writeFile(wb, 'Marks_' + safe + '.xlsx');
+}
+
+function xlUpload(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  const pick = xlPick(); if (!pick) return;
+  const reader = new FileReader();
+  reader.onerror = () => showToast('Could not open the file.', 'error');
+  reader.onload = async (e) => {
+    let rows;
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: false });
+    } catch (err) { showToast('Could not read this file: ' + err.message, 'error'); return; }
+    if (!rows || rows.length < 2) { showToast('The file looks empty.', 'error'); return; }
+    const students = await xlStudents(pick.cls); if (!students) return;
+    xlBuild(pick, students, rows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function xlBuild(pick, students, rows) {
+  const head = rows[0].map(h => xlNorm(String(h).replace(/\(.*?\)/g, '')));
+  const admCol = head.findIndex(h => /^(adm|admission)/.test(h));
+  if (admCol < 0) { showToast('No "Adm No" column found. Please use the Download Excel file.', 'error'); return; }
+  // Which file column is which subject
+  const colOf = {};
+  const unknownCols = [];
+  head.forEach((h, i) => {
+    if (i === admCol || !h || /name/.test(h) || /^(s\.?no|roll|#)/.test(h)) return;
+    const sub = pick.subjects.find(s => xlNorm(s.name) === h);
+    if (sub) colOf[sub.name] = i; else unknownCols.push(rows[0][i]);
+  });
+  if (!Object.keys(colOf).length) { showToast('No subject columns matched this exam. Please use the Download Excel file.', 'error'); return; }
+
+  const byAdm = {};
+  students.forEach(s => { byAdm[xlNorm(s.admission_no)] = s; });
+  const cells = {};          // studentId|subject -> text from the file
+  const notFound = [];
+  const seen = {};
+  rows.slice(1).forEach((r, idx) => {
+    const adm = xlNorm(r[admCol]);
+    if (!adm && r.every(v => String(v).trim() === '')) return; // blank line
+    const st = byAdm[adm];
+    if (!st) { notFound.push('Row ' + (idx + 2) + ': ' + (r[admCol] || '(no Adm No)')); return; }
+    seen[st.id] = true;
+    Object.keys(colOf).forEach(sub => {
+      const v = String(r[colOf[sub]] == null ? '' : r[colOf[sub]]).trim();
+      if (v !== '') cells[st.id + '|' + sub] = v;
+    });
+  });
+  const missing = students.filter(s => !seen[s.id]).map(s => s.full_name);
+  const subjects = pick.subjects.filter(s => colOf[s.name] !== undefined);
+  xlData = { pick, students, subjects };
+  xlRender(cells, notFound, missing, unknownCols);
+}
+
+// Returns { ok, absent, value } for one cell's text
+function xlCheck(text, max) {
+  const t = String(text).trim();
+  if (t === '') return { ok: true, empty: true };
+  if (/^ab$|^absent$|^a$/i.test(t)) return { ok: true, absent: true };
+  if (!/^\d+(\.\d+)?$/.test(t)) return { ok: false, why: 'not a number' };
+  const v = parseFloat(t);
+  if (v > max) return { ok: false, why: 'above ' + max };
+  return { ok: true, value: v };
+}
+
+function xlRender(cells, notFound, missing, unknownCols) {
+  const { students, subjects } = xlData;
+  let warn = '';
+  if (notFound.length) warn += '<div style="margin-bottom:6px"><b>Not found in ERP (skipped):</b> ' + notFound.map(xlEsc).join(', ') + '</div>';
+  if (unknownCols.length) warn += '<div style="margin-bottom:6px"><b>Columns not in this exam (ignored):</b> ' + unknownCols.map(xlEsc).join(', ') + '</div>';
+  if (missing.length) warn += '<div><b>Not in the file (marks left as they are):</b> ' + missing.map(xlEsc).join(', ') + '</div>';
+  const box = warn ? '<div style="background:#FFF8E6;border:1px solid #EDD9A3;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px">⚠️ ' + warn + '</div>' : '';
+
+  const html = box + `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Please check the marks below. You can correct any box. <span style="color:#A32D2D;font-weight:600">Red boxes</span> must be fixed before saving.</div>
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>Student Name</th><th>Adm No</th>
+        ${subjects.map(s => `<th style="text-align:center">${xlEsc(s.name)}<div style="font-size:10px;font-weight:400">/${s.max}</div></th>`).join('')}
+      </tr></thead>
+      <tbody>
+        ${students.map((st, i) => `<tr>
+          <td style="color:var(--text-muted)">${i + 1}</td>
+          <td style="font-weight:500">${xlEsc(st.full_name)}</td>
+          <td style="color:var(--maroon);font-size:12px">${xlEsc(st.admission_no)}</td>
+          ${subjects.map((s, j) => {
+            const v = cells[st.id + '|' + s.name] || '';
+            return `<td style="text-align:center"><input class="marks-input xl-cell" data-sid="${st.id}" data-sub="${j}" value="${xlEsc(v)}" oninput="xlMark(this)" placeholder="—"></td>`;
+          }).join('')}
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;flex-wrap:wrap;gap:8px">
+      <div id="xl-status" style="font-size:12px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="xlCancel()">Cancel</button>
+        <button class="btn btn-gold" id="xl-save-btn" onclick="xlSave()">💾 Save all subjects</button>
+      </div>
+    </div>`;
+  document.getElementById('xl-content').innerHTML = html;
+  document.querySelectorAll('.xl-cell').forEach(xlMark);
+}
+
+function xlMark(inp) {
+  const s = xlData.subjects[+inp.dataset.sub];
+  const r = xlCheck(inp.value, s.max);
+  inp.className = 'marks-input xl-cell' + (!r.ok ? ' fail' : r.absent ? ' absent' : r.empty ? '' : (r.value >= s.pass ? ' pass' : ''));
+  inp.title = r.ok ? '' : 'Problem: ' + r.why;
+  if (!r.ok) inp.style.outline = '2px solid #A32D2D'; else inp.style.outline = '';
+  xlStatus();
+}
+
+function xlStatus() {
+  let bad = 0, filled = 0;
+  document.querySelectorAll('.xl-cell').forEach(inp => {
+    const s = xlData.subjects[+inp.dataset.sub];
+    const r = xlCheck(inp.value, s.max);
+    if (!r.ok) bad++; else if (!r.empty) filled++;
+  });
+  const el = document.getElementById('xl-status');
+  if (el) el.innerHTML = bad
+    ? `<span style="color:#A32D2D;font-weight:600">${bad} box(es) need fixing</span> · ${filled} filled`
+    : `<span style="color:#2E7D32;font-weight:600">All good</span> · ${filled} filled`;
+  return bad;
+}
+
+function xlCancel() { xlData = null; document.getElementById('xl-content').innerHTML = ''; }
+
+async function xlSave() {
+  if (!xlData) return;
+  if (xlStatus() > 0) { showToast('Please fix the red boxes first.', 'error'); return; }
+  const { pick, students, subjects } = xlData;
+  // Collect what the teacher entered, per subject
+  const entered = {};  // subject -> { studentId: {absent, value} }
+  document.querySelectorAll('.xl-cell').forEach(inp => {
+    const s = subjects[+inp.dataset.sub];
+    const r = xlCheck(inp.value, s.max);
+    if (r.empty) return;
+    (entered[s.name] = entered[s.name] || {})[inp.dataset.sid] = r;
+  });
+  const subNames = Object.keys(entered);
+  if (!subNames.length) { showToast('No marks to save.', 'error'); return; }
+  if (!confirm('Save marks for ' + subNames.length + ' subject(s): ' + subNames.join(', ') + '?')) return;
+
+  const btn = document.getElementById('xl-save-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  const done = [], failed = [];
+  for (const s of subjects) {
+    if (!entered[s.name]) continue;
+    // Keep marks already saved for students left empty in the file
+    const { data: old, error: rErr } = await supabase.from('exam_marks').select('*')
+      .eq('exam_id', pick.examId).eq('class', pick.cls).eq('subject', s.name);
+    if (rErr) { failed.push(s.name + ' (' + rErr.message + ')'); continue; }
+    const oldMap = {}; (old || []).forEach(m => { oldMap[m.student_id] = m; });
+    const records = [];
+    students.forEach(st => {
+      const r = entered[s.name][st.id];
+      if (!r) { if (oldMap[st.id]) { const k = Object.assign({}, oldMap[st.id]); delete k.id; delete k.created_at; records.push(k); } return; }
+      const val = r.absent ? null : r.value;
+      const pct = val !== null ? Math.round((val / s.max) * 100) : null;
+      records.push({
+        school_id: SCHOOL_ID, exam_id: pick.examId, student_id: st.id,
+        student_name: st.full_name, admission_no: st.admission_no,
+        class: pick.cls, subject: s.name, max_marks: s.max, pass_marks: s.pass,
+        marks_obtained: val, is_absent: !!r.absent,
+        grade: pct !== null ? getGrade(pct) : (r.absent ? 'AB' : null),
+        is_pass: val !== null ? val >= s.pass : false, percentage: pct,
+      });
+    });
+    const { error: dErr } = await supabase.from('exam_marks').delete()
+      .eq('exam_id', pick.examId).eq('class', pick.cls).eq('subject', s.name);
+    if (dErr) { failed.push(s.name + ' (' + dErr.message + ')'); continue; }
+    const { error: iErr } = await supabase.from('exam_marks').insert(records);
+    if (iErr) {
+      // put the old marks back so nothing is lost
+      if (old && old.length) {
+        const back = old.map(m => { const k = Object.assign({}, m); delete k.id; delete k.created_at; return k; });
+        await supabase.from('exam_marks').insert(back);
+      }
+      failed.push(s.name + ' (' + iErr.message + ')'); continue;
+    }
+    done.push(s.name);
+  }
+  btn.textContent = '💾 Save all subjects'; btn.disabled = false;
+  if (failed.length) showToast('Saved: ' + (done.join(', ') || 'none') + '. NOT saved: ' + failed.join('; '), 'error');
+  else {
+    showToast('Marks saved for ' + done.join(', ') + '!', 'success');
+    xlCancel();
+  }
+  // Refresh the single-subject table if it is open for the same exam and class
+  if (currentMarkData && currentMarkData.examId === pick.examId && currentMarkData.cls === pick.cls) await loadMarkEntry();
+  if (typeof loadStats === 'function' && !isMarksOnly()) await loadStats();
+}
+
 </script>
 </body>
 </html>
