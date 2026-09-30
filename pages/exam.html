@@ -1536,11 +1536,13 @@ async function rcSaveRemarks() {
 
 // Print only the report card, not the whole page
 function rcPrint() {
-  if (!document.getElementById('rc-v2')) { window.print(); return; }
+  if (!document.getElementById('rc-v2') || !rcCard) { window.print(); return; }
   if (rcRemarksChanged() && !confirm('The remarks are not saved yet, so parents will not see them. Print anyway?')) return;
   rcRemarksStatus();
-  document.body.classList.add('rc-printing');
-  const done = () => { document.body.classList.remove('rc-printing'); window.removeEventListener('afterprint', done); };
+  const typed = (document.getElementById('rc-rem-text') || {}).value || '';
+  document.getElementById('rcp-single').innerHTML = rcPrintCardHtml(Object.assign({}, rcCard, { remarks: typed.trim() }));
+  document.body.classList.add('rc-printing-single');
+  const done = () => { document.body.classList.remove('rc-printing-single'); window.removeEventListener('afterprint', done); };
   window.addEventListener('afterprint', done);
   window.print();
   setTimeout(done, 1500);
@@ -2161,7 +2163,7 @@ async function rcAllPrint() {
       </div>
       ${note.length ? '<div style="background:#FFF8E6;border:1px solid #EDD9A3;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:10px">⚠️ ' + note.join('<br>') + '</div>' : ''}
     </div>
-    <div id="rc-all-print">${rcAll.cards.map(rcAllCardHtml).join('')}</div>`);
+    <div id="rc-all-print">${rcAll.cards.map(rcPrintCardHtml).join('')}</div>`);
 }
 function rcAllDoPrint() {
   document.body.classList.add('rc-printing-all');
@@ -2182,6 +2184,142 @@ function rcAllDoPrint() {
     + '@page{size:A4;margin:14mm}'
     + '}';
   document.head.appendChild(st);
+})();
+
+</script>
+<script>
+// ══ PRINTED REPORT CARD — formal design (maroon · gold · sandal) ══
+// Used by both 🖨 Print (one student) and 🖨 Print all.
+// Built with tables, not grids, so the phone layout rules in style.css
+// can't squash it into one column when the page is printed on A4.
+function rcpDate() {
+  const d = new Date();
+  return String(d.getDate()).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + d.getFullYear();
+}
+function rcPrintCardHtml(c) {
+  const e = rcEsc;
+  const resCls = c.result === 'PASS' ? 'rcp-pass' : (c.result === 'FAIL' ? 'rcp-fail' : 'rcp-ab');
+  const logo = c.logo_url
+    ? '<img class="rcp-logo" src="' + e(c.logo_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
+    : '<div class="rcp-logo rcp-logo-blank">🏫</div>';
+  const rows = c.rows.map((r, i) => {
+    const st = r.status === 'Absent' ? 'rcp-ab' : (r.status === 'Pass' ? 'rcp-pass' : 'rcp-fail');
+    return '<tr><td class="rcp-c">' + (i + 1) + '</td><td>' + e(r.subject) + '</td>'
+      + '<td class="rcp-c">' + e(r.max) + '</td>'
+      + '<td class="rcp-c rcp-b ' + st + '">' + (r.marks === null ? 'AB' : e(r.marks)) + '</td>'
+      + '<td class="rcp-c rcp-b">' + e(r.grade || '—') + '</td>'
+      + '<td class="rcp-c ' + st + '">' + e(r.status) + '</td></tr>';
+  }).join('');
+  const info = (l, v) => '<td class="rcp-il">' + l + '</td><td class="rcp-iv">' + e(v || '—') + '</td>';
+  const sum = (l, v, cls) => '<td><div class="rcp-sl">' + l + '</div><div class="rcp-sv ' + (cls || '') + '">' + v + '</div></td>';
+  return '<div class="rcp"><div class="rcp-in">'
+    // Header band
+    + '<table class="rcp-head"><tr>'
+    +   '<td class="rcp-head-logo">' + logo + '</td>'
+    +   '<td class="rcp-head-mid">'
+    +     '<div class="rcp-school">' + e(String(c.school.name || 'School').toUpperCase()) + '</div>'
+    +     (c.school.address ? '<div class="rcp-addr">' + e(c.school.address) + '</div>' : '')
+    +     (c.school.contact ? '<div class="rcp-addr">' + e(c.school.contact) + '</div>' : '')
+    +     '<div class="rcp-title">PROGRESS REPORT CARD</div>'
+    +   '</td>'
+    +   '<td class="rcp-head-logo"></td>'
+    + '</tr></table>'
+    // Exam strip
+    + '<table class="rcp-strip"><tr>'
+    +   '<td>Examination: <b>' + e(c.exam.name) + '</b></td>'
+    +   '<td style="text-align:right">Academic Year: <b>' + e(c.exam.academic_year || '—') + '</b></td>'
+    + '</tr></table>'
+    // Student details
+    + '<table class="rcp-info">'
+    +   '<tr>' + info('Student Name', c.student.name) + info('Admission No', c.student.admission_no) + '</tr>'
+    +   '<tr>' + info('Class', c.student.class_text) + info('Roll No', c.student.roll_no) + '</tr>'
+    +   '<tr>' + info("Father's Name", c.student.father_name) + '<td class="rcp-il"></td><td class="rcp-iv"></td></tr>'
+    + '</table>'
+    // Marks
+    + '<table class="rcp-marks"><thead><tr>'
+    +   '<th class="rcp-c" style="width:44px">S.No</th><th>Subject</th><th class="rcp-c">Max Marks</th>'
+    +   '<th class="rcp-c">Marks Obtained</th><th class="rcp-c">Grade</th><th class="rcp-c">Result</th>'
+    + '</tr></thead><tbody>' + rows
+    +   '<tr class="rcp-tot"><td></td><td>TOTAL</td><td class="rcp-c">' + e(c.max_total) + '</td>'
+    +   '<td class="rcp-c">' + e(c.total) + '</td><td class="rcp-c">' + e(c.grade || '—') + '</td>'
+    +   '<td class="rcp-c ' + resCls + '">' + e(c.result) + '</td></tr>'
+    + '</tbody></table>'
+    // Summary
+    + '<table class="rcp-sum"><tr>'
+    +   sum('Total Marks', e(c.total) + ' / ' + e(c.max_total))
+    +   sum('Percentage', e(c.pct) + '%')
+    +   sum('Overall Grade', e(c.grade || '—'))
+    +   sum('Class Rank', e(c.rank) + ' / ' + e(c.class_size))
+    +   sum('Result', e(c.result), resCls + (String(c.result).length > 6 ? ' rcp-sv-sm' : ''))
+    + '</tr></table>'
+    // Remarks
+    + '<div class="rcp-rem"><div class="rcp-rem-h">CLASS TEACHER\'S REMARKS</div>'
+    +   '<div class="rcp-rem-t">' + e(c.remarks || '') + '</div></div>'
+    // Signatures — three equal columns, lines all on one level
+    + '<table class="rcp-sign"><tr><td></td><td></td><td></td></tr>'
+    +   '<tr><td><div class="rcp-line">Class Teacher</div></td>'
+    +   '<td><div class="rcp-line">Principal</div></td>'
+    +   '<td><div class="rcp-line">Parent / Guardian</div></td></tr></table>'
+    + '<div class="rcp-foot">Date: ' + rcpDate() + '</div>'
+    + '</div></div>';
+}
+
+(function () {
+  const M = '#6B0F1A', G = '#C9A84C', S = '#F5E6C8', SL = '#FFFBF2';
+  const st = document.createElement('style');
+  st.textContent = ''
+    + '.rcp{font-family:Georgia,"Times New Roman",serif;color:#222;background:#fff;border:3px double ' + M + ';padding:4px;max-width:760px;margin:16px auto;box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    + '.rcp *{-webkit-print-color-adjust:exact;print-color-adjust:exact;box-sizing:border-box}'
+    + '.rcp-in{border:1px solid ' + G + ';padding:0 0 12px}'
+    + '.rcp table{width:100%;border-collapse:collapse}'
+    + '.rcp-head{background:' + M + '}'
+    + '.rcp-head td{padding:14px 12px;vertical-align:middle}'
+    + '.rcp-head-logo{width:92px;text-align:center}'
+    + '.rcp img.rcp-logo,.rcp .rcp-logo{width:74px!important;height:74px!important;max-width:none!important;border-radius:50%;background:#fff;border:3px solid ' + G + ';object-fit:contain;padding:2px;display:inline-block}'
+    + '.rcp-logo-blank{font-size:32px;line-height:66px;text-align:center}'
+    + '.rcp-head-mid{text-align:center}'
+    + '.rcp-school{font-size:24px;font-weight:700;letter-spacing:2px;color:' + G + '}'
+    + '.rcp-addr{font-size:11px;color:' + S + ';margin-top:3px;font-family:"Segoe UI",Arial,sans-serif}'
+    + '.rcp-title{display:inline-block;margin-top:9px;padding:4px 18px;border:1px solid ' + G + ';border-radius:14px;color:' + G + ';font-size:12px;font-weight:700;letter-spacing:3px}'
+    + '.rcp-strip{background:' + S + ';border-top:2px solid ' + G + ';border-bottom:2px solid ' + G + '}'
+    + '.rcp-strip td{padding:6px 14px;font-size:12px;color:' + M + '}'
+    + '.rcp-info{margin:12px 14px 0;width:calc(100% - 28px)!important;background:' + SL + ';border:1px solid ' + G + '}'
+    + '.rcp-info td{padding:6px 10px;font-size:12px;border-bottom:1px solid #EFE3C8}'
+    + '.rcp-il{width:18%;color:#7a6a55;font-family:"Segoe UI",Arial,sans-serif}'
+    + '.rcp-iv{width:32%;font-weight:700;color:#222}'
+    + '.rcp-marks{margin:14px 14px 0;width:calc(100% - 28px)!important}'
+    + '.rcp-marks th{background:' + M + ';color:' + S + ';font-size:11px;letter-spacing:.5px;padding:8px;text-align:left;border:1px solid ' + M + ';font-family:"Segoe UI",Arial,sans-serif}'
+    + '.rcp-marks td{padding:7px 8px;font-size:13px;border:1px solid #E6D6B4}'
+    + '.rcp-marks tbody tr:nth-child(even) td{background:' + SL + '}'
+    + '.rcp-tot td{background:' + S + '!important;font-weight:700;color:' + M + '}'
+    + '.rcp-c{text-align:center!important}'
+    + '.rcp-b{font-weight:700}'
+    + '.rcp-pass{color:#2D7A3A!important}.rcp-fail{color:#A32D2D!important}.rcp-ab{color:#8B5E00!important}'
+    + '.rcp-sum{margin:14px 14px 0;width:calc(100% - 28px)!important;table-layout:fixed}'
+    + '.rcp-sum td{text-align:center;border:1px solid ' + G + ';background:' + SL + ';padding:8px 4px}'
+    + '.rcp-sl{font-size:10px;color:#7a6a55;text-transform:uppercase;letter-spacing:.5px;font-family:"Segoe UI",Arial,sans-serif}'
+    + '.rcp-sv{font-size:17px;font-weight:700;color:' + M + ';margin-top:3px}'
+    + '.rcp-sv-sm{font-size:11px;line-height:1.3}'
+    + '.rcp-rem{margin:14px 14px 0;border:1px solid ' + G + ';border-left:4px solid ' + M + ';background:' + SL + ';padding:10px 12px;min-height:66px}'
+    + '.rcp-rem-h{font-size:10px;font-weight:700;letter-spacing:1px;color:' + M + ';font-family:"Segoe UI",Arial,sans-serif;margin-bottom:5px}'
+    + '.rcp-rem-t{font-size:13px;line-height:1.6;white-space:pre-wrap;font-style:italic}'
+    + '.rcp-sign{margin:0 14px;width:calc(100% - 28px)!important;table-layout:fixed}'
+    + '.rcp-sign td{width:33.33%;height:52px;vertical-align:bottom;text-align:center;padding:0 16px}'
+    + '.rcp-line{border-top:1px solid #333;padding-top:5px;font-size:12px;font-weight:700;color:' + M + ';font-family:"Segoe UI",Arial,sans-serif}'
+    + '.rcp-foot{margin:10px 14px 0;font-size:10px;color:#888;font-family:"Segoe UI",Arial,sans-serif}'
+    + '#rcp-single{display:none}'
+    + '@media print{'
+    +   'body.rc-printing-all .rcp,body.rc-printing-single .rcp{margin:0 auto;max-width:none;page-break-after:always;break-after:page;page-break-inside:avoid}'
+    +   'body.rc-printing-all .rcp:last-child,body.rc-printing-single .rcp:last-child{page-break-after:auto;break-after:auto}'
+    +   'body.rc-printing-single #rcp-single{display:block!important;position:absolute;left:0;top:0;width:100%}'
+    +   'body.rc-printing-single *{visibility:hidden}'
+    +   'body.rc-printing-single #rcp-single,body.rc-printing-single #rcp-single *{visibility:visible}'
+    +   '@page{size:A4;margin:10mm}'
+    + '}';
+  document.head.appendChild(st);
+  const holder = document.createElement('div');
+  holder.id = 'rcp-single';
+  document.body.appendChild(holder);
 })();
 
 </script>
