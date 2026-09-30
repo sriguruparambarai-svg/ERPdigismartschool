@@ -54,6 +54,20 @@ function dobMatches(dob, pw) {
   return pw === (parts[2] + parts[1] + parts[0]) || pw === (parts[0] + parts[1] + parts[2]);
 }
 
+// What the school chooses to show on report cards (Report card settings).
+// Anything not set stays ON, so schools that never touch it see everything.
+const SHOW_DEFAULT = { marks: true, grade: true, status: true, result: true, pct: true, rank: true, attendance: true, remarks: true };
+async function getShow(schoolId) {
+  const show = Object.assign({}, SHOW_DEFAULT);
+  try {
+    const rs = (await sb('GET', 'report_card_settings?school_id=eq.' + encodeURIComponent(schoolId) + '&select=show_items&limit=1') || [])[0];
+    const s = (rs && rs.show_items) || {};
+    Object.keys(SHOW_DEFAULT).forEach(k => { if (s[k] === false) show[k] = false; });
+  } catch (e) { /* not set up yet — show everything */ }
+  if (!show.marks && !show.grade) show.marks = true;   // a card must show marks or grades
+  return show;
+}
+
 async function sb(method, path, bodyObj) {
   const key = getServiceKey();
   const opts = {
@@ -342,6 +356,19 @@ module.exports = async (req, res) => {
           result: anyFail ? 'FAIL' : (anyAbsent ? 'ABSENT IN SOME SUBJECTS' : 'PASS')
         });
       }
+      // Hide what the school has chosen not to show on report cards
+      const sh = await getShow(schoolId);
+      out.forEach(ex => {
+        ex.rows.forEach(r => {
+          if (!sh.status) r.status = '';
+          if (!sh.grade) r.grade = '';
+          if (!sh.marks) { r.marks = undefined; r.max = undefined; }
+        });
+        if (!sh.marks) { ex.total = undefined; ex.max_total = undefined; }
+        if (!sh.grade) ex.grade = '';
+        if (!sh.result) ex.result = '';
+        if (!sh.pct) ex.pct = undefined;
+      });
       return res.status(200).json({ ok: true, exams: out });
     }
 

@@ -84,6 +84,20 @@ async function sb(method, path, bodyObj, prefer) {
 }
 
 const enc = encodeURIComponent;
+
+// What the school chooses to show on report cards (Report card settings).
+// Anything not set stays ON, so schools that never touch it see everything.
+const SHOW_DEFAULT = { marks: true, grade: true, status: true, result: true, pct: true, rank: true, attendance: true, remarks: true };
+async function getShow(schoolId) {
+  const show = Object.assign({}, SHOW_DEFAULT);
+  try {
+    const rs = (await sb('GET', 'report_card_settings?school_id=eq.' + encodeURIComponent(schoolId) + '&select=show_items&limit=1') || [])[0];
+    const s = (rs && rs.show_items) || {};
+    Object.keys(SHOW_DEFAULT).forEach(k => { if (s[k] === false) show[k] = false; });
+  } catch (e) { /* not set up yet — show everything */ }
+  if (!show.marks && !show.grade) show.marks = true;   // a card must show marks or grades
+  return show;
+}
 const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
 const round1 = n => Math.round(n * 10) / 10;
 
@@ -148,6 +162,7 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
 
   let school = {};
   try { school = (await sb('GET', 'schools?school_id=eq.' + enc(schoolId) + '&select=*&limit=1') || [])[0] || {}; } catch (e) { school = {}; }
+  const show = await getShow(schoolId);
   let logo = '', principalName = '';
   try {
     const ic = (await sb('GET', 'icard_settings?school_id=eq.' + enc(schoolId) + '&select=logo_url,principal_name&limit=1') || [])[0];
@@ -223,6 +238,7 @@ async function buildCard(schoolId, examId, studentId, parentOnly) {
       },
       logo_url: logo,
       signatures: signatures,
+      show: show,
       rows: rows,
       total: total, max_total: maxTotal, pct: pct, grade: gradeFor(pct),
       result: anyFail ? 'FAIL' : (anyAbsent ? 'ABSENT IN SOME SUBJECTS' : 'PASS'),
@@ -265,6 +281,22 @@ module.exports = async (req, res) => {
       }
       const out = await buildCard(schoolId, examId, studentId, parentOnly);
       if (out.error) return res.status(400).json({ ok: false, error: out.error });
+      // Parents never receive what the school has chosen to hide
+      if (parentOnly) {
+        const c = out.card, sh = c.show;
+        c.rows.forEach(r => {
+          if (!sh.status) r.status = '';
+          if (!sh.grade) r.grade = '';
+          if (!sh.marks) { r.marks = undefined; r.max = undefined; }
+        });
+        if (!sh.marks) { c.total = undefined; c.max_total = undefined; }
+        if (!sh.grade) c.grade = '';
+        if (!sh.result) c.result = '';
+        if (!sh.pct) c.pct = undefined;
+        if (!sh.rank) { c.rank = undefined; c.class_size = undefined; }
+        if (!sh.attendance) c.attendance = null;
+        if (!sh.remarks) c.remarks = '';
+      }
       return res.status(200).json({ ok: true, card: out.card });
     }
 
