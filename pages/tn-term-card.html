@@ -350,6 +350,14 @@ async function generateTermCard(){
 
 // ── init ──
 (async function(){
+  renderSidebar('exam');   // menu + sends staff without Exam permission back to Dashboard
+  // Only for schools where the super admin has switched on has_tn_card,
+  // and not for "Enter marks only" staff
+  try{
+    if (typeof moduleLevel === 'function' && moduleLevel('exam') === 'marks') { window.location.href = 'dashboard.html'; return; }
+    var tnOn = await supabase.from('schools').select('has_tn_card').eq('school_id', SCHOOL_ID).single();
+    if (!(tnOn && tnOn.data && tnOn.data.has_tn_card)) { window.location.href = 'dashboard.html'; return; }
+  }catch(e){ window.location.href = 'dashboard.html'; return; }
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
   // board guard: warn if this school isn't set to TN State Board
   try{
