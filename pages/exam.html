@@ -978,7 +978,9 @@ async function loadResults() {
     overallGrade: s.maxTotal > 0 ? getGrade(Math.round((s.total/s.maxTotal)*100)) : '—',
   })).sort((a,b) => b.total - a.total);
 
-  results.forEach((r,i) => { r.rank = i+1; });
+  // Rank only students present and passed in every subject; equal totals share a rank
+  const rankTotals = results.filter(r => r.allPass && Object.keys(r.subjects).length).map(r => r.total);
+  results.forEach(r => { r.rank = (r.allPass && Object.keys(r.subjects).length) ? rankTotals.filter(t => t > r.total).length + 1 : null; });
 
   const passCount = results.filter(r=>r.allPass).length;
   const pct = results.length > 0 ? Math.round((passCount/results.length)*100) : 0;
@@ -989,7 +991,7 @@ async function loadResults() {
       <div class="sband-item"><div class="sband-label">Pass</div><div class="sband-value" style="color:#2D7A3A">${passCount}</div></div>
       <div class="sband-item"><div class="sband-label">Fail</div><div class="sband-value" style="color:#A32D2D">${results.length-passCount}</div></div>
       <div class="sband-item"><div class="sband-label">Pass %</div><div class="sband-value">${pct}%</div></div>
-      <div class="sband-item"><div class="sband-label">Class Topper</div><div class="sband-value" style="font-size:14px">${results[0]?.full_name||'—'}</div></div>
+      <div class="sband-item"><div class="sband-label">Class Topper</div><div class="sband-value" style="font-size:14px">${(results.find(r=>r.rank===1)||{}).full_name||'—'}</div></div>
     </div>
     <div class="table-wrap">
     <table>
@@ -1008,9 +1010,9 @@ async function loadResults() {
         ${results.map(r => `
           <tr>
             <td>
-              <div class="rank-badge ${r.rank===1?'r1':r.rank===2?'r2':r.rank===3?'r3':''}" style="${r.rank>3?'background:var(--bg);color:var(--text-muted)':''}">
+              ${r.rank === null ? '<span style="font-size:11px;color:var(--text-muted)" title="Absent or failed in a subject">Not ranked</span>' : `<div class="rank-badge ${r.rank===1?'r1':r.rank===2?'r2':r.rank===3?'r3':''}" style="${r.rank>3?'background:var(--bg);color:var(--text-muted)':''}">
                 ${r.rank}
-              </div>
+              </div>`}
             </td>
             <td>
               <div style="font-weight:600">${r.full_name}</div>
@@ -1225,17 +1227,18 @@ async function loadToppers() {
   const examId = document.getElementById('trep-exam').value;
   if (!examId) return;
   const exam = allExams.find(e=>e.id===examId);
-  const { data: marks } = await supabase.from('exam_marks').select('student_id,student_name,class,marks_obtained,max_marks,is_absent').eq('exam_id',examId);
+  const { data: marks } = await supabase.from('exam_marks').select('student_id,student_name,class,marks_obtained,max_marks,is_absent,is_pass').eq('exam_id',examId);
   if (!marks) return;
 
   const byStudent = {};
   marks.forEach(m => {
     if (!byStudent[m.student_id]) byStudent[m.student_id]={name:m.student_name,class:m.class,total:0,max:0};
+    if (m.is_absent || m.is_pass === false) byStudent[m.student_id].notRanked = true;
     if (!m.is_absent && m.marks_obtained!==null) { byStudent[m.student_id].total+=m.marks_obtained; byStudent[m.student_id].max+=m.max_marks; }
   });
 
   const byClass = {};
-  Object.values(byStudent).forEach(s => {
+  Object.values(byStudent).filter(s => !s.notRanked).forEach(s => {
     if (!byClass[s.class]) byClass[s.class]=[];
     byClass[s.class].push({...s, pct: s.max>0?Math.round((s.total/s.max)*100):0});
   });
@@ -1463,7 +1466,7 @@ function rcRender() {
     + '</tbody></table>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;font-size:13px">'
     +   '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">Percentage</div><div style="font-size:20px;font-weight:700;color:var(--maroon)">' + rcEsc(c.pct) + '%</div></div>'
-    +   '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">Class Rank</div><div style="font-size:20px;font-weight:700;color:var(--maroon)">' + rcEsc(c.rank) + '<span style="font-size:12px;color:var(--text-muted)"> / ' + rcEsc(c.class_size) + '</span></div></div>'
+    +   '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">Class Rank</div><div style="font-size:20px;font-weight:700;color:var(--maroon)">' + (c.rank == null ? '<span style="font-size:14px">Not ranked</span>' : rcEsc(c.rank) + '<span style="font-size:12px;color:var(--text-muted)"> / ' + rcEsc(c.class_size) + '</span>') + '</div></div>'
     +   '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">Overall Grade</div><div style="font-size:20px;font-weight:700;color:' + getGradeColor(c.grade) + '">' + rcEsc(c.grade || '—') + '</div></div>'
     + '</div>'
     + '<div class="rc-remarks">'
@@ -1955,7 +1958,7 @@ function xlSummary() {
     if (!r.ok) { row.bad = true; return; }
     if (r.empty) return;
     row.filled++; row.max += s.max;
-    if (r.absent) row.anyAbsent = true; else row.tot += r.value;
+    if (r.absent) row.anyAbsent = true; else { row.tot += r.value; if (r.value < s.pass) row.anyFail = true; }
   });
   const full = [];
   students.forEach(st => {
@@ -1972,7 +1975,8 @@ function xlSummary() {
     set('xl-tot-', (Math.round(row.tot * 10) / 10) + '/' + row.max);
     set('xl-pct-', pct + '%');
     if (grd) { grd.textContent = g; grd.style.background = '#E8F5EB'; grd.style.color = getGradeColor(g); }
-    if (row.filled === subjects.length) full.push({ id: st.id, tot: row.tot }); else set('xl-rnk-', '—');
+    if (row.filled === subjects.length && !row.anyAbsent && !row.anyFail) full.push({ id: st.id, tot: row.tot });
+    else set('xl-rnk-', row.filled === subjects.length ? 'Not ranked' : '—');
   });
   const totals = full.map(f => f.tot).sort((a, b) => b - a);
   full.forEach(f => {
@@ -2126,7 +2130,7 @@ function rcAllCardHtml(c) {
     + '<td style="text-align:center">' + rcEsc(c.grade || '—') + '</td>'
     + '<td style="text-align:center;color:' + resultColor + ';font-size:11px">' + rcEsc(c.result) + '</td></tr></tbody></table>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;font-size:13px">'
-    + box('Percentage', rcEsc(c.pct) + '%') + box('Class Rank', rcEsc(c.rank) + ' / ' + rcEsc(c.class_size)) + box('Overall Grade', rcEsc(c.grade || '—'))
+    + box('Percentage', rcEsc(c.pct) + '%') + box('Class Rank', c.rank == null ? 'Not ranked' : rcEsc(c.rank) + ' / ' + rcEsc(c.class_size)) + box('Overall Grade', rcEsc(c.grade || '—'))
     + '</div>'
     + '<div class="rc-remarks"><div style="font-size:11px;font-weight:600;color:var(--maroon);margin-bottom:6px">TEACHER\'S REMARKS</div>'
     + '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap;min-height:40px">' + rcEsc(c.remarks || '') + '</div></div>'
@@ -2249,7 +2253,7 @@ function rcPrintCardHtml(c) {
     +   sum('Total Marks', e(c.total) + ' / ' + e(c.max_total))
     +   sum('Percentage', e(c.pct) + '%')
     +   sum('Overall Grade', e(c.grade || '—'))
-    +   sum('Class Rank', e(c.rank) + ' / ' + e(c.class_size))
+    +   sum('Class Rank', c.rank == null ? 'Not ranked' : e(c.rank) + ' / ' + e(c.class_size), c.rank == null ? 'rcp-sv-sm' : '')
     +   sum('Result', e(c.result), resCls + (String(c.result).length > 6 ? ' rcp-sv-sm' : ''))
     + '</tr></table>'
     // Remarks
