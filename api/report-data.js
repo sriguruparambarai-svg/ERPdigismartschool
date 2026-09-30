@@ -47,6 +47,8 @@ function isExamStaff(s) {
   if (!s || !s.sid || s.role === 'parent') return false;
   if (s.role !== 'staff') return true;
   const mods = Array.isArray(s.mods) ? s.mods : [];
+  // "Enter marks only" staff do not make report cards
+  if (mods.indexOf('exam:marks') !== -1 && mods.indexOf('exam') === -1) return false;
   return mods.some(m => String(m).split(':')[0] === 'exam');
 }
 

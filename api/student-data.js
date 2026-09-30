@@ -236,6 +236,11 @@ module.exports = async (req, res) => {
     if (q.action !== 'select' && !isOwner) {
       const allowed = WRITE_MODULES[q.table].some(function (m) { return mods.indexOf(m) !== -1; });
       if (!allowed) return res.status(403).json({ ok: false, error: 'You do not have permission to change this.' });
+      // "Enter marks only" (exam:marks): marks yes; exams, grading and publishing no
+      const rawMods = Array.isArray(session.mods) ? session.mods.map(String) : [];
+      if ((q.table === 'exams' || q.table === 'exam_grading') && rawMods.indexOf('exam:marks') !== -1 && rawMods.indexOf('exam') === -1) {
+        return res.status(403).json({ ok: false, error: 'Only the office can create exams, change grading or publish results.' });
+      }
     }
     const filters = Array.isArray(q.filters) ? q.filters : [];
     for (const f of filters) {
