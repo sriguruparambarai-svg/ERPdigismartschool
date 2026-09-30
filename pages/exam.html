@@ -53,7 +53,7 @@
       </div>
       <div class="topbar-right">
         <div style="font-size:12px;color:#9B928A" id="today-date"></div>
-        <div class="badge badge-maroon">Admin</div>
+        <div class="badge badge-maroon" id="role-badge">Admin</div>
       </div>
     </div>
 
@@ -417,6 +417,7 @@ let currentMarkData = {};
 // ── INIT ──
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('exam');
+  applyMarksOnly();
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
   document.getElementById('ef-start').value = new Date().toISOString().split('T')[0];
   document.getElementById('ef-end').value = new Date().toISOString().split('T')[0];
@@ -1291,6 +1292,36 @@ function switchTab(tab, el) {
 }
 
 document.getElementById('exam-detail-modal').addEventListener('click',function(e){if(e.target===this)this.classList.remove('open')});
+
+// ── Staff access level ──
+// Staff Logins → Exam Management → "Enter marks only": the teacher sees only
+// the Mark Entry tab. Creating exams, grading, results, report cards and
+// publishing to parents stay with the office. The server refuses those too.
+function isMarksOnly() {
+  return typeof moduleLevel === 'function' && moduleLevel('exam') === 'marks';
+}
+function applyMarksOnly() {
+  const badge = document.getElementById('role-badge');
+  if (badge && typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff') badge.textContent = 'Staff';
+  if (!isMarksOnly()) return;
+  const stats = document.querySelector('.stats-row');
+  if (stats) stats.style.display = 'none';
+  let marksTab = null;
+  document.querySelectorAll('.tab-bar .tab').forEach(t => {
+    if (/switchTab\('marks'/.test(t.getAttribute('onclick') || '')) marksTab = t;
+    else t.style.display = 'none';
+  });
+  // kept on the page (the exam list feeds the Mark Entry dropdown) but never shown
+  ['exams','results','reportcard','reports','grading'].forEach(t => {
+    const el = document.getElementById('tab-' + t);
+    if (el) el.style.setProperty('display', 'none', 'important');
+  });
+  const modal = document.getElementById('exam-detail-modal');
+  if (modal) modal.style.setProperty('display', 'none', 'important');
+  const tb = document.getElementById('tab-marks');
+  if (tb) tb.classList.remove('hidden');
+  if (marksTab) marksTab.classList.add('active');
+}
 </script>
 <script>
 // ══ REPORT CARD v2 — school name/logo, saved remarks, AI suggest ══
