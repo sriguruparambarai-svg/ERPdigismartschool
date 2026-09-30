@@ -292,6 +292,18 @@
             <button class="btn btn-secondary no-print" onclick="rcPrint()">🖨 Print</button>
           </div>
         </div>
+        <!-- ══ WHOLE CLASS: AI remarks + print all ══ -->
+        <div class="card no-print" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--maroon)">📚 Whole class</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:3px">Choose Exam and Class above (no student needed).</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="rcAllRemarks()">✨ Write remarks for all</button>
+            <button class="btn btn-gold btn-sm" onclick="rcAllPrint()">🖨 Print all report cards</button>
+          </div>
+        </div>
+        <div id="rc-all-area"></div>
         <div id="report-card-area">
           <div class="empty-state card"><div class="icon">📄</div><p>Select exam, class and student to generate report card</p></div>
         </div>
@@ -1969,6 +1981,209 @@ function xlSummary() {
       : String(rank);
   });
 }
+</script>
+<script>
+// ══ WHOLE CLASS — AI remarks for everyone + Print all report cards ══
+// Uses the same report card server as the single card (/api/report-data),
+// so marks, %, grade, rank and remarks are exactly what parents see.
+let rcAll = { drafts: [], cards: [], busy: false };
+
+function rcAllPick() {
+  const examId = document.getElementById('rc-exam').value;
+  const cls = document.getElementById('rc-class').value;
+  if (!examId || !cls) { showToast('Please choose Exam and Class first.', 'error'); return null; }
+  return { examId, cls };
+}
+async function rcAllStudents(cls) {
+  const { data, error } = await supabase.from('students').select('id,full_name,admission_no,roll_no')
+    .eq('school_id', SCHOOL_ID).eq('class', cls).eq('status', 'active').order('full_name');
+  if (error) { showToast('Could not load students: ' + error.message, 'error'); return null; }
+  if (!data || !data.length) { showToast('No active students in this class.', 'error'); return null; }
+  return data;
+}
+// Run jobs a few at a time so a class of 40 doesn't take forever
+async function rcAllRun(items, worker, onStep) {
+  let i = 0, done = 0;
+  const next = async () => {
+    while (i < items.length) {
+      const k = i++;
+      await worker(items[k], k);
+      done++; onStep(done, items.length);
+    }
+  };
+  await Promise.all([next(), next(), next(), next()]);
+}
+function rcAllMsg(html) { document.getElementById('rc-all-area').innerHTML = html; }
+function rcAllProgress(label, n, total) {
+  rcAllMsg(`<div class="card" style="text-align:center;padding:24px">
+    <div style="font-weight:600;color:var(--maroon);margin-bottom:10px">${rcEsc(label)} — ${n} of ${total}</div>
+    <div style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden;max-width:420px;margin:0 auto">
+      <div style="height:100%;width:${Math.round(n / total * 100)}%;background:var(--maroon)"></div></div></div>`);
+}
+
+// ── 1. AI remarks for the whole class ──
+async function rcAllRemarks() {
+  if (rcAll.busy) return;
+  const pick = rcAllPick(); if (!pick) return;
+  const students = await rcAllStudents(pick.cls); if (!students) return;
+  const st = await reportApi('remarks_status', { exam_id: pick.examId });
+  if (!st.ok) { showToast('Could not check remarks: ' + st.error, 'error'); return; }
+  const has = new Set(st.student_ids || []);
+  const todo = students.filter(s => !has.has(String(s.id)));
+  if (!todo.length) { showToast('Every student in this class already has saved remarks.', 'success'); return; }
+  if (!confirm('Write AI remarks for ' + todo.length + ' student(s) without remarks?\n'
+    + (students.length - todo.length) + ' already have remarks and will be left as they are.\n\nYou will check them before saving.')) return;
+
+  rcAll.busy = true;
+  const drafts = [], skipped = [];
+  await rcAllRun(todo, async (s) => {
+    const out = await reportApi('ai_suggest', { exam_id: pick.examId, student_id: s.id });
+    if (out.ok) drafts.push({ id: s.id, name: s.full_name, adm: s.admission_no, text: out.draft });
+    else skipped.push(s.full_name + ' — ' + out.error);
+  }, (n, t) => rcAllProgress('Writing remarks', n, t));
+  rcAll.busy = false;
+  drafts.sort((a, b) => a.name.localeCompare(b.name));
+  rcAll.drafts = drafts;
+  rcAll.examId = pick.examId;
+  rcAllShowDrafts(skipped);
+}
+function rcAllShowDrafts(skipped) {
+  const d = rcAll.drafts;
+  const warn = skipped.length
+    ? `<div style="background:#FFF8E6;border:1px solid #EDD9A3;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px">⚠️ <b>Not written:</b> ${skipped.map(rcEsc).join('; ')}</div>` : '';
+  if (!d.length) { rcAllMsg('<div class="card">' + warn + '<p>No drafts were written.</p></div>'); return; }
+  rcAllMsg(`<div class="card">
+    <div style="font-weight:700;color:var(--maroon);margin-bottom:4px">✨ AI remarks — please check before saving</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Edit any remark. Nothing is saved until you press Save all.</div>
+    ${warn}
+    ${d.map((x, i) => `<div style="margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i + 1}. ${rcEsc(x.name)} <span style="color:var(--text-muted);font-weight:400">(${rcEsc(x.adm)})</span></div>
+        <textarea id="rc-all-rem-${i}" maxlength="600" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px">${rcEsc(x.text)}</textarea>
+      </div>`).join('')}
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-secondary" onclick="rcAllCancel()">Cancel</button>
+      <button class="btn btn-gold" id="rc-all-save" onclick="rcAllSaveRemarks()">💾 Save all ${d.length} remarks</button>
+    </div></div>`);
+}
+function rcAllCancel() {
+  if (rcAll.drafts.length && !confirm('Close without saving these remarks?')) return;
+  rcAll.drafts = []; rcAllMsg('');
+}
+async function rcAllSaveRemarks() {
+  if (rcAll.busy) return;
+  const d = rcAll.drafts;
+  const btn = document.getElementById('rc-all-save');
+  d.forEach((x, i) => { x.text = (document.getElementById('rc-all-rem-' + i).value || '').trim(); });
+  const toSave = d.filter(x => x.text);
+  if (!toSave.length) { showToast('All boxes are empty — nothing to save.', 'error'); return; }
+  rcAll.busy = true; btn.disabled = true; btn.textContent = 'Saving...';
+  const failed = [];
+  await rcAllRun(toSave, async (x) => {
+    const out = await reportApi('save_remarks', { exam_id: rcAll.examId, student_id: x.id, remarks: x.text });
+    if (!out.ok) failed.push(x.name + ' — ' + out.error);
+  }, (n, t) => { btn.textContent = 'Saving ' + n + ' of ' + t + '...'; });
+  rcAll.busy = false;
+  if (failed.length) {
+    btn.disabled = false; btn.textContent = '💾 Save all remarks';
+    showToast('Saved ' + (toSave.length - failed.length) + '. NOT saved: ' + failed.join('; '), 'error');
+    return;
+  }
+  showToast('Remarks saved for ' + toSave.length + ' students!', 'success');
+  rcAll.drafts = []; rcAllMsg('');
+  if (typeof rcMarkRemarks === 'function') rcMarkRemarks();
+}
+
+// ── 2. Print all report cards ──
+function rcAllCardHtml(c) {
+  const rows = c.rows.map(r => {
+    const col = r.status === 'Absent' ? '#8B5E00' : (r.status === 'Pass' ? '#2D7A3A' : '#A32D2D');
+    return '<tr><td style="font-weight:500">' + rcEsc(r.subject) + '</td>'
+      + '<td style="text-align:center">' + rcEsc(r.max) + '</td>'
+      + '<td style="text-align:center;font-weight:700;color:' + col + '">' + (r.marks === null ? 'AB' : rcEsc(r.marks)) + '</td>'
+      + '<td style="text-align:center">' + rcEsc(r.grade || '—') + '</td>'
+      + '<td style="text-align:center;color:' + col + '">' + rcEsc(r.status) + '</td></tr>';
+  }).join('');
+  const resultColor = c.result === 'PASS' ? '#2D7A3A' : (c.result === 'FAIL' ? '#A32D2D' : '#8B5E00');
+  const logo = c.logo_url ? '<img src="' + rcEsc(c.logo_url) + '" alt="" style="width:64px;height:64px;object-fit:contain;flex-shrink:0" onerror="this.style.display=\'none\'">' : '';
+  const box = (l, v) => '<div style="text-align:center;background:var(--sandal-light);border-radius:8px;padding:10px"><div style="color:var(--text-muted);font-size:11px">' + l + '</div><div style="font-size:20px;font-weight:700;color:var(--maroon)">' + v + '</div></div>';
+  return '<div class="report-card rc-all-card">'
+    + '<div class="rc-header"><div style="display:flex;align-items:center;justify-content:center;gap:14px">' + logo
+    + '<div><div style="font-size:20px;font-weight:700;color:var(--maroon)">' + rcEsc(c.school.name || 'School') + '</div>'
+    + (c.school.address ? '<div style="font-size:11px;color:var(--text-muted)">' + rcEsc(c.school.address) + '</div>' : '')
+    + (c.school.contact ? '<div style="font-size:11px;color:var(--text-muted)">' + rcEsc(c.school.contact) + '</div>' : '')
+    + '</div></div>'
+    + '<div style="font-size:13px;font-weight:600;color:var(--maroon);margin-top:10px;letter-spacing:.5px">PROGRESS REPORT — ' + rcEsc(c.exam.name) + (c.exam.academic_year ? ' · ' + rcEsc(c.exam.academic_year) : '') + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;font-size:12px;text-align:left">'
+    + '<div><b>Student:</b> ' + rcEsc(c.student.name) + '</div><div><b>Adm No:</b> ' + rcEsc(c.student.admission_no || '—') + '</div>'
+    + '<div><b>Class:</b> ' + rcEsc(c.student.class_text) + '</div><div><b>Roll No:</b> ' + rcEsc(c.student.roll_no || '—') + '</div>'
+    + '<div style="grid-column:1 / -1"><b>Father:</b> ' + rcEsc(c.student.father_name || '—') + '</div></div></div>'
+    + '<table class="rc-table"><thead><tr><th>Subject</th><th style="text-align:center">Max Marks</th><th style="text-align:center">Marks Obtained</th><th style="text-align:center">Grade</th><th style="text-align:center">Result</th></tr></thead><tbody>'
+    + rows
+    + '<tr style="background:var(--sandal-light);font-weight:700"><td>Total</td><td style="text-align:center">' + rcEsc(c.max_total) + '</td>'
+    + '<td style="text-align:center;color:var(--maroon);font-size:15px">' + rcEsc(c.total) + '</td>'
+    + '<td style="text-align:center">' + rcEsc(c.grade || '—') + '</td>'
+    + '<td style="text-align:center;color:' + resultColor + ';font-size:11px">' + rcEsc(c.result) + '</td></tr></tbody></table>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;font-size:13px">'
+    + box('Percentage', rcEsc(c.pct) + '%') + box('Class Rank', rcEsc(c.rank) + ' / ' + rcEsc(c.class_size)) + box('Overall Grade', rcEsc(c.grade || '—'))
+    + '</div>'
+    + '<div class="rc-remarks"><div style="font-size:11px;font-weight:600;color:var(--maroon);margin-bottom:6px">TEACHER\'S REMARKS</div>'
+    + '<div style="font-size:13px;line-height:1.6;white-space:pre-wrap;min-height:40px">' + rcEsc(c.remarks || '') + '</div></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:28px;font-size:12px">'
+    + '<div style="text-align:center;border-top:1px solid var(--border);padding-top:8px">Class Teacher\'s Signature</div>'
+    + '<div style="text-align:center;border-top:1px solid var(--border);padding-top:8px">Principal\'s Signature</div></div>'
+    + '</div>';
+}
+async function rcAllPrint() {
+  if (rcAll.busy) return;
+  if (rcAll.drafts.length && !confirm('The AI remarks on screen are not saved, so they will not print. Continue anyway?')) return;
+  const pick = rcAllPick(); if (!pick) return;
+  const students = await rcAllStudents(pick.cls); if (!students) return;
+  rcAll.busy = true; rcAll.drafts = [];
+  const cards = [], skipped = [];
+  await rcAllRun(students, async (s, k) => {
+    const out = await reportApi('card', { exam_id: pick.examId, student_id: s.id });
+    if (out.ok) cards[k] = out.card; else skipped.push(s.full_name + ' — ' + out.error);
+  }, (n, t) => rcAllProgress('Preparing report cards', n, t));
+  rcAll.busy = false;
+  rcAll.cards = cards.filter(Boolean);   // keeps the class list's A–Z order
+  if (!rcAll.cards.length) {
+    rcAllMsg('<div class="card">⚠️ No report cards could be made. ' + skipped.map(rcEsc).join('; ') + '</div>'); return;
+  }
+  const noRem = rcAll.cards.filter(c => !c.remarks).length;
+  const note = [];
+  if (skipped.length) note.push('<b>Left out:</b> ' + skipped.map(rcEsc).join('; '));
+  if (noRem) note.push('<b>' + noRem + ' card(s) have no remarks yet</b> — use ✨ Write remarks for all first if you want them.');
+  rcAllMsg(`<div class="card rc-no-print">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div style="font-weight:700;color:var(--maroon)">🖨 ${rcAll.cards.length} report cards ready</div>
+        <div style="display:flex;gap:8px"><button class="btn btn-secondary" onclick="rcAllMsg('')">Close</button>
+        <button class="btn btn-gold" onclick="rcAllDoPrint()">🖨 Print all / Save PDF</button></div>
+      </div>
+      ${note.length ? '<div style="background:#FFF8E6;border:1px solid #EDD9A3;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:10px">⚠️ ' + note.join('<br>') + '</div>' : ''}
+    </div>
+    <div id="rc-all-print">${rcAll.cards.map(rcAllCardHtml).join('')}</div>`);
+}
+function rcAllDoPrint() {
+  document.body.classList.add('rc-printing-all');
+  const done = () => { document.body.classList.remove('rc-printing-all'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+  setTimeout(done, 1500);
+}
+(function () {
+  const st = document.createElement('style');
+  st.textContent = '#rc-all-print .rc-all-card{margin:16px auto}'
+    + '@media print{'
+    + 'body.rc-printing-all *{visibility:hidden}'
+    + 'body.rc-printing-all #rc-all-print,body.rc-printing-all #rc-all-print *{visibility:visible}'
+    + 'body.rc-printing-all #rc-all-print{position:absolute;left:0;top:0;width:100%}'
+    + 'body.rc-printing-all .rc-all-card{max-width:none;border:none;box-shadow:none;margin:0;padding:0;page-break-after:always;break-after:page}'
+    + 'body.rc-printing-all .rc-all-card:last-child{page-break-after:auto;break-after:auto}'
+    + '@page{size:A4;margin:14mm}'
+    + '}';
+  document.head.appendChild(st);
+})();
+
 </script>
 </body>
 </html>
