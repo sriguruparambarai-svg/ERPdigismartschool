@@ -1571,7 +1571,7 @@ function xlPick() {
     const max = s.max_marks || 100;
     return { name: s.name, max, pass: s.pass_marks || Math.round(max * passPercent / 100) };
   });
-  return { examId, cls, exam, subjects };
+  return { examId, cls, exam, subjects: xlFilterSubs(cls, subjects), allSubjects: subjects };
 }
 
 async function xlStudents(cls) {
@@ -1583,6 +1583,7 @@ async function xlStudents(cls) {
 }
 
 async function xlDownload() {
+  await xlLoadClassSubs();
   const pick = xlPick(); if (!pick) return;
   const students = await xlStudents(pick.cls); if (!students) return;
   // Fill in marks already saved, so the teacher can see and add to them
@@ -1805,6 +1806,7 @@ async function xlSave() {
 // All active students of the class appear automatically (no typing names),
 // with every subject of the exam as a column. Marks already saved are filled in.
 async function xlTypeIn() {
+  await xlLoadClassSubs();
   const pick = xlPick(); if (!pick) return;
   const students = await xlStudents(pick.cls); if (!students) return;
   const { data: saved, error } = await supabase.from('exam_marks').select('student_id,subject,marks_obtained,is_absent')
@@ -1817,6 +1819,7 @@ async function xlTypeIn() {
   });
   xlData = { pick, students, subjects: pick.subjects };
   xlRender(cells, [], [], []);
+  xlChips();
   const first = document.querySelector('.xl-cell');
   if (first) first.focus();
 }
@@ -1829,6 +1832,92 @@ function xlKey(e, inp) {
   const next = all[all.indexOf(inp) + 1];
   if (next) { next.focus(); next.select(); }
 }
+</script>
+<script>
+// ══ SUBJECTS PER CLASS — saved for the whole school ══
+// Table: exam_class_subjects (school_id, class, subjects[]).
+// Office/admin tick the subjects each class studies (e.g. no Science for LKG).
+// The "all subjects" grid and the Excel file then show only those.
+// Unticked subjects are simply not shown and never saved.
+// "Enter marks only" staff see the office's choice but cannot change it.
+let xlClassSubs = {};        // class -> [subject names]
+let xlClassSubsError = '';
+
+async function xlLoadClassSubs() {
+  try {
+    const { data, error } = await supabase.from('exam_class_subjects').select('class,subjects').eq('school_id', SCHOOL_ID);
+    if (error) { xlClassSubsError = error.message; console.warn('Class subjects not loaded:', error.message); return; }
+    xlClassSubsError = '';
+    xlClassSubs = {};
+    (data || []).forEach(r => { if (Array.isArray(r.subjects)) xlClassSubs[r.class] = r.subjects; });
+  } catch (e) { xlClassSubsError = e.message; console.warn('Class subjects not loaded:', e.message); }
+}
+document.addEventListener('DOMContentLoaded', xlLoadClassSubs);
+
+// Which of the exam's subjects this class uses (all of them if nothing saved yet)
+function xlFilterSubs(cls, subjects) {
+  const saved = xlClassSubs[cls];
+  if (!saved || !saved.length) return subjects;
+  const keep = subjects.filter(s => saved.includes(s.name));
+  return keep.length ? keep : subjects;
+}
+
+function xlChips() {
+  if (!xlData) return;
+  const all = xlData.pick.allSubjects || xlData.subjects;
+  const on = xlData.subjects.map(s => s.name);
+  const canEdit = !isMarksOnly();
+  const box = document.createElement('div');
+  box.id = 'xl-chips';
+  box.style.cssText = 'margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border)';
+  box.innerHTML = `<div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--maroon);margin-bottom:6px">
+      SUBJECTS FOR ${xlEsc(xlData.pick.cls).toUpperCase()}
+      <span style="font-weight:400;letter-spacing:0;color:var(--text-muted);margin-left:6px">${canEdit ? 'Tap to add or remove — saved for all staff' : 'Set by the office'}</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${all.map(s => {
+        const ticked = on.includes(s.name);
+        return `<button type="button" ${canEdit ? '' : 'disabled'} onclick="xlToggleSub('${xlEsc(s.name).replace(/'/g, '&#39;')}')"
+          style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:${canEdit ? 'pointer' : 'default'};
+          border:1.5px solid ${ticked ? 'var(--maroon)' : 'var(--border)'};
+          background:${ticked ? 'var(--sandal-light, #F7EBD9)' : 'var(--white, #fff)'};
+          color:${ticked ? 'var(--maroon)' : 'var(--text-muted)'}">${ticked ? '✓ ' : ''}${xlEsc(s.name)}</button>`;
+      }).join('')}
+    </div>`;
+  const old = document.getElementById('xl-chips'); if (old) old.remove();
+  const c = document.getElementById('xl-content');
+  c.insertBefore(box, c.firstChild);
+}
+
+async function xlToggleSub(name) {
+  if (!xlData || isMarksOnly()) return;
+  const all = xlData.pick.allSubjects || xlData.subjects;
+  let on = xlData.subjects.map(s => s.name);
+  if (on.includes(name)) {
+    if (on.length === 1) { showToast('At least one subject must stay.', 'error'); return; }
+    on = on.filter(n => n !== name);
+  } else on.push(name);
+  on = all.map(s => s.name).filter(n => on.includes(n));   // keep the exam's order
+
+  // Save for the whole school first; only change the screen if it saved
+  const { error } = await supabase.from('exam_class_subjects').upsert(
+    { school_id: SCHOOL_ID, class: xlData.pick.cls, subjects: on, updated_at: new Date().toISOString() },
+    { onConflict: 'school_id,class' });
+  if (error) { showToast('Could not save subject choice: ' + error.message, 'error'); return; }
+  xlClassSubs[xlData.pick.cls] = on;
+
+  // Keep whatever was already typed in the boxes
+  const cells = {};
+  document.querySelectorAll('.xl-cell').forEach(inp => {
+    const s = xlData.subjects[+inp.dataset.sub];
+    if (s && inp.value.trim() !== '') cells[inp.dataset.sid + '|' + s.name] = inp.value.trim();
+  });
+  xlData.subjects = all.filter(s => on.includes(s.name));
+  xlRender(cells, [], [], []);
+  xlChips();
+  showToast('Subjects for ' + xlData.pick.cls + ' saved.', 'success');
+}
+
 </script>
 </body>
 </html>
