@@ -230,6 +230,8 @@
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-gold btn-sm" onclick="xlTypeIn()">✏️ Type all subjects</button>
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ph-file').click()">📷 Read photo</button>
+              <input type="file" id="ph-file" accept="image/*" multiple style="display:none" onchange="phRead(this)">
               <button class="btn btn-secondary btn-sm" onclick="xlDownload()">⬇ Download Excel</button>
               <button class="btn btn-primary btn-sm" onclick="document.getElementById('xl-file').click()">📤 Upload Excel</button>
               <input type="file" id="xl-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="xlUpload(this)">
@@ -2343,6 +2345,100 @@ function rcPrintCardHtml(c) {
   document.body.appendChild(holder);
 })();
 
+</script>
+<script>
+// ══ READ MARKSHEET PHOTO — AI reads the handwritten sheet, teacher checks ══
+// Up to 3 photos (pages). Marks land in the same all-subjects grid as Excel,
+// so nothing is saved until the teacher checks and presses Save all subjects.
+function phShrink(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 2000;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > MAX) { const k = MAX / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, w, h); cx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not open ' + file.name + ' — please use a JPG or PNG photo.')); };
+    img.src = url;
+  });
+}
+
+async function phRead(input) {
+  const files = Array.from(input.files || []).slice(0, 3);
+  input.value = '';
+  if (!files.length) return;
+  if (xlData && document.querySelector('.xl-cell') && !confirm('This will replace the marks table on screen (nothing saved is lost). Continue?')) return;
+  const pick = xlPick(); if (!pick) return;
+  const students = await xlStudents(pick.cls); if (!students) return;
+  const box = document.getElementById('xl-content');
+  box.innerHTML = '<div style="text-align:center;padding:24px"><div style="font-weight:600;color:var(--maroon)">📷 AI is reading the marksheet…</div>'
+    + '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">This can take up to a minute. Please keep this page open.</div></div>';
+  let images;
+  try { images = await Promise.all(files.map(async f => ({ media_type: 'image/jpeg', data: await phShrink(f) }))); }
+  catch (e) { box.innerHTML = ''; showToast(e.message, 'error'); return; }
+
+  let out;
+  try {
+    const res = await fetch('/api/report-data', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: sessionStorage.getItem('digismart_session_token') || '', action: 'read_marksheet',
+        exam_id: pick.examId, class: pick.cls, subjects: pick.subjects.map(s => s.name), images
+      })
+    });
+    const raw = await res.text();
+    try { out = JSON.parse(raw); }
+    catch (e) {
+      out = { ok: false, error: res.status === 413 ? 'The photo is too large. Please try one page at a time.'
+        : (res.status === 504 ? 'The AI took too long. Please try again, or one page at a time.' : 'Server error ' + res.status + ': ' + raw.slice(0, 150)) };
+    }
+    if (res.status === 401) out = { ok: false, error: 'Your login has expired. Please log out and log in again.' };
+  } catch (e) { out = { ok: false, error: 'Network error — please check your internet. (' + (e.message || e) + ')' }; }
+  if (!out.ok) { box.innerHTML = ''; showToast(out.error || 'Could not read the photo.', 'error'); return; }
+
+  // Put what the AI read into the grid
+  const byAdm = {};
+  students.forEach(s => { byAdm[xlNorm(s.admission_no)] = s; });
+  const cells = {}, notFound = [], seen = {}, admToId = {};
+  (out.rows || []).forEach((r, i) => {
+    const st = r.adm_no ? byAdm[xlNorm(r.adm_no)] : null;
+    if (!st || seen[st.id]) {
+      notFound.push((r.written_name || 'Row ' + (i + 1)) + (st ? ' (appears twice)' : ''));
+      return;
+    }
+    seen[st.id] = true; admToId[xlNorm(r.adm_no)] = st.id;
+    pick.subjects.forEach(s => {
+      const v = r.marks ? r.marks[s.name] : '';
+      const t = String(v == null ? '' : v).trim();
+      if (t !== '') cells[st.id + '|' + s.name] = t;
+    });
+  });
+  const missing = students.filter(s => !seen[s.id]).map(s => s.full_name);
+  xlData = { pick, students, subjects: pick.subjects };
+  xlRender(cells, notFound.map(n => 'Name on sheet: ' + n), missing, []);
+  xlChips();
+
+  // Gold outline on marks the AI was not sure about
+  let unsureCount = 0;
+  (out.unsure || []).forEach(u => {
+    const sid = admToId[xlNorm(u.adm_no)];
+    const j = pick.subjects.findIndex(s => s.name === u.subject);
+    if (!sid || j < 0) return;
+    const inp = document.querySelector('.xl-cell[data-sid="' + sid + '"][data-sub="' + j + '"]');
+    if (inp && !inp.style.outline) { inp.style.outline = '2px solid #C9A84C'; inp.title = 'AI was not sure — please check against the sheet'; unsureCount++; }
+  });
+  const head = document.createElement('div');
+  head.style.cssText = 'background:#F5E6C8;border:1px solid #C9A84C;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px';
+  head.innerHTML = '📷 <b>Read from the photo — please check every mark against the sheet before saving.</b>'
+    + (unsureCount ? '<br><span style="color:#8B5E00">' + unsureCount + ' mark(s) with a <b>gold border</b> were hard to read.</span>' : '')
+    + (out.note ? '<br>AI note: ' + xlEsc(out.note) : '');
+  box.insertBefore(head, box.firstChild);
+}
 </script>
 </body>
 </html>
