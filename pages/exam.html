@@ -306,7 +306,7 @@
             <button class="btn btn-gold btn-sm" onclick="rcAllPrint()">🖨 Print all report cards</button>
             <button class="btn btn-secondary btn-sm" onclick="rcSummaryExcel()">📊 Summary Excel</button>
             <button class="btn btn-secondary btn-sm" onclick="rcWaList()">📱 WhatsApp list</button>
-            <button class="btn btn-secondary btn-sm" onclick="rcSignOpen()">✍️ Signature names</button>
+            <button class="btn btn-secondary btn-sm" onclick="rcSignOpen()">⚙️ Report card settings</button>
             <label style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px">Report date
               <input type="date" id="rc-report-date" class="form-control" style="width:150px;padding:4px 8px;font-size:12px"></label>
           </div>
@@ -2217,6 +2217,7 @@ function rcpDate() {
 }
 function rcPrintCardHtml(c) {
   const e = rcEsc;
+  const sh = Object.assign({ marks: true, grade: true, status: true, result: true, pct: true, rank: true, attendance: true, remarks: true }, c.show || {});
   const resCls = c.result === 'PASS' ? 'rcp-pass' : (c.result === 'FAIL' ? 'rcp-fail' : 'rcp-ab');
   const logo = c.logo_url
     ? '<img class="rcp-logo" src="' + e(c.logo_url) + '" alt="" onerror="this.style.visibility=\'hidden\'">'
@@ -2224,10 +2225,10 @@ function rcPrintCardHtml(c) {
   const rows = c.rows.map((r, i) => {
     const st = r.status === 'Absent' ? 'rcp-ab' : (r.status === 'Pass' ? 'rcp-pass' : 'rcp-fail');
     return '<tr><td class="rcp-c">' + (i + 1) + '</td><td>' + e(r.subject) + '</td>'
-      + '<td class="rcp-c">' + e(r.max) + '</td>'
-      + '<td class="rcp-c rcp-b ' + st + '">' + (r.marks === null ? 'AB' : e(r.marks)) + '</td>'
-      + '<td class="rcp-c rcp-b">' + e(r.grade || '—') + '</td>'
-      + '<td class="rcp-c ' + st + '">' + e(r.status) + '</td></tr>';
+      + (sh.marks ? '<td class="rcp-c">' + e(r.max) + '</td>'
+        + '<td class="rcp-c rcp-b ' + (sh.status ? st : '') + '">' + (r.marks === null ? 'AB' : e(r.marks)) + '</td>' : '')
+      + (sh.grade ? '<td class="rcp-c rcp-b">' + (r.marks === null && !sh.marks ? 'AB' : e(r.grade || '—')) + '</td>' : '')
+      + (sh.status ? '<td class="rcp-c ' + st + '">' + e(r.status) + '</td>' : '') + '</tr>';
   }).join('');
   const info = (l, v) => '<td class="rcp-il">' + l + '</td><td class="rcp-iv">' + e(v || '—') + '</td>';
   const sum = (l, v, cls) => '<td><div class="rcp-sl">' + l + '</div><div class="rcp-sv ' + (cls || '') + '">' + v + '</div></td>';
@@ -2256,30 +2257,33 @@ function rcPrintCardHtml(c) {
     + '</table>'
     // Marks
     + '<table class="rcp-marks"><thead><tr>'
-    +   '<th class="rcp-c" style="width:44px">S.No</th><th>Subject</th><th class="rcp-c">Max Marks</th>'
-    +   '<th class="rcp-c">Marks Obtained</th><th class="rcp-c">Grade</th><th class="rcp-c">Result</th>'
+    +   '<th class="rcp-c" style="width:44px">S.No</th><th>Subject</th>'
+    +   (sh.marks ? '<th class="rcp-c">Max Marks</th><th class="rcp-c">Marks Obtained</th>' : '')
+    +   (sh.grade ? '<th class="rcp-c">Grade</th>' : '') + (sh.status ? '<th class="rcp-c">Result</th>' : '')
     + '</tr></thead><tbody>' + rows
-    +   '<tr class="rcp-tot"><td></td><td>TOTAL</td><td class="rcp-c">' + e(c.max_total) + '</td>'
-    +   '<td class="rcp-c">' + e(c.total) + '</td><td class="rcp-c">' + e(c.grade || '—') + '</td>'
-    +   '<td class="rcp-c ' + resCls + '">' + e(c.result) + '</td></tr>'
+    +   ((sh.marks || sh.grade || sh.status) ? '<tr class="rcp-tot"><td></td><td>' + (sh.marks ? 'TOTAL' : 'OVERALL') + '</td>'
+    +     (sh.marks ? '<td class="rcp-c">' + e(c.max_total) + '</td><td class="rcp-c">' + e(c.total) + '</td>' : '')
+    +     (sh.grade ? '<td class="rcp-c">' + e(c.grade || '—') + '</td>' : '')
+    +     (sh.status ? '<td class="rcp-c ' + (sh.result ? resCls : '') + '">' + (sh.result ? e(c.result) : '') + '</td>' : '') + '</tr>' : '')
     + '</tbody></table>'
     // Summary
-    + '<table class="rcp-sum"><tr>'
-    +   sum('Total Marks', e(c.total) + ' / ' + e(c.max_total))
-    +   sum('Percentage', e(c.pct) + '%')
-    +   sum('Overall Grade', e(c.grade || '—'))
-    +   sum('Class Rank', c.rank == null ? 'Not ranked' : e(c.rank) + ' / ' + e(c.class_size), c.rank == null ? 'rcp-sv-sm' : '')
-    +   sum('Result', e(c.result), resCls + (String(c.result).length > 6 ? ' rcp-sv-sm' : ''))
-    + '</tr></table>'
+    + (function () {
+        const cells = (sh.marks ? sum('Total Marks', e(c.total) + ' / ' + e(c.max_total)) : '')
+          + (sh.pct ? sum('Percentage', e(c.pct) + '%') : '')
+          + (sh.grade ? sum('Overall Grade', e(c.grade || '—')) : '')
+          + (sh.rank ? sum('Class Rank', c.rank == null ? 'Not ranked' : e(c.rank) + ' / ' + e(c.class_size), c.rank == null ? 'rcp-sv-sm' : '') : '')
+          + (sh.result ? sum('Result', e(c.result), resCls + (String(c.result).length > 6 ? ' rcp-sv-sm' : '')) : '');
+        return cells ? '<table class="rcp-sum"><tr>' + cells + '</tr></table>' : '';
+      })()
     // Remarks
-    + '<table class="rcp-att"><tr>'
+    + (!sh.attendance ? '' : '<table class="rcp-att"><tr>'
     +   '<td class="rcp-att-h">ATTENDANCE<div>June to exam</div></td>'
     +   '<td>Working Days<b>' + (c.attendance ? e(c.attendance.working_days) : '—') + '</b></td>'
     +   '<td>Days Present<b>' + (c.attendance ? e(c.attendance.present) : '—') + '</b></td>'
     +   '<td>Attendance %<b>' + (c.attendance ? e(c.attendance.pct) + '%' : '—') + '</b></td>'
-    + '</tr></table>'
-    + '<div class="rcp-rem"><div class="rcp-rem-h">CLASS TEACHER\'S REMARKS</div>'
-    +   '<div class="rcp-rem-t">' + e(c.remarks || '') + '</div></div>'
+    + '</tr></table>')
+    + (!sh.remarks ? '' : '<div class="rcp-rem"><div class="rcp-rem-h">CLASS TEACHER\'S REMARKS</div>'
+    +   '<div class="rcp-rem-t">' + e(c.remarks || '') + '</div></div>')
     // Signatures — four equal columns, lines all on one level, name under each
     + (function () {
         const sg = c.signatures || {};
@@ -2504,16 +2508,20 @@ function rcWaNumber(p) {
   return n.length >= 11 ? n : '';
 }
 function rcWaText(c) {
-  const lines = c.rows.map(r => '• ' + r.subject + ': ' + (r.marks === null ? 'Absent' : r.marks + '/' + r.max));
-  const a = c.attendance;
+  const sh = Object.assign({ marks: true, grade: true, status: true, result: true, pct: true, rank: true, attendance: true, remarks: true }, c.show || {});
+  const lines = c.rows.map(r => '• ' + r.subject + ': ' + (r.marks === null ? 'Absent'
+    : [sh.marks ? r.marks + '/' + r.max : '', sh.grade ? 'Grade ' + (r.grade || '—') : '', sh.status ? r.status : ''].filter(Boolean).join('  ')));
+  const a = sh.attendance ? c.attendance : null;
+  const summary = [sh.marks ? 'Total: ' + c.total + '/' + c.max_total : '', sh.pct ? c.pct + '%' : ''].filter(Boolean).join('  ');
+  const line2 = [sh.grade ? 'Grade: ' + (c.grade || '—') : '', sh.rank ? 'Rank: ' + (c.rank == null ? 'Not ranked' : c.rank + '/' + c.class_size) : ''].filter(Boolean).join('   ');
   return 'Dear Parent,\n\n*' + c.school.name + '*\n' + c.exam.name + (c.exam.academic_year ? ' (' + c.exam.academic_year + ')' : '')
     + ' — result of *' + c.student.name + '* (' + c.student.class_text + ')\n\n'
     + lines.join('\n') + '\n\n'
-    + 'Total: ' + c.total + '/' + c.max_total + ' (' + c.pct + '%)\n'
-    + 'Grade: ' + (c.grade || '—') + '   Rank: ' + (c.rank == null ? 'Not ranked' : c.rank + '/' + c.class_size) + '\n'
-    + 'Result: ' + c.result + '\n'
+    + (summary ? summary + '\n' : '')
+    + (line2 ? line2 + '\n' : '')
+    + (sh.result ? 'Result: ' + c.result + '\n' : '')
     + (a ? 'Attendance: ' + a.present + '/' + a.working_days + ' days (' + a.pct + '%)\n' : '')
-    + (c.remarks ? '\nRemarks: ' + c.remarks + '\n' : '')
+    + (sh.remarks && c.remarks ? '\nRemarks: ' + c.remarks + '\n' : '')
     + '\nFull report card: ' + window.location.origin + '/parent/index.html?school=' + SCHOOL_ID;
 }
 function rcWaOpen(c) {
@@ -2571,12 +2579,18 @@ function rcWaSend(i) {
 let rcSign = null;
 async function rcSignOpen() {
   const cls = document.getElementById('rc-class').value;
-  const { data, error } = await supabase.from('report_card_settings').select('correspondent_name,class_teachers').eq('school_id', SCHOOL_ID).maybeSingle();
+  const { data, error } = await supabase.from('report_card_settings').select('correspondent_name,class_teachers,show_items').eq('school_id', SCHOOL_ID).maybeSingle();
   if (error) { showToast('Could not load signature names: ' + error.message + ' — has the database step been run?', 'error'); return; }
   const { data: ic } = await supabase.from('icard_settings').select('principal_name').eq('school_id', SCHOOL_ID).maybeSingle();
-  rcSign = { correspondent_name: (data && data.correspondent_name) || '', class_teachers: (data && data.class_teachers) || {} };
+  rcSign = { correspondent_name: (data && data.correspondent_name) || '', class_teachers: (data && data.class_teachers) || {}, show_items: (data && data.show_items) || {} };
   const classes = Array.from(document.getElementById('rc-class').options).map(o => o.value).filter(Boolean);
   rcAllMsg(`<div class="card">
+    <div style="font-weight:700;color:var(--maroon);margin-bottom:4px">👁 What to show on report cards</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Applies to printed cards, WhatsApp and the parent app, for the whole school. The office still sees everything in the Results tab and Summary Excel.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px 14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+      ${RC_SHOW_ITEMS.map(([k, label]) => `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" class="rc-show" data-k="${k}" ${rcSign.show_items[k] === false ? '' : 'checked'} style="width:16px;height:16px;accent-color:var(--maroon)"> ${label}</label>`).join('')}
+    </div>
     <div style="font-weight:700;color:var(--maroon);margin-bottom:4px">✍️ Names printed under the signature lines</div>
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Saved for the whole school. Leave empty to show only the line.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px">
@@ -2602,14 +2616,72 @@ async function rcSignSave() {
     const v = inp.value.trim();
     if (v) ct[inp.dataset.cls] = v; else delete ct[inp.dataset.cls];
   });
+  const show = {};
+  document.querySelectorAll('.rc-show').forEach(b => { show[b.dataset.k] = b.checked; });
+  if (!show.marks && !show.grade) { showToast('Please keep Marks or Grade switched on — a report card needs one of them.', 'error'); return; }
   const { error } = await supabase.from('report_card_settings').upsert({
     school_id: SCHOOL_ID, correspondent_name: document.getElementById('rc-sign-corr').value.trim(),
-    class_teachers: ct, updated_at: new Date().toISOString()
+    class_teachers: ct, show_items: show, updated_at: new Date().toISOString()
   }, { onConflict: 'school_id' });
   if (error) { showToast('Could not save: ' + error.message, 'error'); return; }
-  showToast('Signature names saved.', 'success');
+  showToast('Report card settings saved.', 'success');
   rcAllMsg('');
+  if (rcCard) { rcCard.show = show; rcRender(); }
 }
+</script>
+<script>
+// ══ REPORT CARD SETTINGS — what to show ══
+const RC_SHOW_ITEMS = [
+  ['marks', 'Marks (max & obtained)'],
+  ['grade', 'Grades'],
+  ['status', 'Pass / Fail for each subject'],
+  ['result', 'Overall result (PASS / FAIL)'],
+  ['pct', 'Percentage'],
+  ['rank', 'Class rank'],
+  ['attendance', 'Attendance'],
+  ['remarks', "Teacher's remarks"]
+];
+// The on-screen card follows the same settings, so the office sees what parents will see.
+// (Remarks box stays, because that is where remarks are written.)
+const rcRenderBase = rcRender;
+rcRender = function () {
+  rcRenderBase();
+  const card = document.getElementById('rc-v2');
+  if (!card || !rcCard) return;
+  const sh = Object.assign({}, { marks: true, grade: true, status: true, result: true, pct: true, rank: true, attendance: true, remarks: true }, rcCard.show || {});
+  // Subject table: 0 Subject · 1 Max · 2 Obtained · 3 Grade · 4 Status
+  const hideCols = [];
+  if (!sh.marks) hideCols.push(1, 2);
+  if (!sh.grade) hideCols.push(3);
+  if (!sh.status) hideCols.push(4);
+  card.querySelectorAll('.rc-table tr').forEach(tr => {
+    Array.from(tr.children).forEach((cell, i) => { if (hideCols.indexOf(i) !== -1) cell.style.display = 'none'; });
+  });
+  // Total row keeps the result only if "Overall result" is on
+  const tot = card.querySelector('.rc-table tbody tr:last-child');
+  if (tot && sh.status && !sh.result && tot.children[4]) tot.children[4].textContent = '';
+  if (!sh.marks && tot && tot.children[0]) tot.children[0].textContent = 'Overall';
+  // Boxes: Percentage · Class Rank · Overall Grade
+  const boxes = card.querySelector('.rc-table') && card.querySelector('.rc-table').nextElementSibling;
+  if (boxes && boxes.children.length === 3) {
+    if (!sh.pct) boxes.children[0].style.display = 'none';
+    if (!sh.rank) boxes.children[1].style.display = 'none';
+    if (!sh.grade) boxes.children[2].style.display = 'none';
+    const shown = Array.from(boxes.children).filter(b => b.style.display !== 'none').length;
+    if (!shown) boxes.style.display = 'none';
+    else boxes.style.gridTemplateColumns = 'repeat(' + shown + ',1fr)';
+    // Attendance line comes right after the boxes
+    if (!sh.attendance && boxes.nextElementSibling && !boxes.nextElementSibling.classList.contains('rc-remarks')) boxes.nextElementSibling.style.display = 'none';
+  }
+  const hidden = RC_SHOW_ITEMS.filter(([k]) => sh[k] === false).map(([, l]) => l);
+  if (hidden.length) {
+    const note = document.createElement('div');
+    note.className = 'rc-no-print';
+    note.style.cssText = 'font-size:11px;color:var(--text-muted);background:var(--bg);border-radius:6px;padding:6px 10px;margin-bottom:10px';
+    note.textContent = '👁 Hidden on report cards (⚙️ Report card settings): ' + hidden.join(', ');
+    card.insertBefore(note, card.firstChild);
+  }
+};
 </script>
 </body>
 </html>
