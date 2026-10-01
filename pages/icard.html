@@ -676,8 +676,21 @@ async function loadStaff() {
 // ═══════════════════════════════
 // I-CARD SECTION
 // ═══════════════════════════════
+async function icardSettingsApi(action, extra) {
+  try {
+    const r = await fetch('/api/icard-settings', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action }, extra || {})) });
+    const j = await r.json().catch(() => ({ ok:false, error:'Server did not reply properly (' + r.status + ').' }));
+    return j;
+  } catch (e) {
+    return { ok:false, error:'Network error — please check your internet.' };
+  }
+}
+
 async function loadCardSettings() {
-  const { data } = await supabase.from('icard_settings').select('*').eq('school_id',SCHOOL_ID).single();
+  const res = await icardSettingsApi('get');
+  if (!res.ok) { showToast('Could not load I-Card settings: ' + (res.error || 'unknown error'), 'error'); return; }
+  const data = res.settings;
   if (data) {
     cardSettings = { ...cardSettings, ...data };
     document.getElementById('cs-name1').value = data.name1 || '';
@@ -711,11 +724,13 @@ async function saveCardSettings() {
   cardSettings.terms_student = document.getElementById('cs-terms-student').value;
   cardSettings.terms_staff = document.getElementById('cs-terms-staff').value;
 
-  const { data: existing } = await supabase.from('icard_settings').select('id').eq('school_id',SCHOOL_ID).single();
-  const payload = { school_id: SCHOOL_ID, ...cardSettings };
-  if (existing) { await supabase.from('icard_settings').update(payload).eq('school_id',SCHOOL_ID); }
-  else { await supabase.from('icard_settings').insert([payload]); }
-  showToast('I-Card settings saved!','success');
+  const res = await icardSettingsApi('save', { settings: cardSettings });
+  if (!res.ok) { showToast('Not saved — ' + (res.error || 'unknown error'), 'error'); return; }
+  if (res.skipped && res.skipped.length) {
+    showToast('Saved, but these could not be stored: ' + res.skipped.join(', '), 'error');
+  } else {
+    showToast('I-Card settings saved!','success');
+  }
   updateSettingsPreview();
 }
 
