@@ -23,6 +23,15 @@ function getServiceKey() {
       || '';
 }
 
+// Storage accepts the newer "sb_secret_..." keys only in the apikey header.
+// Older keys (long ones starting "eyJ") also go in Authorization.
+function storageHeaders(mime) {
+  const key = getServiceKey();
+  const h = { 'apikey': key, 'Content-Type': mime, 'x-upsert': 'true' };
+  if (key.indexOf('eyJ') === 0) h['Authorization'] = 'Bearer ' + key;
+  return h;
+}
+
 // ── Verify the signed session token issued at login ──
 function verifySessionToken(token) {
   try {
@@ -100,11 +109,7 @@ module.exports = async (req, res) => {
   try {
     const up = await fetch(SUPABASE_URL + '/storage/v1/object/' + BUCKET + '/' + path, {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + getServiceKey(),
-        'Content-Type': mime,
-        'x-upsert': 'true'
-      },
+      headers: storageHeaders(mime),
       body: buf
     });
     if (!up.ok) {
