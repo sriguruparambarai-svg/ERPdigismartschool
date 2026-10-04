@@ -396,6 +396,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="mt-unsaved hidden" id="mt-unsaved">● Unsaved changes</span>
             <button class="btn btn-gold" onclick="mtSave()">💾 Save Master</button>
+            <button class="btn btn-secondary" onclick="mtSendToClasses()">📤 Send to class timetables</button>
             <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
           </div>
         </div>
@@ -1660,6 +1661,34 @@ async function mtSave() {
 window.addEventListener('beforeunload', function (e) {
   if (mtDirty) { e.preventDefault(); e.returnValue = ''; }
 });
+
+// ── Send to class timetables ──
+// Copies the SAVED master into each class's own timetable (every section of
+// that class). Classes with no periods in the master are left untouched.
+async function mtSendToClasses() {
+  if (!mtLoadedYear) { showToast('Master timetable has not loaded yet.', 'error'); return; }
+  if (mtDirty) {
+    if (!confirm('You have unsaved changes. Save the master first, then send?')) return;
+    await mtSave();
+    if (mtDirty) return; // save failed — its error is already shown
+  }
+  const filled = mtClasses.filter(cls => mtDays().some(d => periods.some((p, pi) => {
+    const cell = mtGetCell(d, pi, cls);
+    return cell && (cell.subject || cell.teacher);
+  })));
+  if (!filled.length) { showToast('The master timetable is empty — nothing to send.', 'error'); return; }
+  if (!confirm('This will REPLACE the class timetables for ' + mtLoadedYear + ' of:\n\n' + filled.join(', ') +
+    '\n\nAny changes made directly in those class timetables will be overwritten. Continue?')) return;
+
+  showToast('Sending to class timetables…', 'success');
+  const res = await timetableApi('send_to_classes', { academic_year: mtLoadedYear });
+  if (!res.ok) { showToast('Could not send to class timetables: ' + (res.error || 'unknown error'), 'error'); return; }
+  let msg = 'Class timetables updated: ' + ((res.sent || []).join(', ') || 'none');
+  if (res.skipped && res.skipped.length) msg += '. Left unchanged (no periods): ' + res.skipped.join(', ');
+  showToast(msg, 'success');
+  // If a class timetable is open on the other tab, refresh it
+  if (document.getElementById('tt-class').value && document.getElementById('tt-year').value === mtLoadedYear) loadTimetable();
+}
 
 // ── TAB SWITCH ──
 function switchTab(tab, el) {
