@@ -940,8 +940,22 @@ async function loadStaffCards() {
 // ═══════════════════════════════
 // TIMETABLE SECTION
 // ═══════════════════════════════
+// All timetable reads/writes go through the secure server door.
+async function timetableApi(action, extra) {
+  try {
+    const r = await fetch('/api/timetable-data', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action }, extra || {})) });
+    const j = await r.json().catch(() => ({ ok:false, error:'Server did not reply properly (' + r.status + ').' }));
+    return j;
+  } catch (e) {
+    return { ok:false, error:'Network error — please check your internet.' };
+  }
+}
+
 async function loadTTSettings() {
-  const { data } = await supabase.from('tt_settings').select('*').eq('school_id',SCHOOL_ID).single();
+  const res = await timetableApi('get_settings');
+  if (!res.ok) { showToast('Could not load timetable settings: ' + (res.error || 'unknown error'), 'error'); renderSubjectPalette(); return; }
+  const data = res.settings;
   if (data) {
     if (data.periods && data.periods.length > 0) periods = data.periods;
     if (data.subjects && data.subjects.length > 0) subjects = data.subjects;
@@ -954,11 +968,11 @@ async function loadTTSettings() {
 }
 
 async function saveTTSettings(showMsg=true) {
-  const payload = { school_id: SCHOOL_ID, periods, subjects, working_days: workingDays, teacher_map: teacherMap };
-  const { data: existing } = await supabase.from('tt_settings').select('id').eq('school_id',SCHOOL_ID).single();
-  if (existing) { await supabase.from('tt_settings').update(payload).eq('school_id',SCHOOL_ID); }
-  else { await supabase.from('tt_settings').insert([payload]); }
+  const settings = { periods, subjects, working_days: workingDays, teacher_map: teacherMap };
+  const res = await timetableApi('save_settings', { settings });
+  if (!res.ok) { showToast('Could not save timetable settings: ' + (res.error || 'unknown error'), 'error'); return false; }
   if (showMsg) showToast('Settings saved!','success');
+  return true;
 }
 
 // ── PERIOD ROWS ──
