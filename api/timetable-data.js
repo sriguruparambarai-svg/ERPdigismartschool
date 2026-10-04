@@ -14,12 +14,18 @@
 //   → { ok: true, master: {...} | null }
 // POST { token, action: 'save_master', academic_year, classes, grid }
 //   → { ok: true, master: {...} }
+// POST { token, action: 'send_to_classes', academic_year }
+//   → { ok: true, sent: [class names], skipped: [class names with no periods] }
+//   Copies the SAVED master into each class's own timetable (all its sections).
 
 const crypto = require('crypto');
 
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const SETTINGS_TABLE = 'tt_settings';
 const MASTER_TABLE = 'tt_master';
+const CLASS_TT_TABLE = 'timetables';
+// Same colours, in the same order, as the Subject Palette on the Timetable page
+const SUBJECT_COLORS = ['#6B1A1A','#185FA5','#0F6E56','#854F0B','#4A1070','#8B2A2A','#0C447C','#085041','#633806','#3C3489'];
 
 function getServiceKey() {
   return process.env.SUPABASE_SERVICE_KEY
@@ -205,6 +211,55 @@ module.exports = async (req, res) => {
         academic_year: year, classes, grid, updated_at: new Date().toISOString()
       });
       return res.status(200).json({ ok: true, master: saved });
+    }
+
+    // ── 4. Send the saved master to the class timetables ──
+    if (action === 'send_to_classes') {
+      if (!year) return res.status(400).json({ ok: false, error: 'Academic year missing.' });
+      const mrows = (await sb('GET', MASTER_TABLE + '?school_id=eq.' + enc(schoolId) +
+        '&academic_year=eq.' + enc(year) + '&select=*&limit=1')) || [];
+      const master = mrows[0];
+      if (!master) return res.status(400).json({ ok: false, error: 'No saved master timetable for ' + year + '. Please press Save Master first.' });
+
+      const srows = (await sb('GET', SETTINGS_TABLE + '?school_id=eq.' + enc(schoolId) + '&select=subjects&limit=1')) || [];
+      const subjects = (srows[0] && Array.isArray(srows[0].subjects)) ? srows[0].subjects : [];
+      const colorFor = s => {
+        const i = subjects.indexOf(s);
+        return SUBJECT_COLORS[(i === -1 ? 0 : i) % SUBJECT_COLORS.length];
+      };
+
+      const classes = Array.isArray(master.classes) ? master.classes : [];
+      const grid = (master.grid && typeof master.grid === 'object') ? master.grid : {};
+      const sent = [], skipped = [];
+
+      for (const cls of classes) {
+        // Build this class's grid: key "Monday_0" → { subject, teacher, color }
+        const out = {};
+        Object.keys(grid).forEach(day => {
+          const dayObj = grid[day] || {};
+          Object.keys(dayObj).forEach(pi => {
+            const cell = dayObj[pi] && dayObj[pi][cls];
+            if (!cell || (!cell.subject && !cell.teacher)) return;
+            out[day + '_' + pi] = {
+              subject: cell.subject || '',
+              teacher: cell.teacher || null,
+              color: colorFor(cell.subject || '')
+            };
+          });
+        });
+        // A class with nothing in the master is left untouched, never wiped
+        if (!Object.keys(out).length) { skipped.push(cls); continue; }
+
+        const filter = 'school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(cls) + '&academic_year=eq.' + enc(year);
+        const existing = (await sb('GET', CLASS_TT_TABLE + '?' + filter + '&select=id,section')) || [];
+        // One column per class → every section of this class gets the same timetable
+        if (existing.length) await sb('PATCH', CLASS_TT_TABLE + '?' + filter, { grid: out });
+        if (!existing.some(r => (r.section || '') === '')) {
+          await sb('POST', CLASS_TT_TABLE, { school_id: schoolId, class: cls, section: '', academic_year: year, grid: out });
+        }
+        sent.push(cls);
+      }
+      return res.status(200).json({ ok: true, sent, skipped });
     }
   } catch (e) {
     return res.status(500).json({ ok: false, error: 'Could not complete the timetable request. ' + String(e.message || e).slice(0, 200) });
