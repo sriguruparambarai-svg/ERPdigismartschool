@@ -68,6 +68,23 @@
 .tt-teacher{font-size:10px;color:var(--text-muted);margin-top:2px}
 .tt-period-label{background:var(--bg);padding:6px 8px;font-size:11px;font-weight:600;color:var(--text-muted);text-align:center;border:1px solid var(--border);min-width:90px}
 .period-time{font-size:10px;font-weight:400;display:block;margin-top:1px}
+/* ── Master Timetable ── */
+.mt-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px}
+.mt-days{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center}
+.mt-day{padding:6px 14px;border:1px solid var(--border);border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:var(--text-muted)}
+.mt-day.active{background:var(--maroon);color:var(--sandal);border-color:var(--maroon)}
+.mt-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.mt-chip{display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:14px;cursor:pointer;background:#fff}
+.mt-grid td.mt-free{background:#FAF7F0;font-size:10px;color:var(--text-muted);padding:5px 6px;min-width:140px;vertical-align:middle;line-height:1.5}
+.mt-grid td.mt-breakrow{background:#F1EFE8;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);height:28px;vertical-align:middle;letter-spacing:.5px}
+.tt-cell.mt-clash{background:#FDECEC !important;box-shadow:inset 0 0 0 2px #C0392B}
+.mt-clash-note{font-size:9px;font-weight:600;color:#C0392B;margin-top:2px}
+.mt-sum{border-collapse:collapse;font-size:11px;width:100%}
+.mt-sum th{background:var(--maroon);color:var(--sandal);padding:6px 8px;font-weight:600;border:1px solid #8B2A2A;white-space:nowrap}
+.mt-sum td{border:1px solid var(--border);padding:5px 8px;text-align:center}
+.mt-sum td.mt-zero{background:#FDECEC;color:#C0392B;font-weight:600}
+.mt-sum td:first-child{text-align:left;font-weight:600;white-space:nowrap}
+.mt-unsaved{font-size:11px;font-weight:600;color:#C0392B}
 .subject-chip{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid transparent;transition:all .12s;margin:2px}
 .subject-chip:hover{border-color:var(--gold)}
 .subject-chip.selected{border-color:var(--maroon);font-weight:700}
@@ -104,6 +121,7 @@
         <div class="tab" onclick="switchTab('staff-icard',this)">👤 Staff I-Card</div>
         <div class="tab" onclick="switchTab('icard-settings',this)">⚙️ I-Card Settings</div>
         <div class="tab" onclick="switchTab('timetable',this)">🗓 Timetable</div>
+        <div class="tab" onclick="switchTab('master-tt',this)">📋 Master Timetable</div>
         <div class="tab" onclick="switchTab('tt-settings',this)">⚙️ Timetable Settings</div>
       </div>
 
@@ -366,6 +384,66 @@
         </div>
       </div>
 
+      <!-- ══ TAB: MASTER TIMETABLE ══ -->
+      <div id="tab-master-tt" class="hidden">
+        <div class="mt-bar no-print">
+          <div>
+            <label class="form-label">Academic Year</label>
+            <select class="form-control" id="mt-year" style="width:120px;margin-top:4px" onchange="loadMaster(this.value)">
+              <option>2026-27</option><option>2027-28</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="mt-unsaved hidden" id="mt-unsaved">● Unsaved changes</span>
+            <button class="btn btn-gold" onclick="mtSave()">💾 Save Master</button>
+            <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
+          </div>
+        </div>
+
+        <details class="card no-print" style="margin-bottom:12px;padding:10px 14px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--maroon)" id="mt-classes-summary">Classes shown</summary>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Tick the classes your school has. Each ticked class gets one column.</div>
+          <div class="mt-chips" id="mt-class-chips"></div>
+        </details>
+
+        <div class="mt-days no-print">
+          <div id="mt-day-tabs" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+          <div style="display:flex;gap:6px;align-items:center;margin-left:auto;flex-wrap:wrap">
+            <span style="font-size:12px;color:var(--text-muted)">Copy from</span>
+            <select class="form-control" id="mt-copy-from" style="width:130px;padding:5px 8px;font-size:12px"></select>
+            <button class="btn btn-secondary btn-sm" onclick="mtCopyDay()">Copy into this day</button>
+            <button class="btn btn-danger btn-sm" onclick="mtClearDay()">Clear this day</button>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+            <div style="font-size:14px;font-weight:600;color:var(--maroon)" id="mt-title">Master Timetable</div>
+            <div style="font-size:11px;color:var(--text-muted)" class="no-print">Click a box to set subject and teacher · red box = same teacher in two classes at once</div>
+          </div>
+          <div style="overflow-x:auto;padding:12px">
+            <div id="mt-grid"><div class="empty-state"><div class="icon">📋</div><p>Loading…</p></div></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start">
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+              <div style="font-size:14px;font-weight:600;color:var(--maroon)">Periods per week — each class</div>
+              <div style="font-size:11px;color:var(--text-muted)">Red 0 = subject not given any period in that class this week</div>
+            </div>
+            <div style="overflow-x:auto;padding:12px" id="mt-summary"></div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+              <div style="font-size:14px;font-weight:600;color:var(--maroon)">Teacher load per week</div>
+              <div style="font-size:11px;color:var(--text-muted)">Periods each teacher takes in the whole week</div>
+            </div>
+            <div style="overflow-x:auto;padding:12px" id="mt-load"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ══ TAB: TIMETABLE SETTINGS ══ -->
       <div id="tab-tt-settings" class="hidden">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -452,6 +530,30 @@
       <button class="btn btn-secondary" onclick="closeCellModal()">Cancel</button>
       <button class="btn btn-danger btn-sm" onclick="clearCell()">Clear</button>
       <button class="btn btn-gold" onclick="saveCell()">Set Subject</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MASTER TIMETABLE CELL MODAL ══ -->
+<div class="modal-overlay" id="mt-modal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title" id="mt-modal-title">Set Period</div>
+      <button class="modal-close" onclick="mtCloseModal()">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px" id="mt-modal-info"></div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Subject</label>
+      <select id="mt-subject" class="form-control" style="margin-top:4px" onchange="mtSubjectChanged()"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Teacher</label>
+      <select id="mt-teacher" class="form-control" style="margin-top:4px"></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="mtCloseModal()">Cancel</button>
+      <button class="btn btn-danger btn-sm" onclick="mtClearCell()">Clear</button>
+      <button class="btn btn-gold" onclick="mtSetCell()">Set</button>
     </div>
   </div>
 </div>
@@ -1260,17 +1362,317 @@ async function saveTimetable() {
   showToast(`Timetable saved for ${cls}${sec?' '+sec:''}!`,'success');
 }
 
+// ═══════════════════════════════
+// MASTER TIMETABLE
+// One grid per weekday: rows = periods, columns = classes,
+// each box = subject + teacher. Saved through /api/timetable-data.
+// Stored as grid[day][periodIndex][className] = { subject, teacher }.
+// ═══════════════════════════════
+const MT_ALL_CLASSES = ['PreKG','LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+const MT_DEFAULT_CLASSES = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8'];
+let mtClasses = MT_DEFAULT_CLASSES.slice();
+let mtGrid = {};
+let mtDay = null;
+let mtLoadedYear = null;
+let mtDirty = false;
+let mtCell = null;
+
+function mtEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function mtSetDirty(on) {
+  mtDirty = !!on;
+  const el = document.getElementById('mt-unsaved');
+  if (el) el.classList.toggle('hidden', !mtDirty);
+}
+
+function mtDays() {
+  return (workingDays && workingDays.length) ? workingDays : ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+}
+
+function mtGetCell(day, pi, cls) {
+  return (mtGrid[day] && mtGrid[day][pi] && mtGrid[day][pi][cls]) || null;
+}
+
+// Opened when the tab is clicked
+async function openMasterTab() {
+  const year = document.getElementById('mt-year').value;
+  if (mtLoadedYear !== year) await loadMaster(year);
+  else renderMaster();
+}
+
+async function loadMaster(year) {
+  if (mtDirty && mtLoadedYear && mtLoadedYear !== year) {
+    if (!confirm('You have unsaved changes in the master timetable. Switch year and lose them?')) {
+      document.getElementById('mt-year').value = mtLoadedYear;
+      return;
+    }
+  }
+  document.getElementById('mt-grid').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Loading…</p></div>';
+  const res = await timetableApi('get_master', { academic_year: year });
+  if (!res.ok) {
+    mtLoadedYear = null;
+    document.getElementById('mt-grid').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Could not load the master timetable: ' + mtEsc(res.error || 'unknown error') + '</p></div>';
+    showToast('Could not load master timetable: ' + (res.error || 'unknown error'), 'error');
+    return;
+  }
+  const m = res.master;
+  mtClasses = (m && Array.isArray(m.classes) && m.classes.length) ? m.classes.slice() : MT_DEFAULT_CLASSES.slice();
+  mtGrid = (m && m.grid && typeof m.grid === 'object' && !Array.isArray(m.grid)) ? m.grid : {};
+  mtLoadedYear = year;
+  mtSetDirty(false);
+  if (!mtDay || mtDays().indexOf(mtDay) === -1) mtDay = mtDays()[0];
+  renderMaster();
+}
+
+function renderMaster() {
+  if (!mtDay || mtDays().indexOf(mtDay) === -1) mtDay = mtDays()[0];
+  renderMtClassChips();
+  renderMtDays();
+  renderMtGrid();
+  renderMtSummary();
+}
+
+// ── Classes shown ──
+function renderMtClassChips() {
+  document.getElementById('mt-classes-summary').textContent = 'Classes shown (' + mtClasses.length + '): ' + (mtClasses.join(', ') || 'none');
+  document.getElementById('mt-class-chips').innerHTML = MT_ALL_CLASSES.map(c => `
+    <label class="mt-chip"><input type="checkbox" ${mtClasses.indexOf(c) !== -1 ? 'checked' : ''} onchange="mtToggleClass('${c}', this.checked)"> ${c}</label>
+  `).join('');
+}
+
+function mtToggleClass(cls, on) {
+  const set = new Set(mtClasses);
+  if (on) set.add(cls); else set.delete(cls);
+  mtClasses = MT_ALL_CLASSES.filter(c => set.has(c));
+  mtSetDirty(true);
+  renderMaster();
+}
+
+// ── Day tabs + copy ──
+function renderMtDays() {
+  const days = mtDays();
+  document.getElementById('mt-day-tabs').innerHTML = days.map(d => `
+    <div class="mt-day ${d === mtDay ? 'active' : ''}" onclick="mtSetDay('${d}')">${d.slice(0,3)}</div>
+  `).join('');
+  document.getElementById('mt-copy-from').innerHTML = days.filter(d => d !== mtDay).map(d => `<option value="${d}">${d}</option>`).join('');
+}
+
+function mtSetDay(d) { mtDay = d; renderMaster(); }
+
+function mtCopyDay() {
+  const from = document.getElementById('mt-copy-from').value;
+  if (!from) return;
+  if (!confirm('Replace everything on ' + mtDay + ' with ' + from + "'s timetable?")) return;
+  mtGrid[mtDay] = JSON.parse(JSON.stringify(mtGrid[from] || {}));
+  mtSetDirty(true);
+  renderMaster();
+  showToast(from + ' copied into ' + mtDay + '. Press Save Master to keep it.', 'success');
+}
+
+function mtClearDay() {
+  if (!confirm('Clear every box on ' + mtDay + '?')) return;
+  mtGrid[mtDay] = {};
+  mtSetDirty(true);
+  renderMaster();
+}
+
+// For one period: which classes each teacher is in
+function mtTeacherUse(day, pi) {
+  const use = {};
+  mtClasses.forEach(cls => {
+    const cell = mtGetCell(day, pi, cls);
+    const t = cell && (cell.teacher || '').trim();
+    if (t) (use[t] = use[t] || []).push(cls);
+  });
+  return use;
+}
+
+// ── The grid ──
+function renderMtGrid() {
+  document.getElementById('mt-title').textContent = 'Master Timetable — ' + mtDay + (mtLoadedYear ? ' · ' + mtLoadedYear : '');
+  if (!mtClasses.length) {
+    document.getElementById('mt-grid').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Tick at least one class under "Classes shown".</p></div>';
+    return;
+  }
+  const colspan = mtClasses.length + 2;
+  let html = '<table class="tt-grid mt-grid"><thead><tr>';
+  html += '<th class="tt-period-label" style="background:var(--maroon);color:var(--sandal)">Period / Time</th>';
+  mtClasses.forEach(c => { html += '<th>' + mtEsc(c) + '</th>'; });
+  html += '<th class="no-print">Free teachers</th></tr></thead><tbody>';
+
+  periods.forEach((p, pi) => {
+    if (p.isBreak) {
+      html += `<tr><td class="tt-period-label">${mtEsc(p.label)}<span class="period-time">${mtEsc(p.start)}${p.end ? ' – ' + mtEsc(p.end) : ''}</span></td>`;
+      html += `<td class="mt-breakrow" colspan="${colspan - 1}">${mtEsc(p.label).toUpperCase()}</td></tr>`;
+      return;
+    }
+    const use = mtTeacherUse(mtDay, pi);
+    html += `<tr><td class="tt-period-label">${mtEsc(p.label)}<span class="period-time">${mtEsc(p.start)}${p.end ? ' – ' + mtEsc(p.end) : ''}</span></td>`;
+    mtClasses.forEach((cls, ci) => {
+      const cell = mtGetCell(mtDay, pi, cls);
+      if (!cell || (!cell.subject && !cell.teacher)) {
+        html += `<td><div class="tt-cell" onclick="mtOpenCell(${pi},${ci})"></div></td>`;
+        return;
+      }
+      const t = (cell.teacher || '').trim();
+      const others = t && use[t] ? use[t].filter(c => c !== cls) : [];
+      const clash = others.length > 0;
+      html += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''}" onclick="mtOpenCell(${pi},${ci})">
+        <div class="tt-subject">${mtEsc(cell.subject || '—')}</div>
+        ${t ? `<div class="tt-teacher">${mtEsc(t)}</div>` : ''}
+        ${clash ? `<div class="mt-clash-note">⚠ also in ${mtEsc(others.join(', '))}</div>` : ''}
+      </div></td>`;
+    });
+    const busy = new Set(Object.keys(use));
+    const free = allStaff.map(s => s.name).filter(n => n && !busy.has(n.trim()));
+    html += `<td class="mt-free no-print">${allStaff.length ? (free.length ? mtEsc(free.join(', ')) : '<span style="color:#C0392B">Nobody free</span>') : '—'}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('mt-grid').innerHTML = html;
+}
+
+// ── Weekly summaries ──
+function renderMtSummary() {
+  const days = mtDays();
+  const counts = {};      // counts[cls][subject]
+  const load = {};        // load[teacher]
+  const extraSubjects = new Set();
+  let teachingPeriods = 0;
+  periods.forEach(p => { if (!p.isBreak) teachingPeriods++; });
+
+  mtClasses.forEach(cls => { counts[cls] = {}; });
+  days.forEach(d => {
+    periods.forEach((p, pi) => {
+      if (p.isBreak) return;
+      mtClasses.forEach(cls => {
+        const cell = mtGetCell(d, pi, cls);
+        if (!cell) return;
+        const s = (cell.subject || '').trim();
+        const t = (cell.teacher || '').trim();
+        if (s) {
+          counts[cls][s] = (counts[cls][s] || 0) + 1;
+          if (subjects.indexOf(s) === -1) extraSubjects.add(s);
+        }
+        if (t) load[t] = (load[t] || 0) + 1;
+      });
+    });
+  });
+
+  const subjCols = subjects.concat([...extraSubjects]);
+  const totalSlots = teachingPeriods * days.length;
+  let html = '<table class="mt-sum"><thead><tr><th>Class</th>';
+  subjCols.forEach(s => { html += '<th>' + mtEsc(s) + '</th>'; });
+  html += '<th>Filled</th></tr></thead><tbody>';
+  mtClasses.forEach(cls => {
+    let filled = 0;
+    html += '<tr><td>' + mtEsc(cls) + '</td>';
+    subjCols.forEach(s => {
+      const n = counts[cls][s] || 0;
+      filled += n;
+      html += `<td class="${n === 0 ? 'mt-zero' : ''}">${n}</td>`;
+    });
+    html += `<td style="font-weight:600">${filled} / ${totalSlots}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('mt-summary').innerHTML = mtClasses.length ? html : '<div style="font-size:12px;color:var(--text-muted)">No classes ticked.</div>';
+
+  const names = Object.keys(load).sort((a, b) => load[b] - load[a]);
+  const idle = allStaff.map(s => s.name).filter(n => n && !load[n.trim()]);
+  let lhtml = '<table class="mt-sum"><thead><tr><th>Teacher</th><th>Periods</th></tr></thead><tbody>';
+  names.forEach(n => { lhtml += `<tr><td>${mtEsc(n)}</td><td>${load[n]}</td></tr>`; });
+  idle.forEach(n => { lhtml += `<tr><td>${mtEsc(n)}</td><td class="mt-zero">0</td></tr>`; });
+  lhtml += '</tbody></table>';
+  document.getElementById('mt-load').innerHTML = (names.length || idle.length) ? lhtml : '<div style="font-size:12px;color:var(--text-muted)">No teachers yet.</div>';
+}
+
+// ── Box editor ──
+function mtOpenCell(pi, ci) {
+  const cls = mtClasses[ci];
+  const p = periods[pi];
+  if (!cls || !p || p.isBreak) return;
+  mtCell = { pi, cls };
+  const cell = mtGetCell(mtDay, pi, cls) || {};
+  document.getElementById('mt-modal-title').textContent = cls + ' — ' + p.label;
+  document.getElementById('mt-modal-info').textContent = mtDay + (p.start ? ' · ' + p.start + (p.end ? ' – ' + p.end : '') : '');
+
+  const subjList = subjects.slice();
+  if (cell.subject && subjList.indexOf(cell.subject) === -1) subjList.push(cell.subject);
+  document.getElementById('mt-subject').innerHTML = '<option value="">— Choose subject —</option>' +
+    subjList.map(s => `<option value="${mtEsc(s)}" ${s === cell.subject ? 'selected' : ''}>${mtEsc(s)}</option>`).join('');
+
+  // Mark teachers already busy in another class this period
+  const use = mtTeacherUse(mtDay, pi);
+  const staffNames = allStaff.map(s => s.name).filter(Boolean);
+  if (cell.teacher && staffNames.indexOf(cell.teacher) === -1) staffNames.push(cell.teacher);
+  document.getElementById('mt-teacher').innerHTML = '<option value="">No teacher</option>' +
+    staffNames.map(n => {
+      const elsewhere = (use[n.trim()] || []).filter(c => c !== cls);
+      const tag = elsewhere.length ? ' (busy — ' + elsewhere.join(', ') + ')' : '';
+      return `<option value="${mtEsc(n)}" ${n === cell.teacher ? 'selected' : ''}>${mtEsc(n + tag)}</option>`;
+    }).join('');
+
+  document.getElementById('mt-modal').classList.add('open');
+}
+
+// Picking a subject fills in its usual teacher (from Teacher–Subject Mapping) if none chosen yet
+function mtSubjectChanged() {
+  const s = document.getElementById('mt-subject').value;
+  const tSel = document.getElementById('mt-teacher');
+  if (s && !tSel.value && teacherMap[s]) tSel.value = teacherMap[s];
+}
+
+function mtSetCell() {
+  if (!mtCell) return;
+  const subject = document.getElementById('mt-subject').value;
+  const teacher = document.getElementById('mt-teacher').value;
+  if (!subject && !teacher) { mtClearCell(); return; }
+  if (!mtGrid[mtDay]) mtGrid[mtDay] = {};
+  if (!mtGrid[mtDay][mtCell.pi]) mtGrid[mtDay][mtCell.pi] = {};
+  mtGrid[mtDay][mtCell.pi][mtCell.cls] = { subject, teacher };
+  mtSetDirty(true);
+  mtCloseModal();
+  renderMtGrid();
+  renderMtSummary();
+}
+
+function mtClearCell() {
+  if (!mtCell) return;
+  if (mtGrid[mtDay] && mtGrid[mtDay][mtCell.pi]) delete mtGrid[mtDay][mtCell.pi][mtCell.cls];
+  mtSetDirty(true);
+  mtCloseModal();
+  renderMtGrid();
+  renderMtSummary();
+}
+
+function mtCloseModal() { document.getElementById('mt-modal').classList.remove('open'); mtCell = null; }
+
+// ── Save ──
+async function mtSave() {
+  if (!mtLoadedYear) { showToast('Master timetable has not loaded yet.', 'error'); return; }
+  const res = await timetableApi('save_master', { academic_year: mtLoadedYear, classes: mtClasses, grid: mtGrid });
+  if (!res.ok) { showToast('Could not save master timetable: ' + (res.error || 'unknown error'), 'error'); return; }
+  mtSetDirty(false);
+  showToast('Master timetable saved for ' + mtLoadedYear + '!', 'success');
+}
+
+window.addEventListener('beforeunload', function (e) {
+  if (mtDirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
 // ── TAB SWITCH ──
 function switchTab(tab, el) {
-  ['student-icard','staff-icard','icard-settings','timetable','tt-settings'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  ['student-icard','staff-icard','icard-settings','timetable','master-tt','tt-settings'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
   document.getElementById('tab-'+tab).classList.remove('hidden');
   document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   if (tab==='icard-settings') updateSettingsPreview();
   if (tab==='tt-settings') { renderPeriodRows(); renderSubjectSettings(); renderTeacherMap(); }
   if (tab==='timetable') renderSubjectPalette();
+  if (tab==='master-tt') openMasterTab();
   // The menu has separate "I-Card" and "Timetable" items for this one page
-  const wantHash = (tab === 'timetable' || tab === 'tt-settings') ? '#timetable' : '';
+  const wantHash = (tab === 'timetable' || tab === 'master-tt' || tab === 'tt-settings') ? '#timetable' : '';
   if (location.hash !== wantHash) history.replaceState(null, '', location.pathname + wantHash);
   if (typeof sbMarkCurrent === 'function') sbMarkCurrent();
 }
@@ -1284,6 +1686,7 @@ window.addEventListener('load', function () {
 });
 
 document.getElementById('cell-modal').addEventListener('click', function(e){ if(e.target===this) closeCellModal(); });
+document.getElementById('mt-modal').addEventListener('click', function(e){ if(e.target===this) mtCloseModal(); });
 </script>
 </body>
 </html>
