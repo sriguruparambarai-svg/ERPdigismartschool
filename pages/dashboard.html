@@ -268,6 +268,34 @@ function dashCanSeeFeeTotals() {
   return !isStaff || (typeof ALLOWED_MODULES !== 'undefined' && ALLOWED_MODULES.indexOf('fee') !== -1);
 }
 
+// Today's date by the school's own clock (not UTC), as YYYY-MM-DD
+function dashLocalDate() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Shared lookups: fetched ONCE and used by every box that needs them
+let _dashMonthFees = null;
+function getMonthFees() {
+  if (!_dashMonthFees) {
+    const monthStart = dashLocalDate().slice(0, 7) + '-01';
+    _dashMonthFees = dashCanSeeFeeTotals()
+      ? new Promise(res => secureFee.from('fee_payments').select('amount_paid,payment_date,student_class,is_cancelled')
+          .eq('school_id', SCHOOL_ID).gte('payment_date', monthStart).order('payment_date', { ascending: false }).then(res))
+      : Promise.resolve({ data: [] });
+  }
+  return _dashMonthFees;
+}
+let _dashActiveStudents = null;
+function getActiveStudentClasses() {
+  if (!_dashActiveStudents) {
+    _dashActiveStudents = Promise.resolve(supabase.from('students').select('class').eq('school_id', SCHOOL_ID).eq('status', 'active'));
+  }
+  return _dashActiveStudents;
+}
+// Cancelled receipts never count as money collected
+function dashLivePayments(rows) { return (rows || []).filter(r => !r.is_cancelled); }
+
 // ══ Staff Home (Option B) ══
 // A staff login gets a plain task page instead of the school dashboard.
 // No student counts, no fee totals, no admissions — and none of those
@@ -374,7 +402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadMainStats() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = dashLocalDate();
   const monthStart = today.slice(0,7) + '-01';
 
   const [students, staff, exams, buses, notices, feeData, defaulters, attData] = await Promise.all([
@@ -383,11 +411,9 @@ async function loadMainStats() {
     supabase.from('exams').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID),
     supabase.from('buses').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
     supabase.from('communications').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).gte('created_at',monthStart),
-    dashCanSeeFeeTotals()
-      ? secureFee.from('fee_payments').select('amount_paid').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart)
-      : Promise.resolve({ data: [] }),
-    supabase.from('students').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('status','active'),
-    supabase.from('student_attendance').select('status',{count:'exact'}).eq('school_id',SCHOOL_ID).eq('date',today).eq('status','present'),
+    getMonthFees(),
+    Promise.resolve({}),   // defaulters box shows '—' (was a repeat of the student count)
+    supabase.from('student_attendance').select('id',{count:'exact',head:true}).eq('school_id',SCHOOL_ID).eq('date',today).eq('status','present'),
   ]);
 
   document.getElementById('st-students').textContent = students.count || 0;
@@ -397,7 +423,7 @@ async function loadMainStats() {
   document.getElementById('st-notices').textContent = notices.count || 0;
   document.getElementById('st-defaulters').textContent = '—';
 
-  const totalFee = (feeData.data || []).reduce((s,r) => s + (r.amount_paid || 0), 0);
+  const totalFee = dashLivePayments(feeData.data).reduce((s,r) => s + (r.amount_paid || 0), 0);
   document.getElementById('st-fee').textContent = totalFee > 0 ? '₹' + (totalFee/1000).toFixed(0) + 'K' : '₹0';
 
   const presentCount = attData.count || 0;
@@ -408,11 +434,13 @@ async function loadMainStats() {
 }
 
 async function loadClassAttendance() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = dashLocalDate();
   const classes = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8'];
 
-  const { data: attData } = await supabase.from('student_attendance').select('class,status').eq('school_id',SCHOOL_ID).eq('date',today);
-  const { data: studData } = await supabase.from('students').select('class').eq('school_id',SCHOOL_ID).eq('status','active');
+  const [{ data: attData }, { data: studData }] = await Promise.all([
+    supabase.from('student_attendance').select('class,status').eq('school_id',SCHOOL_ID).eq('date',today),
+    getActiveStudentClasses()
+  ]);
 
   const classMap = {};
   (studData||[]).forEach(s => { classMap[s.class] = (classMap[s.class]||{total:0,present:0}); classMap[s.class].total++; });
@@ -457,7 +485,7 @@ async function loadRecentNotices() {
 }
 
 async function loadClassStudentCount() {
-  const { data } = await supabase.from('students').select('class').eq('school_id',SCHOOL_ID).eq('status','active');
+  const { data } = await getActiveStudentClasses();
   if (!data||data.length===0) {
     document.getElementById('class-student-count').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No students yet. <a href="admission.html" style="color:var(--maroon);font-weight:600">Add students →</a></div>';
     return;
@@ -489,9 +517,8 @@ async function loadClassStudentCount() {
 
 async function loadFeeOverview() {
   if (!dashCanSeeFeeTotals()) return; // section is hidden for this login anyway
-  const today = new Date().toISOString().split('T')[0];
-  const monthStart = today.slice(0,7) + '-01';
-  const { data } = await secureFee.from('fee_payments').select('amount_paid,payment_date,student_class').eq('school_id',SCHOOL_ID).gte('payment_date',monthStart).order('payment_date',{ascending:false}).limit(5);
+  const { data: monthRows } = await getMonthFees();
+  const data = dashLivePayments(monthRows);
   if (!data||data.length===0) {
     document.getElementById('fee-overview').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No fee collected this month. <a href="fee.html" style="color:var(--maroon);font-weight:600">Collect fee →</a></div>';
     return;
@@ -505,7 +532,7 @@ async function loadFeeOverview() {
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Recent Payments</div>
     ${data.slice(0,4).map(r => `
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-        <span>Class ${r.student_class||'—'}</span>
+        <span>${r.student_class ? (/^class/i.test(r.student_class) ? r.student_class : 'Class ' + r.student_class) : '—'}</span>
         <span style="font-weight:600;color:#2D7A3A">₹${(r.amount_paid||0).toLocaleString('en-IN')}</span>
       </div>
     `).join('')}
