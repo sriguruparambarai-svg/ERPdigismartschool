@@ -599,12 +599,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
   document.getElementById('f-admdate').value = new Date().toISOString().split('T')[0];
   ensureAcademicYearOptions();
-  await loadRouteOptions();
   document.getElementById('stat-year-label').textContent = currentAcademicYear();
-  await loadStudents();
-  await loadSchemeMarks();
-  await loadVanMarks();
+  // Students list and route list load together; scheme/van tags fill in a moment later
+  await Promise.all([loadRouteOptions(), loadStudents()]);
   await loadStats();
+  Promise.all([loadSchemeMarks(), loadVanMarks()]);
   await createTableIfNeeded();
 });
 

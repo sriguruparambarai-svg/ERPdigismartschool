@@ -95,6 +95,45 @@
   </div>
 </div>
 
+<!-- ══ EDIT SCHEME MODAL (fix wrong entries) ══ -->
+<div class="modal-overlay" id="edit-scheme-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <div class="modal-title">Edit Scheme Details</div>
+      <button class="modal-close" onclick="closeEditSchemeModal()">✕</button>
+    </div>
+    <div id="eds-student" style="font-weight:700;color:var(--maroon);margin-bottom:12px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="form-group">
+        <label class="form-label">Scheme Start Year</label>
+        <select id="eds-start-year" class="form-control"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Completion Year</label>
+        <select id="eds-completion-year" class="form-control"></select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Free Fee Waivers</label>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="eds-free-van" style="width:16px;height:16px"> Free Van Fees</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="eds-free-uniform" style="width:16px;height:16px"> Free Uniform Fees</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="eds-free-books" style="width:16px;height:16px"> Free Book Fees</label>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Notes</label>
+      <input type="text" id="eds-notes" class="form-control" placeholder="Any additional notes">
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Scheme fee amount and payments are not changed here.</div>
+    <div id="eds-alert" class="hidden"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeEditSchemeModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveSchemeEdit()" id="eds-save-btn">✓ Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ ENROLL MODAL ══ -->
 <div class="modal-overlay" id="enroll-modal">
   <div class="modal" style="max-width:560px">
@@ -323,19 +362,27 @@ function updateCompletionYear() {
 
 // ── LOAD & RENDER ──
 async function loadSchemes() {
-  const { data } = await secureScheme.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).order('created_at', {ascending:false});
+  // Fetch enrolments, payments and class list at the same time (not one after another)
+  const studsPromise = supabase.from('students').select('id,admission_no,class,section').eq('school_id', SCHOOL_ID)
+    .then(r => r, () => ({ data: null }));
+  const [{ data }, { data: payments }, studsRes] = await Promise.all([
+    secureScheme.from('scheme_enrollments').select('*').eq('school_id', SCHOOL_ID).order('created_at', {ascending:false}),
+    secureScheme.from('scheme_payments').select('*').eq('school_id', SCHOOL_ID),
+    studsPromise
+  ]);
   allSchemes = data || [];
 
-  // Load payment totals for each
-  const { data: payments } = await secureScheme.from('scheme_payments').select('*').eq('school_id', SCHOOL_ID);
+  // Payment totals for each
+  const payBy = {};
+  (payments || []).forEach(p => { (payBy[p.scheme_enrollment_id] = payBy[p.scheme_enrollment_id] || []).push(p); });
   allSchemes.forEach(s => {
-    s.payments = (payments || []).filter(p => p.scheme_enrollment_id === s.id);
+    s.payments = payBy[s.id] || [];
     s.totalPaid = s.payments.reduce((sum,p) => sum + (p.amount_paid||0), 0);
   });
 
   // Look up each child's current class and section
   try {
-    const { data: studs } = await supabase.from('students').select('id,admission_no,class,section').eq('school_id', SCHOOL_ID);
+    const studs = studsRes && studsRes.data;
     const byId = {}, byAdm = {};
     (studs || []).forEach(st => { byId[st.id] = st; if (st.admission_no) byAdm[st.admission_no] = st; });
     allSchemes.forEach(s => {
@@ -436,6 +483,7 @@ function renderSchemeList() {
           <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">₹${s.totalPaid.toLocaleString('en-IN')} paid · ₹${balance.toLocaleString('en-IN')} due</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="openEditSchemeModal('${s.id}')">✏️ Edit</button>
           ${balance > 0 && s.status === 'active' ? `<button class="btn btn-gold btn-sm" onclick="openCollectSchemeModal('${s.id}')">+ Collect Installment</button>` : ''}
           ${s.status === 'active' ? `<button class="btn btn-secondary btn-sm" onclick="updateSchemeStatus('${s.id}','completed')">Mark Completed</button>
           <button class="btn btn-danger btn-sm" onclick="updateSchemeStatus('${s.id}','cancelled')">Cancel Scheme</button>` : ''}
@@ -466,6 +514,54 @@ async function updateSchemeStatus(id, status) {
 }
 
 // ── ENROLL MODAL ──
+let editingSchemeId = null;
+function openEditSchemeModal(id) {
+  const s = allSchemes.find(x => x.id === id);
+  if (!s) return;
+  editingSchemeId = id;
+  document.getElementById('eds-student').textContent = s.student_name + (s.admission_no ? '  ·  ' + s.admission_no : '');
+  const nowYear = new Date().getFullYear();
+  const yearOpts = (from, to, extra) => {
+    const ys = [];
+    for (let y = from; y <= to; y++) ys.push(y);
+    if (extra && ys.indexOf(extra) === -1) { ys.push(extra); ys.sort((a,b)=>a-b); }
+    return ys.map(y => `<option value="${y}">${y}-${y+1}</option>`).join('');
+  };
+  const st = document.getElementById('eds-start-year'), cp = document.getElementById('eds-completion-year');
+  st.innerHTML = yearOpts(nowYear - 8, nowYear + 2, s.start_year);
+  cp.innerHTML = yearOpts(nowYear - 8, nowYear + 10, s.completion_year);
+  st.value = s.start_year; cp.value = s.completion_year;
+  document.getElementById('eds-free-van').checked = !!s.free_van;
+  document.getElementById('eds-free-uniform').checked = !!s.free_uniform;
+  document.getElementById('eds-free-books').checked = !!s.free_books;
+  document.getElementById('eds-notes').value = s.notes || '';
+  document.getElementById('eds-alert').className = 'hidden';
+  document.getElementById('edit-scheme-modal').classList.add('open');
+}
+function closeEditSchemeModal() { document.getElementById('edit-scheme-modal').classList.remove('open'); editingSchemeId = null; }
+
+async function saveSchemeEdit() {
+  const alertEl = document.getElementById('eds-alert');
+  const startYear = parseInt(document.getElementById('eds-start-year').value);
+  const completionYear = parseInt(document.getElementById('eds-completion-year').value);
+  if (completionYear < startYear) { alertEl.className='alert alert-danger'; alertEl.textContent='Completion year cannot be before the start year.'; return; }
+  const btn = document.getElementById('eds-save-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  const { error } = await secureScheme.from('scheme_enrollments').update({
+    start_year: startYear,
+    completion_year: completionYear,
+    free_van: document.getElementById('eds-free-van').checked,
+    free_uniform: document.getElementById('eds-free-uniform').checked,
+    free_books: document.getElementById('eds-free-books').checked,
+    notes: document.getElementById('eds-notes').value.trim(),
+  }).eq('id', editingSchemeId);
+  btn.textContent = '✓ Save Changes'; btn.disabled = false;
+  if (error) { alertEl.className='alert alert-danger'; alertEl.textContent='⚠️ Error: '+error.message; return; }
+  closeEditSchemeModal();
+  showToast('Scheme details updated.','success');
+  await loadSchemes();
+}
+
 function openEnrollModal() {
   selectedEnrollStudent = null;
   document.getElementById('es-search').value = '';
@@ -685,7 +781,7 @@ function getInitials(name) {
   return parts.length > 1 ? (parts[0][0]+parts[1][0]).toUpperCase() : parts[0].slice(0,2).toUpperCase();
 }
 
-['enroll-modal','collect-scheme-modal'].forEach(id => {
+['enroll-modal','collect-scheme-modal','edit-scheme-modal'].forEach(id => {
   document.getElementById(id).addEventListener('click', (e) => { if (e.target.id === id) e.currentTarget.classList.remove('open'); });
 });
 </script>
