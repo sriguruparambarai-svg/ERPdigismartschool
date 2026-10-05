@@ -16,6 +16,11 @@
 .scheme-badge.status-active{background:#E3F0FA;color:#1a3a6b}
 .scheme-badge.status-completed{background:#F0EAF7;color:#4A1070}
 .scheme-badge.status-cancelled{background:#FBE8E8;color:#A32D2D}
+.scheme-badge.cls{background:#FFF4D6;color:#7A5A12}
+.cls-counts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:14px;font-size:12px}
+.cls-counts-label{color:var(--text-muted);margin-right:4px}
+.cls-chip{border:1px solid #E8C99A;background:#FBF5EC;color:#6B1A1A;border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer;font-weight:600}
+.cls-chip.on{background:#6B1A1A;color:#fff;border-color:#6B1A1A}
 .installment-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;font-size:12px}
 .installment-row.paid{background:#F3FBF5;border-color:#B7E0C2}
 .progress-bar{height:8px;background:var(--sandal-light);border-radius:5px;overflow:hidden}
@@ -78,7 +83,11 @@
             <option value="cancelled">Cancelled</option>
             <option value="">All</option>
           </select>
+          <select id="scheme-class-filter" class="form-control" style="width:150px" onchange="renderSchemeList()">
+            <option value="">All Classes</option>
+          </select>
         </div>
+        <div id="scheme-class-counts" class="cls-counts"></div>
         <div id="scheme-list"></div>
       </div>
 
@@ -273,6 +282,9 @@ const secureScheme = {
 };
 
 let allSchemes = [];
+// Child's CURRENT class comes from student records, so it stays right after promotion
+const SCHEME_CLASS_ORDER = ['PreKG','LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+function schemeClassRank(c) { const i = SCHEME_CLASS_ORDER.indexOf(c); return i === -1 ? 99 : i; }
 let selectedEnrollStudent = null;
 let currentSchemeEnrollment = null;
 
@@ -321,6 +333,21 @@ async function loadSchemes() {
     s.totalPaid = s.payments.reduce((sum,p) => sum + (p.amount_paid||0), 0);
   });
 
+  // Look up each child's current class and section
+  try {
+    const { data: studs } = await supabase.from('students').select('id,admission_no,class,section').eq('school_id', SCHOOL_ID);
+    const byId = {}, byAdm = {};
+    (studs || []).forEach(st => { byId[st.id] = st; if (st.admission_no) byAdm[st.admission_no] = st; });
+    allSchemes.forEach(s => {
+      const st = byId[s.student_id] || byAdm[s.admission_no];
+      s.cls = st && st.class ? st.class : '';
+      s.sec = st && st.section ? st.section : '';
+    });
+  } catch (e) {
+    allSchemes.forEach(s => { s.cls = ''; s.sec = ''; });
+  }
+  fillSchemeClassFilter();
+
   renderStats();
   renderSchemeList();
 }
@@ -336,11 +363,43 @@ function renderStats() {
   document.getElementById('stat-outstanding').textContent = '₹' + outstanding.toLocaleString('en-IN');
 }
 
+function fillSchemeClassFilter() {
+  const sel = document.getElementById('scheme-class-filter');
+  const keep = sel.value;
+  const classes = Array.from(new Set(allSchemes.map(s => s.cls).filter(Boolean)))
+    .sort((a,b) => schemeClassRank(a) - schemeClassRank(b) || a.localeCompare(b));
+  sel.innerHTML = '<option value="">All Classes</option>' + classes.map(c => `<option value="${c}">${c}</option>`).join('');
+  if (keep && classes.indexOf(keep) !== -1) sel.value = keep;
+}
+
+function pickSchemeClass(c) {
+  const sel = document.getElementById('scheme-class-filter');
+  sel.value = (sel.value === c) ? '' : c;
+  renderSchemeList();
+}
+
+function renderSchemeClassCounts(statusList, statusFilter) {
+  const box = document.getElementById('scheme-class-counts');
+  const counts = {};
+  statusList.forEach(s => { const k = s.cls || 'Class not found'; counts[k] = (counts[k] || 0) + 1; });
+  const keys = Object.keys(counts).sort((a,b) => schemeClassRank(a) - schemeClassRank(b) || a.localeCompare(b));
+  if (keys.length === 0) { box.innerHTML = ''; return; }
+  const picked = document.getElementById('scheme-class-filter').value;
+  const label = statusFilter ? statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1) : 'All';
+  box.innerHTML = `<span class="cls-counts-label">Class-wise (${label}):</span>` +
+    keys.map(k => k === 'Class not found'
+      ? `<span class="cls-chip" style="cursor:default">${k}: ${counts[k]}</span>`
+      : `<span class="cls-chip${picked === k ? ' on' : ''}" onclick="pickSchemeClass('${k}')">${k}: ${counts[k]}</span>`).join('');
+}
+
 function renderSchemeList() {
   const q = document.getElementById('scheme-search').value.trim().toLowerCase();
   const statusFilter = document.getElementById('scheme-status-filter').value;
+  const classFilter = document.getElementById('scheme-class-filter') ? document.getElementById('scheme-class-filter').value : '';
   let list = allSchemes;
   if (statusFilter) list = list.filter(s => s.status === statusFilter);
+  renderSchemeClassCounts(list, statusFilter);
+  if (classFilter) list = list.filter(s => s.cls === classFilter);
   if (q) list = list.filter(s => (s.student_name||'').toLowerCase().includes(q) || (s.admission_no||'').toLowerCase().includes(q));
 
   const el = document.getElementById('scheme-list');
@@ -361,6 +420,7 @@ function renderSchemeList() {
             <div style="font-weight:700;font-size:14px">${s.student_name}</div>
             <div style="font-size:12px;color:var(--text-muted)">${s.admission_no||''}</div>
             <div class="scheme-badges">
+              ${s.cls ? `<span class="scheme-badge cls">${s.cls}${s.sec ? ' – ' + s.sec : ''}</span>` : ''}
               <span class="scheme-badge year">${s.start_year}-${s.start_year+1} → ${s.completion_year}-${s.completion_year+1}</span>
               <span class="scheme-badge status-${s.status}">${s.status}</span>
               ${freeItems.map(f=>`<span class="scheme-badge free">🎓 Free ${f}</span>`).join('')}
