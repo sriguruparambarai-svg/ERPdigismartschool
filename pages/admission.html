@@ -88,10 +88,24 @@
               <option value="yes">RTE only</option>
               <option value="no">Non-RTE</option>
             </select>
+            <select class="form-control" id="filter-scheme" onchange="filterStudents()" style="width:150px; padding:7px 10px; display:none">
+              <option value="">Scheme + Regular</option>
+              <option value="yes">5-Yr Scheme only</option>
+              <option value="no">Regular only</option>
+            </select>
+            <select class="form-control" id="filter-van" onchange="filterStudents()" style="width:130px; padding:7px 10px">
+              <option value="">Van + No Van</option>
+              <option value="yes">Van only</option>
+              <option value="no">No Van only</option>
+            </select>
+            <button class="btn btn-secondary" onclick="toggleClassSummary()">📊 Class-wise</button>
             <button class="btn btn-secondary" onclick="openRollModal()">🔢 Roll Numbers</button>
             <button class="btn btn-primary" onclick="openAddModal()">+ New Admission</button>
           </div>
         </div>
+
+        <!-- CLASS-WISE SUMMARY (opens with the 📊 Class-wise button) -->
+        <div id="class-summary" style="display:none; margin-bottom:14px; overflow-x:auto"></div>
 
         <!-- TABLE -->
         <div class="table-wrap" id="table-wrap">
@@ -447,6 +461,105 @@
 // existing records (owner-only, protects student data)
 const IS_STAFF_LOGIN = (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff');
 let allStudents = [];
+// Active 5-Year Scheme children (by student id and admission no). Read-only.
+let schemeIds = new Set(), schemeAdms = new Set(), schemeLoaded = false;
+function isSchemeStudent(s) { return schemeIds.has(s.id) || (!!s.admission_no && schemeAdms.has(s.admission_no)); }
+// Van children: assigned in the Transport module, or a route set on the admission form
+let vanIds = new Set();
+async function loadVanMarks() {
+  try {
+    const { data, error } = await supabase.from('student_transport').select('student_id').eq('school_id', SCHOOL_ID);
+    if (error) return;
+    (data || []).forEach(x => { if (x.student_id) vanIds.add(x.student_id); });
+    filterStudents();
+  } catch (e) { /* ignore */ }
+}
+function isVanStudent(s) { return vanIds.has(s.id) || !!(s.transport_route && String(s.transport_route).trim()); }
+
+const SUMMARY_CLASS_ORDER = ['PreKG','LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+function summaryRank(c) { const i = SUMMARY_CLASS_ORDER.indexOf(c); return i === -1 ? 99 : i; }
+
+function toggleClassSummary() {
+  const box = document.getElementById('class-summary');
+  box.style.display = box.style.display === 'none' ? '' : 'none';
+  renderClassSummary();
+}
+
+// One row per class. Counts only current students (not those marked Left).
+function renderClassSummary() {
+  const box = document.getElementById('class-summary');
+  if (!box || box.style.display === 'none') return;
+  const showScheme = schemeLoaded && (schemeIds.size || schemeAdms.size);
+  const groups = {};
+  allStudents.filter(s => s.status !== 'left').forEach(s => {
+    const k = s.class || 'No class';
+    if (!groups[k]) groups[k] = { total: 0, scheme: 0, regular: 0, van: 0, novan: 0 };
+    const g = groups[k];
+    g.total++;
+    if (isSchemeStudent(s)) g.scheme++; else g.regular++;
+    if (isVanStudent(s)) g.van++; else g.novan++;
+  });
+  const keys = Object.keys(groups).sort((a,b) => summaryRank(a) - summaryRank(b) || a.localeCompare(b));
+  if (keys.length === 0) { box.innerHTML = ''; return; }
+  const sum = { total: 0, scheme: 0, regular: 0, van: 0, novan: 0 };
+  keys.forEach(k => Object.keys(sum).forEach(f => sum[f] += groups[k][f]));
+  const link = (cls, kind, val, n) => n === 0 ? '<span style="color:#B5ADA5">0</span>'
+    : `<a href="javascript:void(0)" onclick="pickClassSummary('${cls}','${kind}','${val}')" style="color:var(--maroon);font-weight:700;text-decoration:underline">${n}</a>`;
+  const cell = 'padding:7px 12px;border-bottom:1px solid #EFE6D8;text-align:center';
+  box.innerHTML = `
+    <div style="border:1px solid #E8C99A;border-radius:10px;background:#FFFCF7;padding:10px 12px">
+      <div style="font-weight:700;color:var(--maroon);margin-bottom:4px">📊 Class-wise Count</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Tap any number to see those children's names below. Students marked Left are not counted.</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:${showScheme ? 560 : 380}px">
+        <thead><tr style="background:#6B1A1A;color:#fff">
+          <th style="padding:7px 12px;text-align:left">Class</th><th style="${cell}">Total</th>
+          ${showScheme ? `<th style="${cell}">5-Yr Scheme</th><th style="${cell}">Regular</th>` : ''}
+          <th style="${cell}">Van</th><th style="${cell}">No Van</th>
+        </tr></thead>
+        <tbody>
+          ${keys.map(k => { const g = groups[k]; const ck = k === 'No class' ? '' : k; return `<tr>
+            <td style="padding:7px 12px;border-bottom:1px solid #EFE6D8;font-weight:600">${k}</td>
+            <td style="${cell}">${g.total}</td>
+            ${showScheme ? `<td style="${cell}">${link(ck,'scheme','yes',g.scheme)}</td><td style="${cell}">${link(ck,'scheme','no',g.regular)}</td>` : ''}
+            <td style="${cell}">${link(ck,'van','yes',g.van)}</td><td style="${cell}">${link(ck,'van','no',g.novan)}</td>
+          </tr>`; }).join('')}
+          <tr style="background:#F6EBD9;font-weight:700">
+            <td style="padding:7px 12px">All Classes</td><td style="${cell}">${sum.total}</td>
+            ${showScheme ? `<td style="${cell}">${sum.scheme}</td><td style="${cell}">${sum.regular}</td>` : ''}
+            <td style="${cell}">${sum.van}</td><td style="${cell}">${sum.novan}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function pickClassSummary(cls, kind, val) {
+  document.getElementById('search-input').value = '';
+  document.getElementById('filter-class').value = cls;
+  document.getElementById('filter-year').value = '';
+  document.getElementById('filter-rte').value = '';
+  document.getElementById('filter-scheme').value = kind === 'scheme' ? val : '';
+  document.getElementById('filter-van').value = kind === 'van' ? val : '';
+  filterStudents();
+  document.getElementById('table-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function loadSchemeMarks() {
+  try {
+    const token = sessionStorage.getItem('digismart_session_token') || '';
+    const r = await fetch('/api/scheme-data', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token, req: { table: 'scheme_enrollments', action: 'select', select: 'student_id,admission_no,status',
+        filters: [{ op: 'eq', col: 'school_id', val: SCHOOL_ID }, { op: 'eq', col: 'status', val: 'active' }], order: [], values: null, single: false, limit: null } })
+    });
+    const out = await r.json();
+    if (!r.ok || !out || !out.ok) return;   // no scheme permission or not used by this school: page works as before
+    (out.data || []).forEach(x => { if (x.student_id) schemeIds.add(x.student_id); if (x.admission_no) schemeAdms.add(x.admission_no); });
+    schemeLoaded = true;
+    if (schemeIds.size || schemeAdms.size) document.getElementById('filter-scheme').style.display = '';
+    filterStudents();
+  } catch (e) { /* ignore: badge is extra info only */ }
+}
 let editingId = null;
 let deletingId = null;
 
@@ -489,6 +602,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadRouteOptions();
   document.getElementById('stat-year-label').textContent = currentAcademicYear();
   await loadStudents();
+  await loadSchemeMarks();
+  await loadVanMarks();
   await loadStats();
   await createTableIfNeeded();
 });
@@ -567,6 +682,7 @@ async function loadStats() {
 
 // ── Render Table ──
 function renderTable(students) {
+  renderClassSummary();
   const tbody = document.getElementById('students-tbody');
   document.getElementById('record-count').textContent = `${students.length} student${students.length !== 1 ? 's' : ''} found`;
 
@@ -595,6 +711,8 @@ function renderTable(students) {
           <div class="fw-600">${s.full_name || '—'}</div>
           ${s.full_name_tamil ? `<div class="text-small text-muted">${s.full_name_tamil}</div>` : ''}
           ${s.is_rte ? '<span class="badge badge-maroon" style="font-size:10px;margin-top:3px;display:inline-block">RTE</span>' : ''}
+          ${isSchemeStudent(s) ? '<span class="badge" style="font-size:10px;margin-top:3px;display:inline-block;background:#C9A84C;color:#fff">5-Yr Scheme</span>' : ''}
+          ${isVanStudent(s) ? '<span class="badge" style="font-size:10px;margin-top:3px;display:inline-block;background:#F3E6CF;color:#6B1A1A">🚐 Van</span>' : ''}
         </td>
         <td>${s.class || '—'} ${s.section ? '– ' + s.section : ''}</td>
         <td>${s.father_name || '—'}</td>
@@ -631,7 +749,13 @@ function filterStudents() {
     const matchClass = !cls || s.class === cls;
     const matchYear = !yr || s.academic_year === yr;
     const matchRte = !rteSel || (rteSel === 'yes' ? !!s.is_rte : !s.is_rte);
-    return matchSearch && matchClass && matchYear && matchRte;
+    const schemeSel = document.getElementById('filter-scheme') ? document.getElementById('filter-scheme').value : '';
+    const matchScheme = !schemeSel || (schemeSel === 'yes' ? isSchemeStudent(s) : !isSchemeStudent(s));
+    const vanSel = document.getElementById('filter-van') ? document.getElementById('filter-van').value : '';
+    const matchVan = !vanSel || (vanSel === 'yes' ? isVanStudent(s) : !isVanStudent(s));
+    // Scheme/Van lists show current children only, matching the class-wise counts
+    const matchCurrent = !(schemeSel || vanSel) || s.status !== 'left';
+    return matchSearch && matchClass && matchYear && matchRte && matchScheme && matchVan && matchCurrent;
   });
 
   renderTable(filtered);
@@ -847,6 +971,7 @@ function viewStudent(id) {
       ${row('Roll Number', s.roll_no)}
       ${row('EMIS Id', s.emis_id)}
       ${row('RTE Student', s.is_rte ? 'Yes' : 'No')}
+      ${schemeLoaded ? row('Fee Type', isSchemeStudent(s) ? '5-Year Scheme' : 'Regular') : ''}
       ${row('Academic Year', s.academic_year)}
       ${row('Date of Birth', formatDate(s.dob))}
       ${row('Gender', s.gender)}
