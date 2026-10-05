@@ -280,7 +280,7 @@ function getMonthFees() {
   if (!_dashMonthFees) {
     const monthStart = dashLocalDate().slice(0, 7) + '-01';
     _dashMonthFees = dashCanSeeFeeTotals()
-      ? new Promise(res => secureFee.from('fee_payments').select('amount_paid,payment_date,student_class,is_cancelled')
+      ? new Promise(res => secureFee.from('fee_payments').select('amount_paid,payment_date,student_class,student_name,receipt_no,fee_head_name,period,is_cancelled')
           .eq('school_id', SCHOOL_ID).gte('payment_date', monthStart).order('payment_date', { ascending: false }).then(res))
       : Promise.resolve({ data: [] });
   }
@@ -293,6 +293,25 @@ function getActiveStudentClasses() {
   }
   return _dashActiveStudents;
 }
+// One receipt can hold several fee items (e.g. two months of van fee).
+// Group them so each receipt shows once, with its items and total.
+function dashGroupReceipts(rows) {
+  const groups = [], byKey = {};
+  rows.forEach(r => {
+    const key = r.receipt_no || ('row-' + groups.length);
+    if (!byKey[key]) {
+      const cls = r.student_class ? (/^class/i.test(r.student_class) || /kg$/i.test(r.student_class) ? r.student_class : 'Class ' + r.student_class) : '—';
+      byKey[key] = { receipt: r.receipt_no || 'No bill no', name: r.student_name, cls: cls, items: [], total: 0 };
+      groups.push(byKey[key]);
+    }
+    const g = byKey[key];
+    const item = (r.fee_head_name || 'Fee') + (r.period ? ' (' + r.period + ')' : '');
+    g.items.push(item + ' ₹' + (r.amount_paid || 0).toLocaleString('en-IN'));
+    g.total += (r.amount_paid || 0);
+  });
+  return groups;
+}
+
 // Cancelled receipts never count as money collected
 function dashLivePayments(rows) { return (rows || []).filter(r => !r.is_cancelled); }
 
@@ -529,11 +548,14 @@ async function loadFeeOverview() {
       <span style="font-size:12px;color:var(--text-muted)">Month Total</span>
       <span style="font-size:18px;font-weight:800;color:var(--maroon)">₹${total.toLocaleString('en-IN')}</span>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Recent Payments</div>
-    ${data.slice(0,4).map(r => `
-      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-        <span>${r.student_class ? (/^class/i.test(r.student_class) ? r.student_class : 'Class ' + r.student_class) : '—'}</span>
-        <span style="font-weight:600;color:#2D7A3A">₹${(r.amount_paid||0).toLocaleString('en-IN')}</span>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:600">Recent Receipts</div>
+    ${dashGroupReceipts(data).slice(0,4).map(g => `
+      <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="min-width:0">
+          <div style="font-weight:600">${g.name || '—'} <span style="font-weight:400;color:var(--text-muted)">· ${g.cls}</span></div>
+          <div style="font-size:11px;color:var(--text-muted)">${g.receipt} · ${g.items.join(', ')}</div>
+        </div>
+        <span style="font-weight:600;color:#2D7A3A;white-space:nowrap">₹${g.total.toLocaleString('en-IN')}</span>
       </div>
     `).join('')}
   `;
