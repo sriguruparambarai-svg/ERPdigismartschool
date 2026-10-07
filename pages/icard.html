@@ -79,6 +79,8 @@
 .mt-grid td.mt-breakrow{background:#F1EFE8;text-align:center;font-size:11px;font-weight:600;color:var(--text-muted);height:28px;vertical-align:middle;letter-spacing:.5px}
 .tt-cell.mt-clash{background:#FDECEC !important;box-shadow:inset 0 0 0 2px #C0392B}
 .mt-clash-note{font-size:9px;font-weight:600;color:#C0392B;margin-top:2px}
+.tt-cell.mt-common{background:#FBF4E2 !important;box-shadow:inset 0 0 0 2px #C9A84C}
+.mt-common-note{font-size:9px;font-weight:700;color:#8A6D1E;margin-top:2px}
 .mt-sum{border-collapse:collapse;font-size:11px;width:100%}
 .mt-sum th{background:var(--maroon);color:var(--sandal);padding:6px 8px;font-weight:600;border:1px solid #8B2A2A;white-space:nowrap}
 .mt-sum td{border:1px solid var(--border);padding:5px 8px;text-align:center}
@@ -551,6 +553,10 @@
       <label class="form-label">Teacher</label>
       <select id="mt-teacher" class="form-control" style="margin-top:4px"></select>
     </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin:-4px 0 14px;cursor:pointer">
+      <input type="checkbox" id="mt-common" style="margin-top:2px">
+      <span><b>Common class</b> — this teacher takes this subject for more than one class together in this period</span>
+    </label>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="mtCloseModal()">Cancel</button>
       <button class="btn btn-danger btn-sm" onclick="mtClearCell()">Clear</button>
@@ -1519,11 +1525,18 @@ function renderMtGrid() {
       }
       const t = (cell.teacher || '').trim();
       const others = t && use[t] ? use[t].filter(c => c !== cls) : [];
-      const clash = others.length > 0;
-      html += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''}" onclick="mtOpenCell(${pi},${ci})">
+      // Common class: this box and every other box with the same teacher this period
+      // are ticked "Common class" and have the same subject → not a clash
+      const isCommon = others.length > 0 && cell.common === true && others.every(oc => {
+        const oCell = mtGetCell(mtDay, pi, oc);
+        return oCell && oCell.common === true && (oCell.subject || '') === (cell.subject || '');
+      });
+      const clash = others.length > 0 && !isCommon;
+      html += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''} ${isCommon ? 'mt-common' : ''}" onclick="mtOpenCell(${pi},${ci})">
         <div class="tt-subject">${mtEsc(cell.subject || '—')}</div>
         ${t ? `<div class="tt-teacher">${mtEsc(t)}</div>` : ''}
         ${clash ? `<div class="mt-clash-note">⚠ also in ${mtEsc(others.join(', '))}</div>` : ''}
+        ${isCommon ? `<div class="mt-common-note">Common class · ${mtEsc(mtClasses.filter(c => use[t].indexOf(c) !== -1).join(', '))}</div>` : ''}
       </div></td>`;
     });
     const busy = new Set(Object.keys(use));
@@ -1547,6 +1560,7 @@ function renderMtSummary() {
   days.forEach(d => {
     periods.forEach((p, pi) => {
       if (p.isBreak) return;
+      const commonSeen = {};   // Common class → teacher counted once for this period
       mtClasses.forEach(cls => {
         const cell = mtGetCell(d, pi, cls);
         if (!cell) return;
@@ -1555,6 +1569,11 @@ function renderMtSummary() {
         if (s) {
           counts[cls][s] = (counts[cls][s] || 0) + 1;
           if (subjects.indexOf(s) === -1) extraSubjects.add(s);
+        }
+        if (t && cell.common === true) {
+          const key = t + '|' + s;
+          if (commonSeen[key]) return;
+          commonSeen[key] = true;
         }
         if (t) load[t] = (load[t] || 0) + 1;
       });
@@ -1614,6 +1633,7 @@ function mtOpenCell(pi, ci) {
       return `<option value="${mtEsc(n)}" ${n === cell.teacher ? 'selected' : ''}>${mtEsc(n + tag)}</option>`;
     }).join('');
 
+  document.getElementById('mt-common').checked = cell.common === true;
   document.getElementById('mt-modal').classList.add('open');
 }
 
@@ -1631,7 +1651,18 @@ function mtSetCell() {
   if (!subject && !teacher) { mtClearCell(); return; }
   if (!mtGrid[mtDay]) mtGrid[mtDay] = {};
   if (!mtGrid[mtDay][mtCell.pi]) mtGrid[mtDay][mtCell.pi] = {};
-  mtGrid[mtDay][mtCell.pi][mtCell.cls] = { subject, teacher };
+  const common = document.getElementById('mt-common').checked;
+  const prev = mtGrid[mtDay][mtCell.pi][mtCell.cls] || {};
+  mtGrid[mtDay][mtCell.pi][mtCell.cls] = common ? { subject, teacher, common: true } : { subject, teacher };
+  // Common class: apply the same tick to the other classes this teacher takes for this subject in this period
+  if (teacher && (common || prev.common === true)) {
+    mtClasses.forEach(oc => {
+      if (oc === mtCell.cls) return;
+      const o = mtGrid[mtDay][mtCell.pi][oc];
+      if (!o || (o.teacher || '').trim() !== teacher.trim() || (o.subject || '') !== subject) return;
+      if (common) o.common = true; else delete o.common;
+    });
+  }
   mtSetDirty(true);
   mtCloseModal();
   renderMtGrid();
