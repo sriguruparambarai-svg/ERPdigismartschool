@@ -327,6 +327,24 @@
 <script>
 const TABLE = 'front_office';
 
+// All Front Office data goes through the server (/api/front-office) — never straight to the database.
+// Returns { data, error } so the rest of the page reads the same as before.
+async function foApi(action, extra) {
+  try {
+    const r = await fetch('/api/front-office', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action }, extra || {})) });
+    const j = await r.json().catch(() => ({ ok:false, error:'Server did not reply properly (' + r.status + ').' }));
+    if (!j.ok) {
+      showToast('Front Office: ' + (j.error || 'unknown error'), 'error');
+      return { data: null, error: { message: j.error || 'unknown error' } };
+    }
+    return { data: j.rows || j.row || true, error: null };
+  } catch (e) {
+    showToast('Network error — please check your internet.', 'error');
+    return { data: null, error: { message: 'Network error — please check your internet.' } };
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('frontoffice');
   const today = new Date().toISOString().split('T')[0];
@@ -345,9 +363,9 @@ async function createTableIfNeeded() {
 // ── STATS ──
 async function loadStats() {
   const today = new Date().toISOString().split('T')[0];
-  const { data: vis } = await supabase.from(TABLE).select('id,status').eq('school_id',SCHOOL_ID).eq('category','visitor').eq('date',today);
-  const { data: comp } = await supabase.from(TABLE).select('id').eq('school_id',SCHOOL_ID).eq('category','complaint').eq('status','pending');
-  const { data: lost } = await supabase.from(TABLE).select('id').eq('school_id',SCHOOL_ID).eq('category','lost_found').neq('status','claimed');
+  const { data: vis } = await foApi('list', { category:'visitor', date: today });
+  const { data: comp } = await foApi('list', { category:'complaint', status:'pending', limit: 500 });
+  const { data: lost } = await foApi('list', { category:'lost_found', status_not:'claimed', limit: 500 });
 
   document.getElementById('st-visitors').textContent = vis?.length || 0;
   document.getElementById('st-inside').textContent = vis?.filter(v=>v.status==='in').length || 0;
@@ -361,8 +379,7 @@ async function addVisitor() {
   const purpose = document.getElementById('vis-purpose').value;
   if (!name || !purpose) { showAlert('vis-alert','⚠️ Please fill visitor name and purpose.'); return; }
   showLoading('Registering visitor...');
-  const { error } = await supabase.from(TABLE).insert([{
-    school_id: SCHOOL_ID, category: 'visitor',
+  const { error } = await foApi('add', { category: 'visitor', entry: {
     name, mobile: document.getElementById('vis-mobile').value.trim(),
     purpose, meet_whom: document.getElementById('vis-meet').value.trim(),
     student_name: document.getElementById('vis-student').value.trim(),
@@ -370,7 +387,7 @@ async function addVisitor() {
     status: 'in', date: new Date().toISOString().split('T')[0],
     time_in: new Date().toTimeString().slice(0,5),
     created_at: new Date().toISOString()
-  }]);
+  }});
   hideLoading();
   if (error) { showAlert('vis-alert','⚠️ '+error.message); return; }
   showToast(name + ' signed in!','success');
@@ -381,7 +398,7 @@ async function addVisitor() {
 
 async function loadVisitors() {
   const date = document.getElementById('vis-date').value;
-  const { data } = await supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','visitor').eq('date',date).order('created_at',{ascending:false});
+  const { data } = await foApi('list', { category:'visitor', date });
   if (!data||data.length===0) { document.getElementById('visitors-list').innerHTML='<div class="empty-state"><div class="icon">👤</div><p>No visitors recorded for this date.</p></div>'; return; }
   document.getElementById('visitors-list').innerHTML = `
     <div class="table-wrap"><table style="font-size:12px">
@@ -405,8 +422,8 @@ async function loadVisitors() {
 }
 
 async function signOutVisitor(id) {
-  await supabase.from(TABLE).update({status:'out',time_out:new Date().toTimeString().slice(0,5)}).eq('id',id);
-  showToast('Visitor signed out.','success');
+  const { error } = await foApi('update', { id, change:'sign_out', time_out: new Date().toTimeString().slice(0,5) });
+  if (!error) showToast('Visitor signed out.','success');
   await loadVisitors(); await loadStats();
 }
 
@@ -416,8 +433,7 @@ async function addCall() {
   const notes = document.getElementById('call-notes').value.trim();
   if (!name||!notes) { showAlert('call-alert','⚠️ Please fill caller name and notes.'); return; }
   showLoading('Saving...');
-  const { error } = await supabase.from(TABLE).insert([{
-    school_id: SCHOOL_ID, category: 'call',
+  const { error } = await foApi('add', { category: 'call', entry: {
     name, mobile: document.getElementById('call-phone').value.trim(),
     purpose: document.getElementById('call-type').value,
     meet_whom: document.getElementById('call-dept').value.trim(),
@@ -425,7 +441,7 @@ async function addCall() {
     date: new Date().toISOString().split('T')[0],
     time_in: new Date().toTimeString().slice(0,5),
     created_at: new Date().toISOString()
-  }]);
+  }});
   hideLoading();
   if (error) { showAlert('call-alert','⚠️ '+error.message); return; }
   showToast('Call logged!','success');
@@ -435,7 +451,7 @@ async function addCall() {
 
 async function loadCalls() {
   const date = document.getElementById('call-date').value;
-  const { data } = await supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','call').eq('date',date).order('created_at',{ascending:false});
+  const { data } = await foApi('list', { category:'call', date });
   if (!data||data.length===0) { document.getElementById('calls-list').innerHTML='<div class="empty-state"><div class="icon">📞</div><p>No calls logged today.</p></div>'; return; }
   document.getElementById('calls-list').innerHTML = `
     <div class="table-wrap"><table style="font-size:12px">
@@ -463,15 +479,14 @@ async function addComplaint() {
   const details = document.getElementById('comp-details').value.trim();
   if (!by||!details) { showAlert('comp-alert','⚠️ Please fill complainant name and details.'); return; }
   showLoading('Registering...');
-  const { error } = await supabase.from(TABLE).insert([{
-    school_id: SCHOOL_ID, category: 'complaint',
+  const { error } = await foApi('add', { category: 'complaint', entry: {
     name: by, mobile: document.getElementById('comp-mobile').value.trim(),
     purpose: document.getElementById('comp-cat').value,
     student_name: document.getElementById('comp-student').value.trim(),
     notes: details, status: 'pending',
     date: new Date().toISOString().split('T')[0],
     created_at: new Date().toISOString()
-  }]);
+  }});
   hideLoading();
   if (error) { showAlert('comp-alert','⚠️ '+error.message); return; }
   showToast('Complaint registered.','success');
@@ -481,9 +496,7 @@ async function addComplaint() {
 
 async function loadComplaints() {
   const status = document.getElementById('comp-filter').value;
-  let q = supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','complaint').order('created_at',{ascending:false});
-  if (status) q = q.eq('status',status);
-  const { data } = await q.limit(30);
+  const { data } = await foApi('list', { category:'complaint', status: status || undefined, limit: 30 });
   if (!data||data.length===0) { document.getElementById('complaints-list').innerHTML='<div class="empty-state"><div class="icon">📋</div><p>No complaints found.</p></div>'; return; }
   document.getElementById('complaints-list').innerHTML = `
     <div class="table-wrap"><table style="font-size:12px">
@@ -508,8 +521,8 @@ async function loadComplaints() {
 }
 
 async function resolveComplaint(id) {
-  await supabase.from(TABLE).update({status:'resolved'}).eq('id',id);
-  showToast('Complaint resolved!','success');
+  const { error } = await foApi('update', { id, change:'resolve' });
+  if (!error) showToast('Complaint resolved!','success');
   await loadComplaints(); await loadStats();
 }
 
@@ -518,8 +531,7 @@ async function addLostFound() {
   const item = document.getElementById('lost-item').value.trim();
   if (!item) { showAlert('lost-alert','⚠️ Please describe the item.'); return; }
   showLoading('Saving...');
-  const { error } = await supabase.from(TABLE).insert([{
-    school_id: SCHOOL_ID, category: 'lost_found',
+  const { error } = await foApi('add', { category: 'lost_found', entry: {
     name: item, purpose: document.getElementById('lost-type').value,
     meet_whom: document.getElementById('lost-location').value.trim(),
     student_name: document.getElementById('lost-student').value.trim(),
@@ -527,7 +539,7 @@ async function addLostFound() {
     status: 'unclaimed',
     date: new Date().toISOString().split('T')[0],
     created_at: new Date().toISOString()
-  }]);
+  }});
   hideLoading();
   if (error) { showAlert('lost-alert','⚠️ '+error.message); return; }
   showToast('Item logged!','success');
@@ -537,11 +549,11 @@ async function addLostFound() {
 
 async function loadLostFound() {
   const filter = document.getElementById('lost-filter').value;
-  let q = supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','lost_found').order('created_at',{ascending:false});
-  if (filter === 'claimed') q = q.eq('status','claimed');
-  else if (filter) q = q.eq('purpose',filter).neq('status','claimed');
-  else q = q.neq('status','claimed');
-  const { data } = await q.limit(30);
+  const lq = { category:'lost_found', limit: 30 };
+  if (filter === 'claimed') lq.status = 'claimed';
+  else if (filter) { lq.purpose = filter; lq.status_not = 'claimed'; }
+  else lq.status_not = 'claimed';
+  const { data } = await foApi('list', lq);
   if (!data||data.length===0) { document.getElementById('lost-list').innerHTML='<div class="empty-state"><div class="icon">🔍</div><p>No items in register.</p></div>'; return; }
   document.getElementById('lost-list').innerHTML = `
     <div class="table-wrap"><table style="font-size:12px">
@@ -564,8 +576,8 @@ async function loadLostFound() {
 }
 
 async function claimItem(id) {
-  await supabase.from(TABLE).update({status:'claimed'}).eq('id',id);
-  showToast('Item marked as claimed!','success');
+  const { error } = await foApi('update', { id, change:'claim' });
+  if (!error) showToast('Item marked as claimed!','success');
   await loadLostFound(); await loadStats();
 }
 
@@ -575,8 +587,7 @@ async function issueOutPass() {
   const reason = document.getElementById('pass-reason').value;
   if (!student) { showAlert('pass-alert','⚠️ Please enter student name.'); return; }
   showLoading('Issuing pass...');
-  const { error } = await supabase.from(TABLE).insert([{
-    school_id: SCHOOL_ID, category: 'outpass',
+  const { error } = await foApi('add', { category: 'outpass', entry: {
     name: student, purpose: reason,
     meet_whom: document.getElementById('pass-parent').value.trim(),
     mobile: document.getElementById('pass-mobile').value.trim(),
@@ -585,7 +596,7 @@ async function issueOutPass() {
     status: 'out', date: new Date().toISOString().split('T')[0],
     time_in: new Date().toTimeString().slice(0,5),
     created_at: new Date().toISOString()
-  }]);
+  }});
   hideLoading();
   if (error) { showAlert('pass-alert','⚠️ '+error.message); return; }
   showToast('Out pass issued for '+student,'success');
@@ -595,7 +606,7 @@ async function issueOutPass() {
 
 async function loadOutPasses() {
   const date = document.getElementById('pass-date').value;
-  const { data } = await supabase.from(TABLE).select('*').eq('school_id',SCHOOL_ID).eq('category','outpass').eq('date',date).order('created_at',{ascending:false});
+  const { data } = await foApi('list', { category:'outpass', date });
   if (!data||data.length===0) { document.getElementById('outpass-list').innerHTML='<div class="empty-state"><div class="icon">🚪</div><p>No out passes issued today.</p></div>'; return; }
   document.getElementById('outpass-list').innerHTML = `
     <div class="table-wrap"><table style="font-size:12px">
@@ -620,8 +631,8 @@ async function loadOutPasses() {
 // ── HELPERS ──
 async function deleteEntry(id) {
   if (!confirm('Delete this entry?')) return;
-  await supabase.from(TABLE).delete().eq('id',id);
-  showToast('Deleted.','success');
+  const { error } = await foApi('delete', { id });
+  if (!error) showToast('Deleted.','success');
   await loadCalls();
 }
 
