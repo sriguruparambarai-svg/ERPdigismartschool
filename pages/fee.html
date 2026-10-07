@@ -28,6 +28,17 @@
 .progress-fill{height:100%;border-radius:4px;background:var(--maroon)}
 .collection-mode-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:var(--sandal);color:var(--maroon)}
 .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+/* Tick-box dropdowns (Defaulters: Fee Head / Fee Period) */
+.ms-wrap{position:relative}
+.ms-btn{display:flex;justify-content:space-between;align-items:center;gap:6px;text-align:left;cursor:pointer;background:#fff;white-space:nowrap;overflow:hidden}
+.ms-btn span{overflow:hidden;text-overflow:ellipsis}
+.ms-panel{display:none;position:absolute;z-index:60;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:8px 10px;min-width:230px;max-height:320px;overflow-y:auto}
+.ms-panel.open{display:block}
+.ms-links{display:flex;gap:12px;font-size:11px;padding-bottom:6px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.ms-links a{color:var(--maroon);cursor:pointer;font-weight:600}
+.ms-sec{font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.4px;margin:8px 0 2px;text-transform:uppercase}
+.ms-opt{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 2px;cursor:pointer}
+.ms-opt input{margin:0}
 .summary-band{display:flex;gap:12px;background:var(--sandal-light);border:1px solid #E8D8B8;border-radius:10px;padding:12px 16px;margin-bottom:16px;flex-wrap:wrap}
 .sband-item{display:flex;flex-direction:column;gap:2px}
 .sband-label{font-size:10px;color:var(--text-muted);font-weight:500;text-transform:uppercase}
@@ -602,15 +613,17 @@
           </div>
           <div>
             <label class="form-label">Fee Head</label>
-            <select class="form-control" id="def-head" style="width:180px;margin-top:4px" onchange="populateDefPeriod()">
-              <option value="">All Fee Heads</option>
-            </select>
+            <div class="ms-wrap" style="margin-top:4px">
+              <button type="button" class="form-control ms-btn" style="width:200px" onclick="msToggle('def-head-panel')"><span id="def-head-label">All Fee Heads</span><span>▾</span></button>
+              <div class="ms-panel" id="def-head-panel"></div>
+            </div>
           </div>
           <div>
             <label class="form-label">Fee Period</label>
-            <select class="form-control" id="def-period" style="width:180px;margin-top:4px">
-              <option value="">All Periods</option>
-            </select>
+            <div class="ms-wrap" style="margin-top:4px">
+              <button type="button" class="form-control ms-btn" style="width:200px" onclick="msToggle('def-period-panel')"><span id="def-period-label">All Periods</span><span>▾</span></button>
+              <div class="ms-panel" id="def-period-panel"></div>
+            </div>
           </div>
           <div style="margin-top:20px">
             <button class="btn btn-primary" onclick="loadDefaulters()">Load Defaulters</button>
@@ -1170,40 +1183,77 @@ async function saveCollectionMode() {
 
 function populateDefPeriod() {
   populateDefHead();
-  const headEl = document.getElementById('def-head');
-  const vanMode = !!(headEl && headEl.value === '__van__');
-  const sel = document.getElementById('def-period');
-  const keep = sel.value;
-  sel.innerHTML = '<option value="">All Periods</option>';
-  const list = vanMode ? vanMonths.slice() : getPeriods();
-  list.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p; opt.textContent = vanMode ? 'Van – ' + p : p;
-    sel.appendChild(opt);
-  });
-  if (vanMode) {
-    const opt = document.createElement('option');
-    opt.value = VAN_ONETIME_PERIOD; opt.textContent = 'One-time van plan';
-    sel.appendChild(opt);
+  const panel = document.getElementById('def-period-panel');
+  if (!panel) return;
+  const keep = new Set(defTicked('def-period-panel').map(x => x.kind + '|' + x.value));
+  const vanOn = defTicked('def-head-panel').some(x => x.value === '__van__');
+  const feeList = getPeriods();
+  const box = (kind, value, text) =>
+    `<label class="ms-opt"><input type="checkbox" data-kind="${kind}" value="${escapeAttr(value)}" ${keep.has(kind + '|' + value) ? 'checked' : ''} onchange="defMsLabels()"> ${escapeAttr(text)}</label>`;
+  let html = '<div class="ms-links"><a onclick="msSetAll(\'def-period-panel\',true)">Select all</a><a onclick="msSetAll(\'def-period-panel\',false)">Clear</a></div>';
+  if (feeList.length) {
+    if (vanOn) html += '<div class="ms-sec">Fee periods</div>';
+    feeList.forEach(p => { html += box('fee', p, p); });
   }
-  if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+  if (vanOn) {
+    html += '<div class="ms-sec">Van months</div>';
+    vanMonths.forEach(m => { html += box('van', m, 'Van – ' + m); });
+    html += box('van', VAN_ONETIME_PERIOD, 'One-time van plan');
+  }
+  panel.innerHTML = html;
+  defMsLabels();
 }
 
 // Fee Head filter for Defaulters: every class fee head, plus one "Van Fee"
 // entry (van dues come from transport assignments, not fee heads).
+// Tick boxes — nothing ticked means all heads.
 function populateDefHead() {
-  const sel = document.getElementById('def-head');
-  if (!sel) return;
-  const keep = sel.value;
-  let html = '<option value="">All Fee Heads</option>';
-  (feeHeads || []).forEach(h => {
-    if (h.category === 'transport') return;
-    html += '<option value="' + h.id + '">' + escapeAttr(h.name || 'Fee') + '</option>';
+  const panel = document.getElementById('def-head-panel');
+  if (!panel) return;
+  const keep = new Set(defTicked('def-head-panel').map(x => x.value));
+  const box = (value, text) =>
+    `<label class="ms-opt"><input type="checkbox" value="${escapeAttr(value)}" ${keep.has(String(value)) ? 'checked' : ''} onchange="populateDefPeriod()"> ${escapeAttr(text)}</label>`;
+  let html = '<div class="ms-links"><a onclick="msSetAll(\'def-head-panel\',true)">Select all</a><a onclick="msSetAll(\'def-head-panel\',false)">Clear</a></div>';
+  (feeHeads || []).forEach(hd => {
+    if (hd.category === 'transport') return;
+    html += box(hd.id, hd.name || 'Fee');
   });
-  html += '<option value="__van__">🚐 Van Fee</option>';
-  sel.innerHTML = html;
-  if (Array.from(sel.options).some(o => o.value === keep)) sel.value = keep;
+  html += box('__van__', '🚐 Van Fee');
+  panel.innerHTML = html;
 }
+
+// ── Tick-box dropdown helpers ──
+function defTicked(panelId) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return [];
+  return Array.from(panel.querySelectorAll('input[type=checkbox]:checked')).map(i => ({
+    value: i.value, kind: i.getAttribute('data-kind') || '', text: i.parentElement.textContent.trim()
+  }));
+}
+function msToggle(panelId) {
+  document.querySelectorAll('.ms-panel.open').forEach(p => { if (p.id !== panelId) p.classList.remove('open'); });
+  document.getElementById(panelId).classList.toggle('open');
+}
+function msSetAll(panelId, on) {
+  document.querySelectorAll('#' + panelId + ' input[type=checkbox]').forEach(i => { i.checked = on; });
+  if (panelId === 'def-head-panel') populateDefPeriod(); else defMsLabels();
+}
+function msLabelText(ticked, allText, panelId) {
+  const total = document.querySelectorAll('#' + panelId + ' input[type=checkbox]').length;
+  if (!ticked.length || ticked.length === total) return allText;
+  if (ticked.length <= 2) return ticked.map(t => t.text.replace('🚐 ', '')).join(', ');
+  return ticked.length + ' selected';
+}
+function defMsLabels() {
+  const hl = document.getElementById('def-head-label');
+  const pl = document.getElementById('def-period-label');
+  if (hl) hl.textContent = msLabelText(defTicked('def-head-panel'), 'All Fee Heads', 'def-head-panel');
+  if (pl) pl.textContent = msLabelText(defTicked('def-period-panel'), 'All Periods', 'def-period-panel');
+}
+// Close an open tick list when clicking anywhere else
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('.ms-wrap')) document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+});
 
 function getPeriods() {
   if (collectionMode === 'term') {
@@ -3024,7 +3074,10 @@ async function loadLedger(studentId) {
 // ── DEFAULTERS ──
 async function loadDefaulters() {
   const cls = document.getElementById('def-class').value;
-  const period = document.getElementById('def-period').value;
+  // Ticked fee periods / van months (nothing ticked = all)
+  const tickedPeriods = defTicked('def-period-panel');
+  const feePeriods = tickedPeriods.filter(x => x.kind === 'fee').map(x => x.value);
+  const vanPeriods = tickedPeriods.filter(x => x.kind === 'van').map(x => x.value);
 
   // Get all active students
   let studentQuery = supabase.from('students').select('id,full_name,admission_no,roll_no,class,section,mobile,father_name,admission_date,is_rte').eq('school_id',SCHOOL_ID).eq('status','active');
@@ -3070,13 +3123,17 @@ async function loadDefaulters() {
 
   const defVanHead = getVanFeeHead();
 
-  // Filters: Fee Head ('' = all, '__van__' = van only, or a fee head id)
-  const headEl = document.getElementById('def-head');
-  const headSel = headEl ? headEl.value : '';
-  const vanMode = headSel === '__van__';
+  // Filters: ticked Fee Heads (nothing ticked or everything ticked = all heads)
+  const tickedHeads = defTicked('def-head-panel');
+  const headTotal = document.querySelectorAll('#def-head-panel input[type=checkbox]').length;
+  const noneTicked = tickedHeads.length === 0;
+  const headsAll = noneTicked || tickedHeads.length === headTotal;
+  const vanTicked = tickedHeads.some(x => x.value === '__van__');
+  const headIds = tickedHeads.filter(x => x.value !== '__van__').map(x => String(x.value));
+  const wantClassHeads = headsAll || headIds.length > 0;
   // Late fees are set per term on the whole bill, so they are only shown
-  // on the all-heads view; with a single head chosen they would mislead.
-  const showLate = lateFeeConfig.enabled && !headSel;
+  // on the all-heads view; with only some heads chosen they would mislead.
+  const showLate = lateFeeConfig.enabled && headsAll;
 
   const defaulters = [];
   students.forEach(student => {
@@ -3087,12 +3144,12 @@ async function loadDefaulters() {
     const stuScheme = schemeMap[student.id] || null;
 
     // ── Class fee heads (skipped when Van Fee is chosen) ──
-    if (!vanMode) {
+    if (wantClassHeads) {
       const structs = structureForStudent(student, structMap[student.class] || [], stuScheme);
-      const periods = period ? [period] : getPeriods();
+      const periods = feePeriods.length ? feePeriods : getPeriods();
       structs.forEach(s => {
-        // Only the chosen fee head, if one was picked
-        if (headSel && s.fee_head_id !== headSel) return;
+        // Only the ticked fee heads, if any were picked
+        if (!headsAll && headIds.indexOf(String(s.fee_head_id)) === -1) return;
         // Free under the 5-Year Scheme — nothing owed on this head.
         if (isFeeWaived(stuScheme, s.fee_head_id)) return;
         // Free for RTE students (tuition / general heads).
@@ -3118,10 +3175,10 @@ async function loadDefaulters() {
     // Kept out of pendingByPeriod: late fees are per term, not per van month.
     // Counted on the full view (no head, no period) or when Van Fee is chosen.
     const stuVan = vanMap[student.id];
-    const wantVan = vanMode || (!headSel && !period);
+    const wantVan = vanTicked || (noneTicked && !feePeriods.length);
     if (wantVan && stuVan && defVanHead && !(stuScheme && stuScheme.free_van)) {
       if (vanPlanActive(stuVan)) {
-        if (!period || period === VAN_ONETIME_PERIOD) {
+        if (!vanPeriods.length || vanPeriods.indexOf(VAN_ONETIME_PERIOD) !== -1) {
           const planAmt = parseFloat(stuVan.van_plan_amount) || 0;
           const planPaid = paidMap[student.id + '_' + defVanHead.id + '_' + VAN_ONETIME_PERIOD] || 0;
           if (planAmt - planPaid > 0) {
@@ -3132,7 +3189,7 @@ async function loadDefaulters() {
       } else {
         const vRate = parseFloat(stuVan.monthly_fee) || 0;
         vanMonthsForStudent(student).forEach(function (m) {
-          if (period && period !== m) return;
+          if (vanPeriods.length && vanPeriods.indexOf(m) === -1) return;
           const mPaid = paidMap[student.id + '_' + defVanHead.id + '_' + m] || 0;
           if (vRate - mPaid > 0) {
             totalDue += vRate - mPaid;
@@ -3164,8 +3221,8 @@ async function loadDefaulters() {
 
   // Plain words for what was filtered, shown above the list
   const defFilterLabel = [
-    headEl && headEl.value ? headEl.options[headEl.selectedIndex].text.replace('🚐 ', '') : '',
-    period ? (period === VAN_ONETIME_PERIOD ? 'One-time van plan' : period) : '',
+    headsAll ? '' : tickedHeads.map(x => x.text.replace('🚐 ', '')).join(', '),
+    tickedPeriods.map(x => x.text).join(', '),
     cls || ''
   ].filter(Boolean).join(' · ');
 
