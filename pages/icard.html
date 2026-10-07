@@ -87,6 +87,22 @@
 .mt-sum td.mt-zero{background:#FDECEC;color:#C0392B;font-weight:600}
 .mt-sum td:first-child{text-align:left;font-weight:600;white-space:nowrap}
 .mt-unsaved{font-size:11px;font-weight:600;color:#C0392B}
+/* ── Staff Timetable ── */
+.st-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:2px solid var(--gold)}
+.st-head img{width:54px;height:54px;border-radius:50%;object-fit:cover;border:1px solid var(--border)}
+.st-school{font-size:17px;font-weight:700;color:var(--maroon);line-height:1.2}
+.st-school2{font-size:11px;color:var(--text-muted)}
+.st-who{margin-left:auto;text-align:right}
+.st-who-name{font-size:15px;font-weight:700;color:var(--maroon)}
+.st-who-sub{font-size:11px;color:var(--text-muted)}
+.st-free{color:#B5ADA3;font-size:11px;font-style:italic}
+.st-cls{font-size:10px;color:var(--text-muted);margin-top:2px}
+.st-common{font-size:9px;font-weight:700;color:#8A6D1E;margin-top:2px}
+.st-grid .tt-cell{cursor:default}
+.st-grid .tt-cell:hover{background:inherit}
+.st-foot{display:flex;justify-content:space-between;align-items:flex-end;padding:12px 16px 18px;font-size:12px;color:var(--text);flex-wrap:wrap;gap:10px}
+.st-sign{text-align:center;min-width:170px;border-top:1px solid #999;padding-top:4px;font-size:11px;color:var(--text-muted);margin-top:30px}
+@media print{ #tab-staff-tt .card{box-shadow:none;border:1px solid #ccc} .st-grid .tt-cell.filled{background:#fff!important} }
 .subject-chip{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid transparent;transition:all .12s;margin:2px}
 .subject-chip:hover{border-color:var(--gold)}
 .subject-chip.selected{border-color:var(--maroon);font-weight:700}
@@ -124,6 +140,7 @@
         <div class="tab" onclick="switchTab('icard-settings',this)">⚙️ I-Card Settings</div>
         <div class="tab" onclick="switchTab('timetable',this)">🗓 Timetable</div>
         <div class="tab" onclick="switchTab('master-tt',this)">📋 Master Timetable</div>
+        <div class="tab" onclick="switchTab('staff-tt',this)">👩‍🏫 Staff Timetable</div>
         <div class="tab" onclick="switchTab('tt-settings',this)">⚙️ Timetable Settings</div>
       </div>
 
@@ -444,6 +461,28 @@
             </div>
             <div style="overflow-x:auto;padding:12px" id="mt-load"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: STAFF TIMETABLE (read from the master timetable) ══ -->
+      <div id="tab-staff-tt" class="hidden">
+        <div class="mt-bar no-print">
+          <div>
+            <label class="form-label">Teacher</label>
+            <select class="form-control" id="st-teacher" style="width:220px;margin-top:4px" onchange="renderStaffTT()"></select>
+          </div>
+          <div>
+            <label class="form-label">Academic Year</label>
+            <select class="form-control" id="st-year" style="width:120px;margin-top:4px" onchange="stChangeYear(this.value)">
+              <option>2026-27</option><option>2027-28</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="stPrint()">🖨 Print</button>
+        </div>
+        <div class="no-print" style="font-size:11px;color:var(--text-muted);margin:-4px 0 12px">Made from the Master Timetable. To change a teacher's periods, change the Master Timetable.</div>
+        <div class="no-print hidden" id="st-unsaved-note" style="font-size:12px;font-weight:600;color:#C0392B;margin-bottom:10px">● The Master Timetable has unsaved changes — this sheet shows them. Save the master before printing.</div>
+        <div class="card" style="padding:0;overflow:hidden" id="st-sheet">
+          <div class="empty-state"><div class="icon">👩‍🏫</div><p>Loading…</p></div>
         </div>
       </div>
 
@@ -1721,9 +1760,135 @@ async function mtSendToClasses() {
   if (document.getElementById('tt-class').value && document.getElementById('tt-year').value === mtLoadedYear) loadTimetable();
 }
 
+// ═══════════════════════════════
+// STAFF TIMETABLE — one teacher's week, read from the master timetable
+// ═══════════════════════════════
+async function openStaffTab() {
+  const year = document.getElementById('st-year').value;
+  if (mtLoadedYear !== year) await loadMaster(year);
+  if (mtLoadedYear) document.getElementById('st-year').value = mtLoadedYear;
+  stFillTeachers();
+  renderStaffTT();
+}
+
+async function stChangeYear(year) {
+  await loadMaster(year);
+  if (mtLoadedYear) document.getElementById('st-year').value = mtLoadedYear;
+  stFillTeachers();
+  renderStaffTT();
+}
+
+// Staff list + any teacher name used in the master (in case someone is not in the staff list)
+function stFillTeachers() {
+  const sel = document.getElementById('st-teacher');
+  const keep = sel.value;
+  const names = allStaff.map(s => (s.name || '').trim()).filter(Boolean);
+  Object.keys(mtGrid || {}).forEach(d => {
+    Object.keys(mtGrid[d] || {}).forEach(pi => {
+      Object.values(mtGrid[d][pi] || {}).forEach(c => {
+        const t = c && (c.teacher || '').trim();
+        if (t && names.indexOf(t) === -1) names.push(t);
+      });
+    });
+  });
+  names.sort((a, b) => a.localeCompare(b));
+  sel.innerHTML = '<option value="">— Choose teacher —</option>' +
+    names.map(n => `<option value="${mtEsc(n)}" ${n === keep ? 'selected' : ''}>${mtEsc(n)}</option>`).join('');
+}
+
+// "Class 6, Class 7, Class 8" → "Class 6, 7, 8"
+function stJoinClasses(list) {
+  if (list.length > 1 && list.every(c => /^Class /.test(c))) return 'Class ' + list.map(c => c.replace(/^Class /, '')).join(', ');
+  return list.join(', ');
+}
+
+function renderStaffTT() {
+  const box = document.getElementById('st-sheet');
+  document.getElementById('st-unsaved-note').classList.toggle('hidden', !mtDirty);
+  if (!mtLoadedYear) {
+    box.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>The master timetable could not be loaded. Please try again.</p></div>';
+    return;
+  }
+  const teacher = document.getElementById('st-teacher').value.trim();
+  if (!teacher) {
+    box.innerHTML = '<div class="empty-state"><div class="icon">👩‍🏫</div><p>Choose a teacher to see their timetable.</p></div>';
+    return;
+  }
+  const days = mtDays();
+  let total = 0, free = 0;
+
+  let grid = '<table class="tt-grid st-grid"><thead><tr><th>Period / Time</th>';
+  days.forEach(d => { grid += '<th>' + mtEsc(d) + '</th>'; });
+  grid += '</tr></thead><tbody>';
+
+  periods.forEach((p, pi) => {
+    grid += `<tr><td class="tt-period-label">${mtEsc(p.label)}<span class="period-time">${mtEsc(p.start)}${p.end ? ' – ' + mtEsc(p.end) : ''}</span></td>`;
+    days.forEach(d => {
+      if (p.isBreak) {
+        grid += `<td><div class="tt-cell break-cell" style="align-items:center;font-size:11px;font-style:italic;color:var(--text-muted)">${mtEsc(p.label)}</div></td>`;
+        return;
+      }
+      // Every class this teacher has in this period, grouped by subject
+      const bySubject = {};
+      mtClasses.forEach(cls => {
+        const cell = mtGetCell(d, pi, cls);
+        if (!cell || (cell.teacher || '').trim() !== teacher) return;
+        const s = (cell.subject || '').trim() || '—';
+        (bySubject[s] = bySubject[s] || { classes: [], common: true }).classes.push(cls);
+        if (cell.common !== true) bySubject[s].common = false;
+      });
+      const subs = Object.keys(bySubject);
+      if (!subs.length) {
+        free++;
+        grid += '<td><div class="tt-cell" style="align-items:center"><span class="st-free">Free</span></div></td>';
+        return;
+      }
+      let inner = '', clash = subs.length > 1;
+      subs.forEach(s => {
+        const g = bySubject[s];
+        const isCommon = g.common && g.classes.length > 1;
+        // Teacher load: a common class counts once; anything else counts per class (same as Master Timetable)
+        total += g.common ? 1 : g.classes.length;
+        if (!g.common && g.classes.length > 1) clash = true;
+        inner += `<div class="tt-subject">${mtEsc(s)}</div><div class="st-cls">${mtEsc(stJoinClasses(g.classes))}</div>`;
+        if (isCommon) inner += '<div class="st-common">Common class</div>';
+      });
+      if (clash) inner += '<div class="mt-clash-note no-print">⚠ two classes at once — check Master Timetable</div>';
+      grid += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''}">${inner}</div></td>`;
+    });
+    grid += '</tr>';
+  });
+  grid += '</tbody></table>';
+
+  const school = (cardSettings.name1 || '') + (cardSettings.name2 ? ' ' + cardSettings.name2 : '');
+  const staffRec = allStaff.find(s => (s.name || '').trim() === teacher);
+  box.innerHTML = `
+    <div class="st-head">
+      ${cardSettings.logo_url ? `<img src="${mtEsc(cardSettings.logo_url)}" alt="" onerror="this.style.display='none'">` : ''}
+      <div>
+        <div class="st-school">${mtEsc(school || 'School')}</div>
+        ${cardSettings.address ? `<div class="st-school2">${mtEsc(cardSettings.address)}</div>` : ''}
+      </div>
+      <div class="st-who">
+        <div class="st-who-name">${mtEsc(teacher)}</div>
+        <div class="st-who-sub">Staff Timetable · ${mtEsc(mtLoadedYear)}${staffRec && staffRec.role ? ' · ' + mtEsc(staffRec.role) : ''}</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto;padding:12px">${grid}</div>
+    <div class="st-foot">
+      <div><b>Periods per week:</b> ${total} &nbsp;·&nbsp; <b>Free periods:</b> ${free}</div>
+      <div class="st-sign">${cardSettings.principal_name ? mtEsc(cardSettings.principal_name) + '<br>' : ''}Principal</div>
+    </div>`;
+}
+
+function stPrint() {
+  if (!document.getElementById('st-teacher').value) { showToast('Choose a teacher first.', 'error'); return; }
+  window.print();
+}
+
 // ── TAB SWITCH ──
 function switchTab(tab, el) {
-  ['student-icard','staff-icard','icard-settings','timetable','master-tt','tt-settings'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
+  ['student-icard','staff-icard','icard-settings','timetable','master-tt','staff-tt','tt-settings'].forEach(t=>document.getElementById('tab-'+t).classList.add('hidden'));
   document.getElementById('tab-'+tab).classList.remove('hidden');
   document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
@@ -1731,8 +1896,9 @@ function switchTab(tab, el) {
   if (tab==='tt-settings') { renderPeriodRows(); renderSubjectSettings(); renderTeacherMap(); }
   if (tab==='timetable') renderSubjectPalette();
   if (tab==='master-tt') openMasterTab();
+  if (tab==='staff-tt') openStaffTab();
   // The menu has separate "I-Card" and "Timetable" items for this one page
-  const wantHash = (tab === 'timetable' || tab === 'master-tt' || tab === 'tt-settings') ? '#timetable' : '';
+  const wantHash = (tab === 'timetable' || tab === 'master-tt' || tab === 'staff-tt' || tab === 'tt-settings') ? '#timetable' : '';
   if (location.hash !== wantHash) history.replaceState(null, '', location.pathname + wantHash);
   if (typeof sbMarkCurrent === 'function') sbMarkCurrent();
 }
