@@ -123,7 +123,10 @@ function cleanMasterGrid(grid) {
         if (!cell || typeof cell !== 'object') return;
         const teacher = str(cell.teacher, 120);
         const subject = str(cell.subject, 60);
-        if (teacher || subject) r[str(cls, 30)] = { teacher, subject };
+        if (teacher || subject) {
+          r[str(cls, 30)] = { teacher, subject };
+          if (cell.common === true) r[str(cls, 30)].common = true;   // Common class (combined classes, one teacher)
+        }
       });
       if (Object.keys(r).length) d[str(pi, 3)] = r;
     });
