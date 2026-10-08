@@ -963,7 +963,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = istToday();
   document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'short',year:'numeric'});
   document.getElementById('rec-from').value = today.slice(0,7) + '-01';
   document.getElementById('rec-to').value = today;
@@ -2966,11 +2966,21 @@ document.getElementById('cancel-modal').addEventListener('click', function (e) {
   if (e.target === this) closeCancelModal();
 });
 
+// India date (YYYY-MM-DD) — avoids the UTC "yesterday" problem before 5:30 AM
+function istToday() {
+  return new Date(Date.now() + 330*60000).toISOString().split('T')[0];
+}
+
 // ── REPORTS ──
 async function loadDayReport() {
   const date = document.getElementById('day-report-date').value;
   if (!date) return;
-  const { data: rawDay } = await secureFee.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
+  document.getElementById('day-report').innerHTML = '<div class="empty-state"><p>Loading…</p></div>';
+  const { data: rawDay, error: dayErr } = await secureFee.from('fee_payments').select('*').eq('school_id',SCHOOL_ID).eq('payment_date',date);
+  if (dayErr) {
+    document.getElementById('day-report').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>Could not load: ' + (dayErr.message || dayErr) + '</p></div>';
+    return;
+  }
   const data = live(rawDay);
   if (!data || data.length===0) {
     document.getElementById('day-report').innerHTML = '<div class="empty-state"><div class="icon">📅</div><p>No collections on this date.</p></div>';
@@ -3016,7 +3026,9 @@ async function loadClassReport() {
 async function loadModeReport() {
   const month = document.getElementById('mode-month-filter').value;
   if (!month) return;
-  const { data: rawMode } = await secureFee.from('fee_payments').select('payment_mode,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-31');
+  const [my, mm] = month.split('-').map(Number);
+  const lastDay = String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2,'0');
+  const { data: rawMode } = await secureFee.from('fee_payments').select('payment_mode,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID).gte('payment_date',month+'-01').lte('payment_date',month+'-'+lastDay);
   const data = live(rawMode);
   if (!data || data.length===0) { document.getElementById('mode-report').innerHTML = '<div class="empty-state"><div class="icon">💳</div><p>No data for this month.</p></div>'; return; }
 
@@ -3438,12 +3450,12 @@ function refreshReminderLabel(studentId) {
 
 // ── STATS ──
 async function loadStats() {
-  const { data: rawStats } = await secureFee.from('fee_payments').select('amount_paid,payment_date,is_cancelled').eq('school_id',SCHOOL_ID);
+  const { data: rawStats } = await secureFee.from('fee_payments').select('amount_paid,payment_date,is_cancelled,receipt_no').eq('school_id',SCHOOL_ID);
   const payments = live(rawStats);
   if (!payments) return;
 
   const total = payments.reduce((s,r)=>s+r.amount_paid,0);
-  const today = new Date().toISOString().split('T')[0];
+  const today = istToday();
   const todayTotal = payments.filter(r=>r.payment_date===today).reduce((s,r)=>s+r.amount_paid,0);
   const todayCount = new Set(payments.filter(r=>r.payment_date===today).map(r=>r.receipt_no||'')).size;
 
@@ -3461,6 +3473,7 @@ function switchTab(tab, el) {
   document.querySelectorAll('.tab-bar .tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   if (tab==='receipts') loadReceipts();
+  if (tab==='reports') loadDayReport();
   if (tab==='defaulters') populateDefPeriod();
 }
 
