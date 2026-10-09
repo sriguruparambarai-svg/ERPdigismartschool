@@ -27,7 +27,7 @@ function makeParentToken(schoolId, studentId) {
     sid: schoolId,
     stu: studentId,
     role: 'parent',
-    exp: Date.now() + 12 * 60 * 60 * 1000
+    exp: Date.now() + 30 * 24 * 60 * 60 * 1000   // parents stay logged in on their phone for 30 days
   });
   const sig = crypto.createHmac('sha256', getServiceKey()).update(payload).digest('hex');
   return Buffer.from(payload).toString('base64') + '.' + sig;
