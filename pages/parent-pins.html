@@ -41,6 +41,7 @@
             <button class="btn btn-primary w-full" onclick="makeParentPins('missing')">Make PINs for children without one</button>
             <button class="btn btn-gold btn-sm w-full" onclick="makeParentPins('all')" style="margin-top:8px">New PINs for everyone in this class</button>
             <div id="pin-msg" style="font-size:12px;margin-top:8px"></div>
+            <button class="btn btn-sm w-full" id="pin-reprint" onclick="reprintPinSlips()" style="display:none;margin-top:8px;border:1px solid #6B1A1A;color:#6B1A1A;background:#fff">🖨 Print last slips again</button>
           </div>
 
           <!-- Reset Password -->
@@ -95,15 +96,31 @@ async function makeParentPins(mode) {
   if (mode === 'all' && !confirm('Make NEW PINs for every child in ' + what + '? Their old PINs stop working, so every parent needs a new slip.')) return;
   const msg = document.getElementById('pin-msg');
   msg.style.color = 'var(--text-muted)'; msg.textContent = 'Making PINs…';
+  const slipWin = openSlipWindow(); // open now, while it still counts as your click
   const d = await pinApi({ special: 'generate_pins', class_name: cls, mode: mode });
-  if (!d.ok) { msg.style.color = '#A32D2D'; msg.textContent = d.error || 'Could not make PINs.'; return; }
-  if (!d.pins.length) { msg.style.color = '#2D7A3A'; msg.textContent = 'Every child in ' + what + ' already has a PIN.'; return; }
-  msg.style.color = '#2D7A3A'; msg.textContent = d.pins.length + ' PIN(s) made. Print the slips now — they will not be shown again.';
-  printPinSlips(d.pins);
+  if (!d.ok) { closeSlipWindow(slipWin); msg.style.color = '#A32D2D'; msg.textContent = d.error || 'Could not make PINs.'; return; }
+  if (!d.pins.length) { closeSlipWindow(slipWin); msg.style.color = '#2D7A3A'; msg.textContent = 'Every child in ' + what + ' already has a PIN.'; return; }
+  msg.style.color = '#2D7A3A'; msg.textContent = d.pins.length + ' PIN(s) made. Print the slips now — they are kept on this page only until you leave it.';
+  printPinSlips(d.pins, slipWin);
   loadPinStatus();
 }
 function escPin(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); }
-function printPinSlips(list) {
+// Slips are kept only in this open page (never saved), so they can be printed again until you leave
+let lastPinSlips = null;
+function openSlipWindow() {
+  const w = window.open('', '_blank');
+  if (w) { try { w.document.write('<p style="font-family:Arial;padding:20px">Making PIN slips… please wait.</p>'); } catch (e) {} }
+  return w;
+}
+function closeSlipWindow(w) { try { if (w && !w.closed) w.close(); } catch (e) {} }
+function reprintPinSlips() {
+  if (!lastPinSlips || !lastPinSlips.length) { alert('No slips to print again.'); return; }
+  printPinSlips(lastPinSlips);
+}
+function printPinSlips(list, preWin) {
+  lastPinSlips = (lastPinSlips && preWin === 'append') ? lastPinSlips.concat(list) : list;
+  const rb = document.getElementById('pin-reprint');
+  if (rb) { rb.style.display = 'block'; rb.textContent = '🖨 Print last slips again (' + lastPinSlips.length + ')'; }
   const link = location.origin + '/parent/';
   const slips = list.map(function (p) {
     return '<div class="slip"><div class="t">Parent Portal — Parent PIN</div>'
@@ -114,8 +131,9 @@ function printPinSlips(list) {
       + '<div class="n">Open ' + escPin(link) + ' and log in with the roll number and this PIN. Keep it private — do not write it in the diary.<br>'
       + 'இந்த PIN-ஐ ரகசியமாக வைத்திருங்கள். டைரியில் எழுத வேண்டாம்.</div></div>';
   }).join('');
-  const w = window.open('', '_blank');
-  if (!w) { alert('Allow pop-ups for this site to print the PIN slips.'); return; }
+  let w = (preWin && preWin !== 'append' && !preWin.closed) ? preWin : window.open('', '_blank');
+  if (!w) { alert('The browser blocked the slip window. Click "Print last slips again" on this page — your PINs are safe until you leave the page.'); return; }
+  w.document.open();
   w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Parent PIN slips</title><style>'
     + 'body{font-family:Arial,sans-serif;margin:10mm;} .slip{display:inline-block;width:88mm;margin:0 4mm 6mm 0;padding:5mm;border:1px dashed #888;vertical-align:top;break-inside:avoid;page-break-inside:avoid;}'
     + '.t{font-weight:bold;color:#6B1A1A;margin-bottom:4px;} table{font-size:12px;border-collapse:collapse;width:100%;} td{padding:2px 4px;}'
@@ -154,11 +172,12 @@ function selectResetStudent(id, name, admNo, cls, dob) {
 async function resetParentPassword() {
   if (!resetStudentId) return;
   if (!confirm('Give this parent a new PIN? The old PIN and any password they chose will stop working.')) return;
+  const slipWin = openSlipWindow(); // open now, while it still counts as your click
   const a = await pinApi({ special: 'reset_password', student_id: resetStudentId });
-  if (!a.ok) { showToast(a.error || 'Could not reset.', 'error'); return; }
+  if (!a.ok) { closeSlipWindow(slipWin); showToast(a.error || 'Could not reset.', 'error'); return; }
   const b = await pinApi({ special: 'reset_pin', student_id: resetStudentId });
-  if (!b.ok) { showToast(b.error || 'Could not make a PIN.', 'error'); return; }
-  printPinSlips(b.pins);
+  if (!b.ok) { closeSlipWindow(slipWin); showToast(b.error || 'Could not make a PIN.', 'error'); return; }
+  printPinSlips(b.pins, slipWin);
   loadPinStatus();
   showToast('New PIN made — print the slip for the parent.','success');
   document.getElementById('pw-reset-student-info').style.display = 'none';
