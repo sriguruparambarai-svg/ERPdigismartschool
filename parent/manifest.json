@@ -1,0 +1,20 @@
+{
+  "id": "/parent/",
+  "name": "School Parent App",
+  "short_name": "Parent App",
+  "description": "Your child's attendance, homework, notices, fees and results",
+  "start_url": "/parent/index.html?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#6B1A1A",
+  "theme_color": "#6B1A1A",
+  "lang": "en-IN",
+  "categories": ["education"],
+  "icons": [
+    { "src": "/assets/icons/parent-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/parent-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/parent-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/assets/icons/parent-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
