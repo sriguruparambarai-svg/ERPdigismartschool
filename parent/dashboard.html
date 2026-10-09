@@ -183,6 +183,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <!-- Install the Parent App (parent/install-help.js) -->
     <div id="install-help" style="display:none"></div>
 
+    <!-- Birthday wish (shown only on the child's birthday) -->
+    <div id="bday-card" style="display:none;background:linear-gradient(135deg,#C9A84C,#E8C99A);border-radius:14px;padding:16px 14px;margin-bottom:14px;text-align:center;color:#3A1A00">
+      <div style="font-size:40px;line-height:1.1">🎂🎉</div>
+      <div id="bday-title" style="font-weight:800;font-size:18px;color:#6B1A1A;margin-top:6px">Happy Birthday!</div>
+      <div id="bday-msg" style="font-size:13px;line-height:1.6;margin-top:6px"></div>
+    </div>
+
     <!-- Phone alerts (push notifications) -->
     <div id="alert-card" class="alert-card" style="display:none">
       <div class="ac-title">🔔 Get alerts on your phone</div>
@@ -626,6 +633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initAlerts();
   initOnlinePay();
   initBusCard();
+  loadBirthday();
 });
 
 // ══ LIVE BUS TRACKING ══
@@ -643,6 +651,7 @@ function busEsc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, c => (
 async function initBusCard() {
   const out = await busApi('track');
   if (!out || !out.ok || !out.has_transport) return;
+  if (!out.has_device) return; // hidden until a GPS device is fitted and linked to this bus
   const card = document.getElementById('bus-card');
   if (card) card.style.display = 'block';
   const sub = document.getElementById('bus-card-sub');
@@ -1075,6 +1084,16 @@ async function saveFirstPassword() {
 }
 
 let galAlbums = [];
+
+async function loadBirthday() {
+  try {
+    const out = await parentApi('birthday');
+    if (!out || !out.ok || !out.is_birthday) return;
+    document.getElementById('bday-title').textContent = 'Happy Birthday, ' + (out.name || '') + '! 🎈';
+    document.getElementById('bday-msg').textContent = out.message || '';
+    document.getElementById('bday-card').style.display = 'block';
+  } catch (e) { /* no card if this fails */ }
+}
 
 async function loadGallery() {
   const { data } = await parentApi('gallery');
