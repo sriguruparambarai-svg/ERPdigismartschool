@@ -401,6 +401,25 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, data: rows || [], responses: responses });
     }
 
+    // ══ BIRTHDAY — is today this child's birthday? (India date) ══
+    // Worked out from the date of birth, so the card shows even if the
+    // morning job has not run. The saved wish (api/push.js) is used if there.
+    if (action === 'birthday') {
+      const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=full_name,dob&limit=1');
+      if (!me || !me.length || !me[0].dob) return res.status(200).json({ ok: true, is_birthday: false });
+      const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+      if (String(me[0].dob).slice(5, 10) !== today.slice(5)) return res.status(200).json({ ok: true, is_birthday: false });
+      const first = String(me[0].full_name || '').trim().split(/\s+/)[0] || 'dear child';
+      let message = 'Happy birthday, ' + first + '! Wishing you a very happy year ahead. With love, from everyone at school.';
+      try {
+        const w = await sb('GET', 'birthday_wishes?student_id=eq.' + encodeURIComponent(studentId) +
+          '&wish_date=eq.' + today + '&select=message&limit=1');
+        if (w && w[0] && w[0].message) message = w[0].message;
+      } catch (e) { /* no saved wish yet — the default message is used */ }
+      return res.status(200).json({ ok: true, is_birthday: true, name: first, message: message });
+    }
+
     // ══ SCHOOL GALLERY — albums for everyone or this child's class ══
     if (action === 'gallery') {
       const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
