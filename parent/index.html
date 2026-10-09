@@ -6,10 +6,30 @@
 <meta name="theme-color" content="#6B1A1A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="DigiSmart ERP">
-<link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
+<meta name="apple-mobile-web-app-title" content="Parent App">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/parent/manifest.json">
+<link rel="apple-touch-icon" href="/assets/icons/parent-180.png">
 <title>Parent Portal — DigiSmart ERP</title>
+<script>
+// Keep the parent logged in on this phone. The login is saved on the phone
+// (not just this tab), so closing the app does not log the parent out. The
+// server makes each login last 30 days; an expired login is cleared here.
+(function () {
+  var K = ['parent_token', 'parent_session', 'parent_school_id'];
+  function expired(tok) {
+    try { var d = JSON.parse(atob(String(tok).split('.')[0])); return !d.exp || Date.now() > d.exp; } catch (e) { return true; }
+  }
+  try {
+    var lt = localStorage.getItem('parent_token');
+    if (lt && expired(lt)) { localStorage.removeItem('parent_token'); localStorage.removeItem('parent_session'); }
+    K.forEach(function (k) { if (!sessionStorage.getItem(k)) { var v = localStorage.getItem(k); if (v) sessionStorage.setItem(k, v); } });
+  } catch (e) {}
+  window.psSet = function (k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} try { localStorage.setItem(k, v); } catch (e) {} };
+  window.psDel = function (k) { try { sessionStorage.removeItem(k); } catch (e) {} try { localStorage.removeItem(k); } catch (e) {} };
+})();
+</script>
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F7F4F0;min-height:100vh;display:flex;flex-direction:column}
@@ -109,6 +129,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     (or the password you chose later)
   </div>
 
+  <!-- Install the Parent App (parent/install-help.js) -->
+  <div id="install-help" style="display:none;margin-top:16px;width:100%;max-width:420px"></div>
+
   <!-- PWA Install Banner -->
   <div class="install-banner" id="install-banner">
     <div class="install-icon">📱</div>
@@ -117,6 +140,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   </div>
 </div>
 
+<script src="/parent/install-help.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
@@ -146,7 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (schoolId) {
-    sessionStorage.setItem('parent_school_id', schoolId);
+    psSet('parent_school_id', schoolId);
     await loadSchoolInfo(schoolId);
   }
 
@@ -218,9 +242,9 @@ async function doParentLogin() {
       return;
     }
 
-    sessionStorage.setItem('parent_token', result.parent_token);
-    sessionStorage.setItem('parent_session', JSON.stringify(result.student));
-    sessionStorage.setItem('parent_school_id', result.student.school_id);
+    psSet('parent_token', result.parent_token);
+    psSet('parent_session', JSON.stringify(result.student));
+    psSet('parent_school_id', result.student.school_id);
 
     window.location.href = '/parent/dashboard.html';
   } catch (e) {
