@@ -992,6 +992,12 @@ async function toggleAlertsFromSettings() {
   setAlertsUi('off');
 }
 
+// Some classes are saved as "Class 1", others as "1" or "LKG" — never show "Class Class 1"
+function withClassWord(c) {
+  const s = String(c == null ? '' : c).trim();
+  return /^class\b/i.test(s) ? s : 'Class ' + s;
+}
+
 function setupUI() {
   const initials = session.student_name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   // Show the school's real name, not its internal id (older logins may not have it)
@@ -1000,7 +1006,7 @@ function setupUI() {
   document.getElementById('top-avatar').textContent = initials;
   document.getElementById('stu-avatar').textContent = initials;
   document.getElementById('stu-name').textContent = session.student_name;
-  document.getElementById('stu-class').textContent = 'Class ' + session.class + (session.section?' – '+session.section:'');
+  document.getElementById('stu-class').textContent = withClassWord(session.class) + (session.section?' – '+session.section:'');
   document.getElementById('stu-adm').textContent = session.roll_no
     ? 'Roll No: ' + session.roll_no
     : 'Adm No: ' + (session.admission_no || '');
@@ -1324,7 +1330,7 @@ function openNotice(id) {
     <div class="modal-body">${n.message.replace(/\n/g,'<br>')}</div>
     <div class="modal-meta">
       📅 ${formatDateShort(n.created_at?.split('T')[0])} · 
-      ${n.target_class === 'all' ? 'Sent to all classes' : 'Class ' + n.target_class}
+      ${n.target_class === 'all' ? 'Sent to all classes' : withClassWord(n.target_class)}
       ${n.sender_name ? ' · From: ' + n.sender_name : ''}
     </div>
   `;
