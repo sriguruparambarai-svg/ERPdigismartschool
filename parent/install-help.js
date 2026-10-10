@@ -12,6 +12,14 @@
   function isAndroid() { return /android/i.test(ua); }
   // WhatsApp, Facebook, Instagram etc. open links inside their own small browser
   function inAppBrowser() { return /WhatsApp|FBAN|FBAV|FB_IAB|Instagram|; wv\)/i.test(ua); }
+  // Phone-company browsers (Vivo, Oppo, Realme, Xiaomi, Tecno/Infinix, UC, etc.)
+  // cannot install apps. Chrome, Samsung Internet and Edge can.
+  function otherBrowser() {
+    if (!isAndroid() || inAppBrowser()) return false;
+    if (/VivoBrowser|HeyTapBrowser|OppoBrowser|RealmeBrowser|MiuiBrowser|XiaoMi|PHX\/|UCBrowser|UCWEB|Quark|HuaweiBrowser|HiBrowser|OPR\/|Opera|YaBrowser|baidu|QQBrowser|Puffin|DuckDuckGo|Brave/i.test(ua)) return true;
+    if (/SamsungBrowser|EdgA|Firefox/i.test(ua)) return false;
+    return !/Chrome\//.test(ua);   // not Chrome at all
+  }
   function dismissedRecently() {
     try { var t = +localStorage.getItem('parent_install_later') || 0; return Date.now() - t < 3 * 24 * 3600 * 1000; } catch (e) { return false; }
   }
@@ -38,6 +46,12 @@
       return '<div class="ih-steps">1. Open this page in <b>Safari</b><br>2. Tap the <b>Share</b> button (square with arrow ↑)<br>3. Tap <b>Add to Home Screen</b>, then <b>Add</b>'
         + '<div class="ih-ta">Safari-ல் திறந்து, Share (↑) பொத்தானை அழுத்தி, "Add to Home Screen" தேர்வு செய்யவும்.</div></div>';
     }
+    if (otherBrowser()) {
+      return '<div class="ih-steps">Your phone\'s browser cannot install apps. Please use Chrome.<br>'
+        + '1. Tap the <b>Open in Chrome</b> button above<br>2. In Chrome, tap <b>⋮</b> → <b>Install app</b> or <b>Add to Home screen</b><br>'
+        + '<span style="color:#6B6560">No Chrome? Install it free from Play Store — or tap this browser\'s menu → <b>Add to home screen</b>.</span>'
+        + '<div class="ih-ta">உங்கள் போனின் browser-ல் app நிறுவ முடியாது. மேலே உள்ள "Open in Chrome" அழுத்தி, Chrome-ல் ⋮ → "Install app" தேர்வு செய்யவும். Chrome இல்லையெனில் Play Store-ல் இலவசமாக நிறுவலாம்.</div></div>';
+    }
     if (inAppBrowser()) {
       return '<div class="ih-steps">You opened this inside WhatsApp. Apps can be installed only from Chrome.<br>'
         + '1. Tap the <b>Open in Chrome</b> button above (or tap <b>⋮</b> at the top → <b>Open in Chrome</b>)<br>2. In Chrome, tap <b>⋮</b> → <b>Install app</b> or <b>Add to Home screen</b>'
@@ -53,14 +67,14 @@
     if (old) old.style.display = 'none';
     if (isInstalled()) { box.innerHTML = ''; box.style.display = 'none'; return; }
     var onDash = /dashboard/.test(location.pathname);
-    if (onDash && dismissedRecently() && !inAppBrowser()) { box.innerHTML = ''; box.style.display = 'none'; return; }
+    if (onDash && dismissedRecently() && !inAppBrowser() && !otherBrowser()) { box.innerHTML = ''; box.style.display = 'none'; return; }
     box.style.display = 'block';
     var btns = '';
     if (deferred) btns += '<button class="ih-btn" id="ih-install">📲 Install app</button>';
-    else if (isAndroid() && inAppBrowser()) btns += '<a class="ih-btn" href="' + chromeLink() + '">Open in Chrome</a>';
+    else if (isAndroid() && (inAppBrowser() || otherBrowser())) btns += '<a class="ih-btn" href="' + chromeLink() + '">Open in Chrome</a>';
     else btns += '<button class="ih-btn" id="ih-how">Show me how</button>';
     if (onDash) btns += '<button class="ih-later" id="ih-later">Not now</button>';
-    var open = inAppBrowser() && !deferred;
+    var open = (inAppBrowser() || otherBrowser()) && !deferred;
     box.innerHTML = '<div class="ih-card"><div class="ih-top"><img class="ih-ico" src="/assets/icons/parent-192.png" alt="">'
       + '<div><div class="ih-t">Get the Parent App on your phone</div>'
       + '<div class="ih-s">Opens in one tap from your home screen and stays logged in. செயலியை உங்கள் போனில் நிறுவுங்கள்.</div></div></div>'
