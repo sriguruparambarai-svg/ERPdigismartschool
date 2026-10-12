@@ -276,6 +276,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div id="fq-card"></div>
     </div>
 
+    <!-- In class today (class work from TeachBot's planner) -->
+    <div id="cw-section" class="hidden">
+      <div class="section-title">
+        <span>📖 In Class Today</span>
+      </div>
+      <div id="home-cw-list"></div>
+    </div>
+
     <!-- Recent homework -->
     <div class="section-title">
       <span>📚 Today's Homework</span>
@@ -628,7 +636,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   session = JSON.parse(saved);
   setupUI();
   checkPasswordGate();
-  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery()]);
+  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery(), loadClassWork()]);
   loadStats();
   initAlerts();
   initOnlinePay();
@@ -1169,6 +1177,27 @@ async function loadHomework() {
     : '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">No homework due today!</div></div>';
 
   renderHomework(allHomework);
+}
+
+// ── In class today: what the child did in class (latest day first, last 3 school days) ──
+async function loadClassWork() {
+  try {
+    const { data } = await parentApi('comms', { kind: 'classwork' });
+    const list = (data || []).slice(0, 3);
+    if (!list.length) return;
+    const today = new Date().toISOString().split('T')[0];
+    const yday = new Date(Date.now() - 864e5).toISOString().split('T')[0];
+    const e = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    document.getElementById('home-cw-list').innerHTML = list.map(c => {
+      const when = c.due_date === today ? 'Today' : c.due_date === yday ? 'Yesterday' : formatDateShort(c.due_date);
+      return `<div class="hw-card" style="border-left:4px solid #2F6B3A">
+        <div class="hw-subject" style="color:#2F6B3A">${e(when)}${c.subject ? ' · ' + e(c.subject) : ''}</div>
+        <div class="hw-title">${e(c.title)}</div>
+        ${c.message ? `<div class="hw-desc" style="white-space:pre-line">${e(c.message)}</div>` : ''}
+      </div>`;
+    }).join('');
+    document.getElementById('cw-section').classList.remove('hidden');
+  } catch (err) { console.warn('class work:', err); }
 }
 
 async function loadEvents() {
