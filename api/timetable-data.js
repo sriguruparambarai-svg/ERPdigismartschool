@@ -8,7 +8,9 @@
 //
 // POST { token, action: 'get_settings' }
 //   → { ok: true, settings: {...} | null }
-// POST { token, action: 'save_settings', settings: { periods, subjects, working_days, teacher_map } }
+// POST { token, action: 'save_settings', settings: { periods, subjects, working_days, teacher_map, ai_class } }
+//   ai_class (true/false): the school has a separate AI class room (optional, Oct 2026).
+//   Master boxes can then carry ai:true = this class goes to the AI room for this period.
 //   → { ok: true, settings: {...} }
 // POST { token, action: 'get_master', academic_year }
 //   → { ok: true, master: {...} | null }
@@ -103,6 +105,7 @@ function cleanSettings(input) {
   if (days) out.working_days = days;
   const tmap = cleanTeacherMap(s.teacher_map);
   if (tmap) out.teacher_map = tmap;
+  if (typeof s.ai_class === 'boolean') out.ai_class = s.ai_class;   // separate AI class room on/off
   return out;
 }
 
@@ -126,6 +129,7 @@ function cleanMasterGrid(grid) {
         if (teacher || subject) {
           r[str(cls, 30)] = { teacher, subject };
           if (cell.common === true) r[str(cls, 30)].common = true;   // Common class (combined classes, one teacher)
+          if (cell.ai === true) r[str(cls, 30)].ai = true;           // goes to the AI class room this period
         }
       });
       if (Object.keys(r).length) d[str(pi, 3)] = r;
@@ -248,6 +252,7 @@ module.exports = async (req, res) => {
               teacher: cell.teacher || null,
               color: colorFor(cell.subject || '')
             };
+            if (cell.ai === true) out[day + '_' + pi].ai = true;   // shown as "AI Class" on the class timetable
           });
         });
         // A class with nothing in the master is left untouched, never wiped
