@@ -387,6 +387,8 @@ module.exports = async (req, res) => {
         case 'foundation': path = base + '&type=eq.foundation_question' + forClass(cls) + '&order=created_at.desc&limit=1'; break;
         case 'notices':    path = base + '&type=in.(circular,announcement,holiday,event_notice)' + forClass(cls) + '&order=created_at.desc&limit=30'; break;
         case 'homework':   path = base + '&type=eq.homework' + forClass(cls) + '&due_date=gte.' + today + '&order=due_date.asc&limit=20'; break;
+        // class work from TeachBot's planner ("In class today"), last 7 days, newest first
+        case 'classwork':  path = base + '&type=eq.classwork' + forClass(cls) + '&due_date=gte.' + new Date(Date.now() - 7 * 864e5).toISOString().split('T')[0] + '&order=due_date.desc&limit=10'; break;
         case 'events':     path = base + '&type=eq.event&event_date=gte.' + today + '&order=event_date.asc&limit=10'; break;
         case 'consent':    path = base + '&type=eq.consent_form' + forClass(cls) + '&order=created_at.desc&limit=10'; break;
         default: return res.status(400).json({ ok: false, error: 'Unknown list.' });
