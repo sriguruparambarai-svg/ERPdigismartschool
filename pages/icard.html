@@ -81,6 +81,12 @@
 .mt-clash-note{font-size:9px;font-weight:600;color:#C0392B;margin-top:2px}
 .tt-cell.mt-common{background:#FBF4E2 !important;box-shadow:inset 0 0 0 2px #C9A84C}
 .mt-common-note{font-size:9px;font-weight:700;color:#8A6D1E;margin-top:2px}
+/* AI class room (optional, per school) */
+.mt-ai-note{display:inline-block;font-size:9px;font-weight:700;color:#185FA5;background:#E6F0FA;border:1px solid #9CC0E6;border-radius:8px;padding:0 6px;margin-top:3px}
+.tt-cell.mt-ai{box-shadow:inset 3px 0 0 #185FA5}
+.mt-grid td.mt-airoom{background:#F2F7FC;font-size:10px;padding:5px 6px;min-width:110px;vertical-align:middle;line-height:1.5;color:#185FA5;font-weight:600}
+.mt-grid td.mt-airoom.clash{background:#FDECEC;color:#C0392B}
+.mt-grid td.mt-airoom .empty{color:var(--text-muted);font-weight:400}
 .mt-sum{border-collapse:collapse;font-size:11px;width:100%}
 .mt-sum th{background:var(--maroon);color:var(--sandal);padding:6px 8px;font-weight:600;border:1px solid #8B2A2A;white-space:nowrap}
 .mt-sum td{border:1px solid var(--border);padding:5px 8px;text-align:center}
@@ -543,6 +549,19 @@
             <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Assign which teacher handles which subject (shown on timetable)</div>
             <div id="teacher-map-list"></div>
           </div>
+
+          <!-- AI Class Room (optional) -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🤖 AI Class Room</div>
+              <button class="btn btn-gold btn-sm" onclick="saveAiClass()">Save</button>
+            </div>
+            <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer">
+              <input type="checkbox" id="ai-class-on" style="margin-top:3px">
+              <span><b>Our school has a separate AI class room</b><br>
+              <span style="font-size:12px;color:var(--text-muted)">Turn on if classes walk to one AI room. In the Master Timetable you can then mark which class goes to the AI room in which period, and the subject teacher goes with them. Leave off if every classroom has its own projector or TV — classes can use AI whenever they want.</span></span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -595,6 +614,10 @@
     <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin:-4px 0 14px;cursor:pointer">
       <input type="checkbox" id="mt-common" style="margin-top:2px">
       <span><b>Common class</b> — this teacher takes this subject for more than one class together in this period</span>
+    </label>
+    <label id="mt-ai-wrap" class="hidden" style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin:-4px 0 14px;cursor:pointer">
+      <input type="checkbox" id="mt-ai" style="margin-top:2px">
+      <span><b>🤖 Goes to AI class room</b> — the class and this teacher go to the AI room for this subject</span>
     </label>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="mtCloseModal()">Cancel</button>
@@ -798,6 +821,7 @@ let periods = [
 let subjects = ['Tamil','English','Mathematics','Science','Social Science','Computer','Physical Education','Art','Library'];
 let workingDays = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 let teacherMap = {};
+let aiClassOn = false;   // school has a separate AI class room (Timetable Settings)
 let timetableData = {};
 let selectedSubject = null, selectedTeacher = null;
 let currentCell = null;
@@ -1109,10 +1133,22 @@ async function loadTTSettings() {
     if (data.subjects && data.subjects.length > 0) subjects = data.subjects;
     if (data.working_days && data.working_days.length > 0) workingDays = data.working_days;
     if (data.teacher_map) teacherMap = data.teacher_map;
+    aiClassOn = data.ai_class === true;
     // Restore working day checkboxes
     document.querySelectorAll('.day-cb').forEach(cb => { cb.checked = workingDays.includes(cb.value); });
   }
+  const aiBox = document.getElementById('ai-class-on');
+  if (aiBox) aiBox.checked = aiClassOn;
   renderSubjectPalette();
+}
+
+// AI Class Room on/off — saved on its own so it never touches periods, subjects or days
+async function saveAiClass() {
+  const on = document.getElementById('ai-class-on').checked;
+  const res = await timetableApi('save_settings', { settings: { ai_class: on } });
+  if (!res.ok) { showToast('Could not save AI Class Room setting: ' + (res.error || 'unknown error'), 'error'); return; }
+  aiClassOn = on;
+  showToast(on ? 'AI Class Room turned on — mark AI periods in the Master Timetable.' : 'AI Class Room turned off. AI marks in the Master Timetable are kept but hidden.', 'success');
 }
 
 async function saveTTSettings(showMsg=true) {
@@ -1284,6 +1320,7 @@ function renderTimetableGrid(key) {
               ${cell ? `
                 <div class="tt-subject" style="color:${cell.color||'var(--maroon)'}">${cell.subject}</div>
                 ${cell.teacher ? `<div class="tt-teacher">${cell.teacher}</div>` : ''}
+                ${cell.ai && aiClassOn ? '<div class="mt-ai-note">🤖 AI Class</div>' : ''}
               ` : ''}
             </div>
           </td>`;
@@ -1535,6 +1572,14 @@ function mtTeacherUse(day, pi) {
   return use;
 }
 
+// For one period: which classes are in the AI class room.
+// More than one class is fine only when every one of them is ticked "Common class".
+function mtAiRoom(day, pi) {
+  const classes = mtClasses.filter(cls => { const c = mtGetCell(day, pi, cls); return c && c.ai === true; });
+  const clash = classes.length > 1 && !classes.every(cls => mtGetCell(day, pi, cls).common === true);
+  return { classes, clash };
+}
+
 // ── The grid ──
 function renderMtGrid() {
   document.getElementById('mt-title').textContent = 'Master Timetable — ' + mtDay + (mtLoadedYear ? ' · ' + mtLoadedYear : '');
@@ -1542,10 +1587,11 @@ function renderMtGrid() {
     document.getElementById('mt-grid').innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Tick at least one class under "Classes shown".</p></div>';
     return;
   }
-  const colspan = mtClasses.length + 2;
+  const colspan = mtClasses.length + 2 + (aiClassOn ? 1 : 0);
   let html = '<table class="tt-grid mt-grid"><thead><tr>';
   html += '<th class="tt-period-label" style="background:var(--maroon);color:var(--sandal)">Period / Time</th>';
   mtClasses.forEach(c => { html += '<th>' + mtEsc(c) + '</th>'; });
+  if (aiClassOn) html += '<th>🤖 AI room</th>';
   html += '<th class="no-print">Free teachers</th></tr></thead><tbody>';
 
   periods.forEach((p, pi) => {
@@ -1555,6 +1601,7 @@ function renderMtGrid() {
       return;
     }
     const use = mtTeacherUse(mtDay, pi);
+    const air = mtAiRoom(mtDay, pi);
     html += `<tr><td class="tt-period-label">${mtEsc(p.label)}<span class="period-time">${mtEsc(p.start)}${p.end ? ' – ' + mtEsc(p.end) : ''}</span></td>`;
     mtClasses.forEach((cls, ci) => {
       const cell = mtGetCell(mtDay, pi, cls);
@@ -1571,13 +1618,18 @@ function renderMtGrid() {
         return oCell && oCell.common === true && (oCell.subject || '') === (cell.subject || '');
       });
       const clash = others.length > 0 && !isCommon;
-      html += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''} ${isCommon ? 'mt-common' : ''}" onclick="mtOpenCell(${pi},${ci})">
+      const inAi = aiClassOn && cell.ai === true;
+      const aiOthers = inAi && air.clash ? air.classes.filter(c => c !== cls) : [];
+      html += `<td><div class="tt-cell filled ${clash || aiOthers.length ? 'mt-clash' : ''} ${isCommon ? 'mt-common' : ''} ${inAi ? 'mt-ai' : ''}" onclick="mtOpenCell(${pi},${ci})">
         <div class="tt-subject">${mtEsc(cell.subject || '—')}</div>
         ${t ? `<div class="tt-teacher">${mtEsc(t)}</div>` : ''}
         ${clash ? `<div class="mt-clash-note">⚠ also in ${mtEsc(others.join(', '))}</div>` : ''}
         ${isCommon ? `<div class="mt-common-note">Common class · ${mtEsc(mtClasses.filter(c => use[t].indexOf(c) !== -1).join(', '))}</div>` : ''}
+        ${inAi ? '<div class="mt-ai-note">🤖 AI Class</div>' : ''}
+        ${aiOthers.length ? `<div class="mt-clash-note">⚠ AI room also has ${mtEsc(aiOthers.join(', '))}</div>` : ''}
       </div></td>`;
     });
+    if (aiClassOn) html += `<td class="mt-airoom ${air.clash ? 'clash' : ''}">${air.classes.length ? mtEsc(air.classes.join(', ')) + (air.clash ? '<br>⚠ more than one class — tick Common class if they sit together' : (air.classes.length > 1 ? '<br><span style="font-weight:400">Common class</span>' : '')) : '<span class="empty">Empty</span>'}</td>`;
     const busy = new Set(Object.keys(use));
     const free = allStaff.map(s => s.name).filter(n => n && !busy.has(n.trim()));
     html += `<td class="mt-free no-print">${allStaff.length ? (free.length ? mtEsc(free.join(', ')) : '<span style="color:#C0392B">Nobody free</span>') : '—'}</td></tr>`;
@@ -1590,6 +1642,7 @@ function renderMtGrid() {
 function renderMtSummary() {
   const days = mtDays();
   const counts = {};      // counts[cls][subject]
+  const aiCount = {};     // aiCount[cls] = periods in the AI room this week
   const load = {};        // load[teacher]
   const extraSubjects = new Set();
   let teachingPeriods = 0;
@@ -1605,6 +1658,7 @@ function renderMtSummary() {
         if (!cell) return;
         const s = (cell.subject || '').trim();
         const t = (cell.teacher || '').trim();
+        if (cell.ai === true) aiCount[cls] = (aiCount[cls] || 0) + 1;
         if (s) {
           counts[cls][s] = (counts[cls][s] || 0) + 1;
           if (subjects.indexOf(s) === -1) extraSubjects.add(s);
@@ -1623,6 +1677,7 @@ function renderMtSummary() {
   const totalSlots = teachingPeriods * days.length;
   let html = '<table class="mt-sum"><thead><tr><th>Class</th>';
   subjCols.forEach(s => { html += '<th>' + mtEsc(s) + '</th>'; });
+  if (aiClassOn) html += '<th>🤖 AI room</th>';
   html += '<th>Filled</th></tr></thead><tbody>';
   mtClasses.forEach(cls => {
     let filled = 0;
@@ -1632,6 +1687,7 @@ function renderMtSummary() {
       filled += n;
       html += `<td class="${n === 0 ? 'mt-zero' : ''}">${n}</td>`;
     });
+    if (aiClassOn) html += `<td style="color:#185FA5;font-weight:600">${aiCount[cls] || 0}</td>`;
     html += `<td style="font-weight:600">${filled} / ${totalSlots}</td></tr>`;
   });
   html += '</tbody></table>';
@@ -1673,6 +1729,8 @@ function mtOpenCell(pi, ci) {
     }).join('');
 
   document.getElementById('mt-common').checked = cell.common === true;
+  document.getElementById('mt-ai').checked = cell.ai === true;
+  document.getElementById('mt-ai-wrap').classList.toggle('hidden', !aiClassOn);
   document.getElementById('mt-modal').classList.add('open');
 }
 
@@ -1693,6 +1751,9 @@ function mtSetCell() {
   const common = document.getElementById('mt-common').checked;
   const prev = mtGrid[mtDay][mtCell.pi][mtCell.cls] || {};
   mtGrid[mtDay][mtCell.pi][mtCell.cls] = common ? { subject, teacher, common: true } : { subject, teacher };
+  // AI class room tick (kept as it was when the school has the AI room switched off)
+  const aiOn = aiClassOn ? document.getElementById('mt-ai').checked : prev.ai === true;
+  if (aiOn) mtGrid[mtDay][mtCell.pi][mtCell.cls].ai = true;
   // Common class: apply the same tick to the other classes this teacher takes for this subject in this period
   if (teacher && (common || prev.common === true)) {
     mtClasses.forEach(oc => {
@@ -1836,6 +1897,7 @@ function renderStaffTT() {
         const s = (cell.subject || '').trim() || '—';
         (bySubject[s] = bySubject[s] || { classes: [], common: true }).classes.push(cls);
         if (cell.common !== true) bySubject[s].common = false;
+        if (cell.ai === true && aiClassOn) bySubject[s].ai = true;
       });
       const subs = Object.keys(bySubject);
       if (!subs.length) {
@@ -1852,6 +1914,7 @@ function renderStaffTT() {
         if (!g.common && g.classes.length > 1) clash = true;
         inner += `<div class="tt-subject">${mtEsc(s)}</div><div class="st-cls">${mtEsc(stJoinClasses(g.classes))}</div>`;
         if (isCommon) inner += '<div class="st-common">Common class</div>';
+        if (g.ai) inner += '<div class="mt-ai-note">🤖 AI room</div>';
       });
       if (clash) inner += '<div class="mt-clash-note no-print">⚠ two classes at once — check Master Timetable</div>';
       grid += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''}">${inner}</div></td>`;
