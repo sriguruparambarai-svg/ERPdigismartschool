@@ -8,7 +8,8 @@
 // saves, and parents get the same phone alert as for homework posted in ERP.
 //
 // POST  header x-teachbot-key: <TEACHBOT_LINK_KEY>
-//   { school_id, class_name, due_date, title, message, subject, sender_name }
+//   { school_id, type?, class_name, due_date, title, message, subject, sender_name }
+//   type: 'homework' (default) or 'classwork' — "In class today", shown on the parent home page
 //   → { ok: true, id, alerts: { sent, failed } }
 
 const crypto = require('crypto');
@@ -51,6 +52,7 @@ module.exports = async (req, res) => {
   const cls = CLASS_MAP[rawCls] || rawCls;
   const due = str(body.due_date, 10);
   const message = str(body.message, 4000);
+  const type = body.type === 'classwork' ? 'classwork' : 'homework';
   if (!schoolId || !/^[a-zA-Z0-9_-]+$/.test(schoolId)) return res.status(400).json({ ok: false, error: 'ERP school id missing.' });
   if (!cls) return res.status(400).json({ ok: false, error: 'Class missing.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ ok: false, error: 'Date missing.' });
@@ -61,7 +63,7 @@ module.exports = async (req, res) => {
     if (!sch.length) return res.status(404).json({ ok: false, error: 'School ' + schoolId + ' not found in ERP. Check erp_school_id in TeachBot.' });
 
     const rows = await sb('POST', 'communications', [{
-      school_id: schoolId, type: 'homework',
+      school_id: schoolId, type: type,
       title: str(body.title, 200) || (cls + ' Homework'),
       message,
       subject: str(body.subject, 300),
@@ -77,7 +79,7 @@ module.exports = async (req, res) => {
     if (pushReady() && c.id && await logOnce(schoolId, 'comm', String(c.id))) {
       const subs = await subsForClass(schoolId, cls);
       alerts = await sendToSubs(subs, () => ({
-        title: '📚 Homework: ' + short(c.title, 60),
+        title: (type === 'classwork' ? '📖 In class today: ' : '📚 Homework: ') + short(c.title, 60),
         body: short(c.message, 140),
         tag: 'comm-' + c.id,
         url: BASE + '/parent/index.html?school=' + enc(schoolId)
