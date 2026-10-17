@@ -29,6 +29,9 @@
     },
     "api/social-posts.js": {
       "maxDuration": 60
+    },
+    "api/social-meta.js": {
+      "maxDuration": 60
     }
   }
 }
