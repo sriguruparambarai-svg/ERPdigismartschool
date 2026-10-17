@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admission Enquiries — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
+.tab{padding:9px 14px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.tab .cnt{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--maroon);color:#fff;font-size:11px;line-height:18px;text-align:center}
+.eq-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px 14px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.eq-main{flex:1 1 260px;min-width:0}
+.eq-name{font-size:14px;font-weight:700;color:var(--text)}
+.eq-sub{font-size:12px;color:var(--text-muted);margin-top:3px;line-height:1.5}
+.eq-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.eq-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap}
+.st-new{background:#E6F1FB;color:#185FA5}
+.st-called{background:#FFF8E6;color:#8B5E00}
+.st-visited{background:#F5E6C8;color:#6B1A1A}
+.st-applied{background:#EDE7F6;color:#4A2C8A}
+.st-admitted{background:#E8F5EB;color:#2D7A3A}
+.st-lost{background:#F0EDE8;color:#6B6560}
+.src{background:#FDF8F0;color:#6B6560;border:1px solid var(--border)}
+.due{color:#A32D2D;font-weight:700}
+.btn-wa{background:#1E8E3E;color:#fff;border:0}
+.btn-wa:hover{background:#17752F}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.filters .form-control{width:auto;min-width:130px;padding:7px 10px}
+.link-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border)}
+.link-row:last-child{border-bottom:0}
+.link-row .lbl{width:120px;font-weight:600;font-size:13px}
+.link-row input{flex:1 1 240px;font-size:12px}
+.hist{border-left:2px solid var(--sandal);padding-left:12px;margin-top:8px;max-height:200px;overflow:auto}
+.hist-item{font-size:12px;margin-bottom:8px;color:var(--text-muted)}
+.hist-item b{color:var(--text)}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.rep-table{width:100%;border-collapse:collapse;font-size:13px}
+.rep-table th,.rep-table td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
+.rep-table th{font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.4px}
+.rep-table td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:8px;background:#F0EDE8;border-radius:4px;overflow:hidden;min-width:60px}
+.bar span{display:block;height:100%;background:var(--gold)}
+.map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:12px 0}
+.preview{overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:8px}
+.preview table{border-collapse:collapse;font-size:12px;width:100%}
+.preview th,.preview td{padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;text-align:left}
+.preview th{background:var(--sandal-light)}
+.help{font-size:12px;color:var(--text-muted);line-height:1.6}
+textarea.form-control{font-family:inherit}
+#qr-box{display:inline-block;padding:10px;background:#fff;border:1px solid var(--border);border-radius:8px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Admission Enquiries</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Students → Admission Enquiries</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <button class="btn btn-gold btn-sm" onclick="openAdd()">+ Add Enquiry</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <div class="stats-row">
+        <div class="stat-card stat-accent">
+          <div class="stat-label">Calls Due Today</div>
+          <div class="stat-value" id="st-due">—</div>
+          <div class="stat-sub">Including missed days</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Not Called Yet</div>
+          <div class="stat-value" id="st-new" style="color:#185FA5">—</div>
+          <div class="stat-sub">New enquiries</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Visited School</div>
+          <div class="stat-value" id="st-visited" style="color:#8B5E00">—</div>
+          <div class="stat-sub">Visited or applied</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Admitted</div>
+          <div class="stat-value" id="st-admitted" style="color:#2D7A3A">—</div>
+          <div class="stat-sub" id="st-rate">From enquiries</div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab active" data-tab="today" onclick="switchTab('today')">📞 Today's Calls <span class="cnt" id="cnt-today">0</span></div>
+        <div class="tab" data-tab="all" onclick="switchTab('all')">📋 All Enquiries</div>
+        <div class="tab" data-tab="links" onclick="switchTab('links')">🔗 Enquiry Form Links</div>
+        <div class="tab" data-tab="upload" onclick="switchTab('upload')">📥 Upload Excel</div>
+        <div class="tab" data-tab="report" onclick="switchTab('report')">📊 Report</div>
+      </div>
+
+      <!-- ══ TODAY'S CALLS ══ -->
+      <div id="tab-today">
+        <div class="help" style="margin-bottom:12px">Families to call today, and anyone whose call-back day has passed. After each call, tap <b>Update</b> and set the next call-back day — the family then moves off this list until that day.</div>
+        <div id="today-list"><div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div></div>
+      </div>
+
+      <!-- ══ ALL ENQUIRIES ══ -->
+      <div id="tab-all" class="hidden">
+        <div class="filters">
+          <input id="f-search" class="form-control" placeholder="Search name, mobile, area…" oninput="renderAll()" style="min-width:200px">
+          <select id="f-stage" class="form-control" onchange="renderAll()"></select>
+          <select id="f-source" class="form-control" onchange="renderAll()"></select>
+          <select id="f-class" class="form-control" onchange="renderAll()"></select>
+        </div>
+        <div class="help" id="all-count" style="margin-bottom:10px"></div>
+        <div id="all-list"></div>
+      </div>
+
+      <!-- ══ LINKS ══ -->
+      <div id="tab-links" class="hidden">
+        <div class="card">
+          <div class="card-title">Your school's enquiry form</div>
+          <div class="help" style="margin:6px 0 10px">Parents open this link, fill in their details, and the enquiry lands straight in <b>Today's Calls</b>. Use a different link in each place, so the Report shows which one brings admissions.</div>
+          <div id="link-rows"><div class="help">Loading…</div></div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-title">QR code for posters and the reception desk</div>
+          <div class="help" style="margin:6px 0 10px">Parents scan it with their phone camera to open the form. It is tagged as "Walk-in / Poster".</div>
+          <div id="qr-box"></div>
+          <div class="mt-2"><button class="btn btn-secondary btn-sm" onclick="downloadQR()">⬇ Download QR picture</button></div>
+        </div>
+
+        <div class="card mt-3">
+          <div class="card-title">WhatsApp reply message</div>
+          <div class="help" style="margin:6px 0 10px">This message opens ready-typed when staff tap the WhatsApp button. Words in curly brackets are filled in automatically: {parent} {child} {class} {school}.</div>
+          <textarea id="wa-template" class="form-control" rows="4"></textarea>
+          <div class="mt-2" style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-gold btn-sm" onclick="saveTemplate()">Save message</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetTemplate()">Use the default</button>
+          </div>
+          <div class="help mt-1">Saved on this computer/phone.</div>
+        </div>
+      </div>
+
+      <!-- ══ UPLOAD ══ -->
+      <div id="tab-upload" class="hidden">
+        <div class="card">
+          <div class="card-title">Upload enquiries from an Excel or CSV file</div>
+          <div class="help" style="margin:6px 0 12px">
+            <b>From Facebook / Instagram ads:</b> in Meta Business Suite open <i>All tools → Instant forms</i>, pick your form and press <i>Download leads</i> (CSV). Upload that file here.<br>
+            <b>From your own list:</b> any Excel sheet with columns like Parent name, Mobile, Child name, Class, Area works.
+            <a href="javascript:void(0)" onclick="downloadTemplate()">Download a blank sheet</a>.<br>
+            Mobile numbers already in your list are skipped, so uploading the same file twice is safe.
+          </div>
+          <input type="file" id="up-file" accept=".csv,.xlsx,.xls" class="form-control" style="max-width:340px">
+          <div id="up-step2" class="hidden">
+            <div class="help mt-2" id="up-info"></div>
+            <div class="map-grid" id="up-map"></div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+              <label class="form-label" style="margin:0">These enquiries came from</label>
+              <select id="up-source" class="form-control" style="width:auto"></select>
+            </div>
+            <div class="preview" id="up-preview"></div>
+            <button class="btn btn-gold mt-3" onclick="doImport()">📥 Add these enquiries</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ REPORT ══ -->
+      <div id="tab-report" class="hidden">
+        <div class="filters">
+          <select id="r-period" class="form-control" onchange="renderReport()">
+            <option value="month">This month</option>
+            <option value="year" selected>This academic year (from June)</option>
+            <option value="all">Everything</option>
+          </select>
+        </div>
+        <div class="card">
+          <div class="card-title">Where enquiries come from — and which ones become admissions</div>
+          <div class="help" style="margin:4px 0 10px">Spend more on the places with the best "became admission" number.</div>
+          <div style="overflow:auto"><table class="rep-table" id="rep-source"></table></div>
+        </div>
+        <div class="card mt-3">
+          <div class="card-title">Enquiries by class</div>
+          <div style="overflow:auto"><table class="rep-table" id="rep-class"></table></div>
+        </div>
+        <div class="card mt-3">
+          <div class="card-title">Why families said no</div>
+          <div class="help" id="rep-lost"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADD MODAL ══ -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">New Admission Enquiry</div>
+      <button class="modal-close" onclick="closeModal('add-modal')">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label class="form-label">Parent name</label><input id="a-parent" class="form-control" placeholder="e.g. Murugan"></div>
+      <div><label class="form-label">Mobile <span class="req">*</span></label><input id="a-mobile" type="tel" maxlength="14" class="form-control" placeholder="10-digit mobile"></div>
+      <div><label class="form-label">Child name</label><input id="a-child" class="form-control" placeholder="e.g. Kavin"></div>
+      <div><label class="form-label">Class wanted</label><select id="a-class" class="form-control"></select></div>
+      <div><label class="form-label">Area / village</label><input id="a-area" class="form-control" placeholder="e.g. Manalmedu"></div>
+      <div><label class="form-label">How did they hear?</label><select id="a-source" class="form-control"></select></div>
+      <div><label class="form-label">Call back on</label><input id="a-next" type="date" class="form-control"></div>
+    </div>
+    <div class="mt-2"><label class="form-label">Notes</label><textarea id="a-notes" class="form-control" rows="2" placeholder="e.g. Asked about van to Kuthalam, fees for UKG"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+      <button class="btn btn-gold" onclick="saveAdd()">✓ Save Enquiry</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ UPDATE MODAL ══ -->
+<div class="modal-overlay" id="upd-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="u-title">Update enquiry</div>
+      <button class="modal-close" onclick="closeModal('upd-modal')">×</button>
+    </div>
+    <div class="help" id="u-sub" style="margin-top:-10px;margin-bottom:12px"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label class="form-label">Where are they now?</label><select id="u-stage" class="form-control" onchange="stageChanged()"></select></div>
+      <div id="u-next-box"><label class="form-label">Call back on</label><input id="u-next" type="date" class="form-control"></div>
+    </div>
+    <div class="quick" id="u-quick">
+      <button class="btn btn-secondary btn-sm" onclick="setNext(1)">Tomorrow</button>
+      <button class="btn btn-secondary btn-sm" onclick="setNext(3)">In 3 days</button>
+      <button class="btn btn-secondary btn-sm" onclick="setNext(7)">In 1 week</button>
+      <button class="btn btn-secondary btn-sm" onclick="setNext(30)">Next month</button>
+    </div>
+    <div class="mt-2">
+      <label class="form-label" id="u-note-label">What did they say?</label>
+      <textarea id="u-note" class="form-control" rows="2" placeholder="e.g. Will visit on Saturday with grandmother"></textarea>
+    </div>
+
+    <details class="mt-2">
+      <summary style="cursor:pointer;font-size:12px;color:var(--maroon);font-weight:600">Change family details</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div><label class="form-label">Parent name</label><input id="u-parent" class="form-control"></div>
+        <div><label class="form-label">Mobile</label><input id="u-mobile" type="tel" maxlength="14" class="form-control"></div>
+        <div><label class="form-label">Child name</label><input id="u-child" class="form-control"></div>
+        <div><label class="form-label">Class wanted</label><select id="u-class" class="form-control"></select></div>
+        <div><label class="form-label">Area / village</label><input id="u-area" class="form-control"></div>
+        <div><label class="form-label">How did they hear?</label><select id="u-source" class="form-control"></select></div>
+      </div>
+    </details>
+
+    <div class="mt-3"><div class="form-label">History</div><div class="hist" id="u-hist"></div></div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger btn-sm" onclick="deleteEnquiry()">🗑 Delete</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" id="u-admit" onclick="admitFamily()">🎓 Admitted → Add student</button>
+        <button class="btn btn-gold" onclick="saveUpdate()">✓ Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const API = '/api/enquiry-data';
+
+const STAGES = [
+  { v:'new',      t:'New — not called yet' },
+  { v:'called',   t:'Called — follow up' },
+  { v:'visited',  t:'Visited school' },
+  { v:'applied',  t:'Applied / form taken' },
+  { v:'admitted', t:'Admitted' },
+  { v:'lost',     t:'Not interested' }
+];
+const STAGE_SHORT = { new:'New', called:'Called', visited:'Visited', applied:'Applied', admitted:'Admitted', lost:'Not interested' };
+const SOURCES = [
+  { v:'instagram', t:'Instagram' },
+  { v:'facebook',  t:'Facebook' },
+  { v:'meta_ad',   t:'Facebook / Instagram ad' },
+  { v:'whatsapp',  t:'WhatsApp' },
+  { v:'website',   t:'School website' },
+  { v:'walk_in',   t:'Walk-in / Poster' },
+  { v:'phone',     t:'Phone call' },
+  { v:'referral',  t:'Told by a parent' },
+  { v:'other',     t:'Other' }
+];
+const SRC_NAME = {}; SOURCES.forEach(s => SRC_NAME[s.v] = s.t);
+const CLASSES = ['PreKG'].concat(typeof ALL_CLASSES !== 'undefined' ? ALL_CLASSES
+  : ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12']);
+
+const DEFAULT_TEMPLATE = 'Vanakkam {parent}! Thank you for your admission enquiry for {child} ({class}) at {school}. We would be happy to show you our school — you are welcome to visit any working day. Please reply here if you have any questions. 🙏';
+const TEMPLATE_KEY = 'enq_wa_template';
+
+let rows = [];
+let editing = null;
+let schoolCode = '';
+let upData = null;   // { headers, body }
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+function staffLabel() { return (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : 'Office'; }
+function schoolName() {
+  let n = ''; try { n = sessionStorage.getItem('school_name') || ''; } catch (e) {}
+  return (n && n !== 'undefined' && n !== 'null') ? n : 'our school';
+}
+
+async function call(action, extra) {
+  const body = Object.assign({ action: action, token: token(), by: staffLabel() }, extra || {});
+  const r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+  let data;
+  try { data = await r.json(); }
+  catch (e) { throw new Error('The server sent back something unreadable (' + r.status + ').'); }
+  if (r.status === 401) {
+    showToast('Session expired — please log in again', 'error');
+    setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+  }
+  if (!data.ok && !data.duplicate) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Dates (India time) ──
+function todayStr() { return new Date(Date.now() + 330 * 60000).toISOString().split('T')[0]; }
+function addDays(n) { return new Date(Date.now() + 330 * 60000 + n * 86400000).toISOString().split('T')[0]; }
+function nice(d) {
+  if (!d) return '';
+  const t = todayStr();
+  if (d === t) return 'today';
+  if (d === addDays(1)) return 'tomorrow';
+  if (d === addDays(-1)) return 'yesterday';
+  const x = new Date(d + 'T00:00:00');
+  return x.toLocaleDateString('en-IN', { day:'numeric', month:'short' });
+}
+function niceTime(iso) {
+  try { return new Date(iso).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'numeric', minute:'2-digit' }); }
+  catch (e) { return ''; }
+}
+function isOpen(r) { return r.stage !== 'admitted' && r.stage !== 'lost'; }
+function isDue(r) { return isOpen(r) && r.next_call && r.next_call <= todayStr(); }
+
+function fillSelect(id, list, first) {
+  const el = document.getElementById(id);
+  el.innerHTML = (first ? '<option value="">' + esc(first) + '</option>' : '')
+    + list.map(o => typeof o === 'string'
+        ? '<option value="' + esc(o) + '">' + esc(o) + '</option>'
+        : '<option value="' + esc(o.v) + '">' + esc(o.t) + '</option>').join('');
+}
+
+// A class typed differently in an uploaded file (e.g. "1st Std") must still
+// show in the dropdown, or opening Update would quietly wipe it.
+function ensureOption(id, val) {
+  const el = document.getElementById(id);
+  if (!el || !val) return;
+  if (Array.from(el.options).some(o => o.value === val)) return;
+  const o = document.createElement('option');
+  o.value = val; o.textContent = val;
+  el.appendChild(o);
+}
+
+// ── Load ──
+async function loadAll() {
+  try {
+    const res = await call('list');
+    rows = res.rows || [];
+    renderEverything();
+  } catch (e) {
+    const msg = '<div class="card" style="color:#A32D2D;font-size:13px">Could not load enquiries: ' + esc(e.message) + '</div>';
+    document.getElementById('today-list').innerHTML = msg;
+    document.getElementById('all-list').innerHTML = msg;
+  }
+}
+
+function renderEverything() {
+  renderStats();
+  renderToday();
+  renderAll();
+  if (!document.getElementById('tab-report').classList.contains('hidden')) renderReport();
+}
+
+function renderStats() {
+  const due = rows.filter(isDue).length;
+  const admitted = rows.filter(r => r.stage === 'admitted').length;
+  document.getElementById('st-due').textContent = due;
+  document.getElementById('cnt-today').textContent = due;
+  document.getElementById('st-new').textContent = rows.filter(r => r.stage === 'new').length;
+  document.getElementById('st-visited').textContent = rows.filter(r => r.stage === 'visited' || r.stage === 'applied').length;
+  document.getElementById('st-admitted').textContent = admitted;
+  document.getElementById('st-rate').textContent = rows.length
+    ? Math.round(admitted * 100 / rows.length) + '% of ' + rows.length + ' enquiries' : 'From enquiries';
+}
+
+function card(r) {
+  const who = r.child_name
+    ? esc(r.child_name) + (r.class_wanted ? ' <span style="font-weight:500;color:var(--text-muted)">· ' + esc(r.class_wanted) + '</span>' : '')
+    : esc(r.parent_name || 'Enquiry');
+  const sub = [];
+  if (r.parent_name && r.child_name) sub.push('Parent: ' + esc(r.parent_name));
+  sub.push('📱 ' + esc(r.mobile));
+  if (r.area) sub.push('📍 ' + esc(r.area));
+  const last = Array.isArray(r.history) && r.history.length ? r.history[r.history.length - 1] : null;
+  let lastLine = '';
+  if (last && last.note) lastLine = '<div class="eq-sub">💬 ' + esc(last.note) + ' <span style="color:var(--text-light)">— ' + esc(niceTime(last.at)) + '</span></div>';
+  let callLine = '';
+  if (isOpen(r) && r.next_call) {
+    const overdue = r.next_call < todayStr();
+    callLine = '<span class="pill ' + (overdue ? 'due' : 'src') + '" style="' + (overdue ? 'background:#FCEBEB' : '') + '">📞 Call ' + esc(nice(r.next_call)) + (overdue ? ' (missed)' : '') + '</span>';
+  }
+  return '<div class="eq-card">'
+    + '<div class="eq-main">'
+    +   '<div class="eq-name">' + who + '</div>'
+    +   '<div class="eq-sub">' + sub.join(' &nbsp;·&nbsp; ') + '</div>'
+    +   lastLine
+    +   '<div class="eq-tags">'
+    +     '<span class="pill st-' + esc(r.stage) + '">' + esc(STAGE_SHORT[r.stage] || r.stage) + '</span>'
+    +     '<span class="pill src">' + esc(SRC_NAME[r.source] || r.source || '') + '</span>'
+    +     callLine
+    +     '<span class="pill src" style="border:0;background:none;color:var(--text-light)">Came ' + esc(nice((r.created_at || '').slice(0, 10))) + '</span>'
+    +   '</div>'
+    + '</div>'
+    + '<div class="eq-actions">'
+    +   '<a class="btn btn-secondary btn-sm" href="tel:+91' + esc(r.mobile) + '">📞 Call</a>'
+    +   '<a class="btn btn-wa btn-sm" href="' + esc(waLink(r)) + '" target="_blank" rel="noopener">💬 WhatsApp</a>'
+    +   '<button class="btn btn-gold btn-sm" onclick="openUpdate(\'' + esc(r.id) + '\')">✏️ Update</button>'
+    + '</div>'
+    + '</div>';
+}
+
+function renderToday() {
+  const list = rows.filter(isDue).sort((a, b) =>
+    (a.next_call || '').localeCompare(b.next_call || '') || (a.created_at || '').localeCompare(b.created_at || ''));
+  document.getElementById('today-list').innerHTML = list.length ? list.map(card).join('')
+    : '<div class="empty-state" style="padding:32px"><div class="icon">🎉</div><p>No calls due today.' + (rows.length ? '' : ' Share your enquiry form link (see the "Enquiry Form Links" tab) or add a walk-in with "+ Add Enquiry".') + '</p></div>';
+}
+
+function renderAll() {
+  const q = document.getElementById('f-search').value.trim().toLowerCase();
+  const st = document.getElementById('f-stage').value;
+  const so = document.getElementById('f-source').value;
+  const cl = document.getElementById('f-class').value;
+  const list = rows.filter(r => {
+    if (st === 'open' && !isOpen(r)) return false;
+    if (st && st !== 'open' && r.stage !== st) return false;
+    if (so && r.source !== so) return false;
+    if (cl && r.class_wanted !== cl) return false;
+    if (q) {
+      const hay = [r.parent_name, r.child_name, r.mobile, r.area, r.class_wanted].join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+  document.getElementById('all-count').textContent = list.length + ' of ' + rows.length + ' enquiries';
+  document.getElementById('all-list').innerHTML = list.length ? list.map(card).join('')
+    : '<div class="empty-state" style="padding:28px"><p>No enquiries match.</p></div>';
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  ['today','all','links','upload','report'].forEach(n =>
+    document.getElementById('tab-' + n).classList.toggle('hidden', n !== name));
+  if (name === 'links') renderLinks();
+  if (name === 'report') renderReport();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── WhatsApp (free click-to-chat: opens WhatsApp with the message typed) ──
+function getTemplate() {
+  try { return localStorage.getItem(TEMPLATE_KEY) || DEFAULT_TEMPLATE; } catch (e) { return DEFAULT_TEMPLATE; }
+}
+function waLink(r) {
+  const msg = getTemplate()
+    .replace(/\{parent\}/g, r.parent_name || '')
+    .replace(/\{child\}/g, r.child_name || 'your child')
+    .replace(/\{class\}/g, r.class_wanted || 'admission')
+    .replace(/\{school\}/g, schoolName())
+    .replace(/\s+!/g, '!').replace(/\(\s*\)/g, '');
+  return 'https://wa.me/91' + r.mobile + '?text=' + encodeURIComponent(msg);
+}
+function saveTemplate() {
+  const v = document.getElementById('wa-template').value.trim();
+  if (!v) { showToast('⚠️ The message is empty.', 'error'); return; }
+  try { localStorage.setItem(TEMPLATE_KEY, v); showToast('Message saved.', 'success'); }
+  catch (e) { showToast('⚠️ Could not save on this device.', 'error'); }
+  renderToday(); renderAll();
+}
+function resetTemplate() {
+  try { localStorage.removeItem(TEMPLATE_KEY); } catch (e) {}
+  document.getElementById('wa-template').value = DEFAULT_TEMPLATE;
+  showToast('Default message restored.', 'success');
+  renderToday(); renderAll();
+}
+
+// ── Add ──
+function openAdd() {
+  ['a-parent','a-mobile','a-child','a-area','a-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('a-class').value = '';
+  document.getElementById('a-source').value = 'walk_in';
+  document.getElementById('a-next').value = todayStr();
+  document.getElementById('add-modal').classList.add('open');
+  setTimeout(() => document.getElementById('a-parent').focus(), 50);
+}
+
+async function saveAdd(force) {
+  const entry = {
+    parent_name: document.getElementById('a-parent').value,
+    mobile: document.getElementById('a-mobile').value,
+    child_name: document.getElementById('a-child').value,
+    class_wanted: document.getElementById('a-class').value,
+    area: document.getElementById('a-area').value,
+    source: document.getElementById('a-source').value,
+    next_call: document.getElementById('a-next').value,
+    notes: document.getElementById('a-notes').value
+  };
+  if (!/\d{10}/.test(entry.mobile.replace(/\D/g, ''))) { showToast('⚠️ Please enter a 10-digit mobile number.', 'error'); return; }
+  if (!entry.parent_name.trim() && !entry.child_name.trim()) { showToast('⚠️ Please enter the parent or child name.', 'error'); return; }
+  try {
+    showLoading('Saving...');
+    const res = await call('add', { entry: entry, force: !!force });
+    hideLoading();
+    if (res.duplicate) {
+      const ex = res.existing || {};
+      if (confirmAction('This mobile number is already in your enquiries (' + (ex.child_name || ex.parent_name || 'saved earlier') + ', ' + (STAGE_SHORT[ex.stage] || ex.stage || '') + ').\n\nAdd it again anyway? (Press Cancel to keep just the old one.)')) {
+        return saveAdd(true);
+      }
+      return;
+    }
+    closeModal('add-modal');
+    showToast('Enquiry saved.', 'success');
+    await loadAll();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+// ── Update ──
+function openUpdate(id) {
+  const r = rows.find(x => x.id === id);
+  if (!r) return;
+  editing = r;
+  document.getElementById('u-title').textContent = (r.child_name || r.parent_name || 'Enquiry') + (r.class_wanted ? ' · ' + r.class_wanted : '');
+  document.getElementById('u-sub').textContent = (r.parent_name ? r.parent_name + ' · ' : '') + r.mobile + (r.area ? ' · ' + r.area : '') + ' · ' + (SRC_NAME[r.source] || r.source);
+  document.getElementById('u-stage').value = r.stage === 'new' ? 'called' : r.stage;   // after a call, "Called" is the usual next step
+  document.getElementById('u-next').value = r.next_call && r.next_call > todayStr() ? r.next_call : addDays(3);
+  document.getElementById('u-note').value = '';
+  document.getElementById('u-parent').value = r.parent_name || '';
+  document.getElementById('u-mobile').value = r.mobile || '';
+  document.getElementById('u-child').value = r.child_name || '';
+  ensureOption('u-class', r.class_wanted);
+  document.getElementById('u-class').value = r.class_wanted || '';
+  document.getElementById('u-area').value = r.area || '';
+  document.getElementById('u-source').value = r.source || 'other';
+  const hist = (Array.isArray(r.history) ? r.history.slice() : []).reverse();
+  document.getElementById('u-hist').innerHTML = hist.length ? hist.map(h =>
+    '<div class="hist-item"><b>' + esc(STAGE_SHORT[h.stage] || h.stage || '') + '</b> · ' + esc(niceTime(h.at)) + ' · ' + esc(h.by || '')
+    + (h.note ? '<br>' + esc(h.note) : '') + '</div>').join('') : '<div class="hist-item">Nothing yet.</div>';
+  document.getElementById('u-admit').style.display = r.stage === 'admitted' ? 'none' : '';
+  stageChanged();
+  document.getElementById('upd-modal').classList.add('open');
+}
+
+function stageChanged() {
+  const s = document.getElementById('u-stage').value;
+  const closed = (s === 'admitted' || s === 'lost');
+  document.getElementById('u-next-box').style.visibility = closed ? 'hidden' : '';
+  document.getElementById('u-quick').style.display = closed ? 'none' : '';
+  document.getElementById('u-note-label').textContent = s === 'lost' ? 'Why are they not joining?' : 'What did they say?';
+  document.getElementById('u-note').placeholder = s === 'lost'
+    ? 'e.g. Fees too high / Too far / Joined another school / No van to our village'
+    : 'e.g. Will visit on Saturday with grandmother';
+}
+
+function setNext(n) { document.getElementById('u-next').value = addDays(n); }
+
+function updateFields() {
+  const r = editing;
+  const f = {};
+  const stage = document.getElementById('u-stage').value;
+  if (stage !== r.stage) f.stage = stage;
+  if (stage !== 'admitted' && stage !== 'lost') f.next_call = document.getElementById('u-next').value || null;
+  const pairs = [['u-parent','parent_name'],['u-mobile','mobile'],['u-child','child_name'],['u-class','class_wanted'],['u-area','area'],['u-source','source']];
+  pairs.forEach(p => {
+    const v = document.getElementById(p[0]).value.trim();
+    if (v !== String(r[p[1]] || '')) f[p[1]] = v;
+  });
+  return f;
+}
+
+async function saveUpdate() {
+  if (!editing) return;
+  const f = updateFields();
+  const note = document.getElementById('u-note').value.trim();
+  if (f.stage === 'lost' && !note) { showToast('⚠️ Please write why they are not joining — it helps next year.', 'error'); return; }
+  try {
+    showLoading('Saving...');
+    await call('update', { id: editing.id, fields: f, note: note });
+    hideLoading();
+    closeModal('upd-modal');
+    showToast('Saved.', 'success');
+    await loadAll();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+async function admitFamily() {
+  if (!editing) return;
+  const r = editing;
+  const canAdd = typeof hasModuleAccess !== 'function' || hasModuleAccess('admission');
+  const ask = canAdd
+    ? 'Mark ' + (r.child_name || r.parent_name) + ' as ADMITTED and open the student admission form with these details filled in?'
+    : 'Mark ' + (r.child_name || r.parent_name) + ' as ADMITTED?\n\n(The office will add the student in Admission.)';
+  if (!confirmAction(ask)) return;
+  try {
+    showLoading('Saving...');
+    const f = updateFields(); f.stage = 'admitted';
+    await call('update', { id: r.id, fields: f, note: document.getElementById('u-note').value.trim() || 'Admitted' });
+    hideLoading();
+    closeModal('upd-modal');
+    if (canAdd) {
+      try {
+        sessionStorage.setItem('enquiry_prefill', JSON.stringify({
+          child_name: document.getElementById('u-child').value.trim(),
+          parent_name: document.getElementById('u-parent').value.trim(),
+          mobile: (document.getElementById('u-mobile').value || '').replace(/\D/g, '').slice(-10),
+          class_wanted: document.getElementById('u-class').value,
+          area: document.getElementById('u-area').value.trim()
+        }));
+      } catch (e) {}
+      window.location.href = 'admission.html';
+      return;
+    }
+    showToast('Marked as admitted.', 'success');
+    await loadAll();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+async function deleteEnquiry() {
+  if (!editing) return;
+  if (!confirmAction('Delete this enquiry completely? (To keep it for the report, choose "Not interested" instead.)')) return;
+  try {
+    showLoading('Deleting...');
+    await call('delete', { id: editing.id });
+    hideLoading();
+    closeModal('upd-modal');
+    showToast('Enquiry deleted.', 'success');
+    await loadAll();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+// ── Links & QR ──
+function formLink(src) {
+  return location.origin + '/enquiry.html?s=' + encodeURIComponent(schoolCode) + (src ? '&src=' + src : '');
+}
+let qrMade = false;
+async function renderLinks() {
+  if (!schoolCode) {
+    try { schoolCode = (await call('link')).school || ''; }
+    catch (e) {
+      document.getElementById('link-rows').innerHTML = '<div style="color:#A32D2D;font-size:13px">' + esc(e.message) + '</div>';
+      return;
+    }
+  }
+  const places = [
+    { src:'instagram', t:'Instagram',  tip:'Put in your Instagram bio and in post captions' },
+    { src:'facebook',  t:'Facebook',   tip:'Add as the button link on your Facebook page' },
+    { src:'whatsapp',  t:'WhatsApp',   tip:'Share in WhatsApp status and groups' },
+    { src:'website',   t:'Website',    tip:'Link from your school website' }
+  ];
+  document.getElementById('link-rows').innerHTML = places.map(p =>
+    '<div class="link-row"><div class="lbl">' + p.t + '</div>'
+    + '<input class="form-control" readonly value="' + esc(formLink(p.src)) + '" onclick="this.select()">'
+    + '<button class="btn btn-secondary btn-sm" onclick="copyLink(\'' + p.src + '\')">📋 Copy</button>'
+    + '<a class="btn btn-secondary btn-sm" target="_blank" rel="noopener" href="' + esc(formLink(p.src)) + '">Open</a>'
+    + '<div class="help" style="width:100%;margin-top:-2px">' + p.tip + '</div></div>').join('');
+  if (!qrMade && typeof QRCode !== 'undefined') {
+    new QRCode(document.getElementById('qr-box'), { text: formLink('walk_in'), width: 200, height: 200, colorDark: '#4A1010', colorLight: '#ffffff' });
+    qrMade = true;
+  }
+  document.getElementById('wa-template').value = getTemplate();
+}
+async function copyLink(src) {
+  const t = formLink(src);
+  try { await navigator.clipboard.writeText(t); showToast('Link copied.', 'success'); }
+  catch (e) { prompt('Copy this link:', t); }
+}
+function downloadQR() {
+  const box = document.getElementById('qr-box');
+  const c = box.querySelector('canvas');
+  const img = box.querySelector('img');
+  const url = c ? c.toDataURL('image/png') : (img ? img.src : '');
+  if (!url) { showToast('⚠️ QR code is not ready yet.', 'error'); return; }
+  const a = document.createElement('a');
+  a.href = url; a.download = 'admission-enquiry-qr.png';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ── Upload Excel / CSV ──
+const UP_FIELDS = [
+  { k:'parent_name',  t:'Parent name',   re:/full.?name|parent|father|mother|guardian|^name$|your.?name/i },
+  { k:'mobile',       t:'Mobile',        re:/phone|mobile|contact|whatsapp|cell/i },
+  { k:'child_name',   t:'Child name',    re:/child|student|kid|son|daughter|ward/i },
+  { k:'class_wanted', t:'Class wanted',  re:/class|grade|std|standard|admission.?for/i },
+  { k:'area',         t:'Area / village',re:/city|area|village|town|place|location|address/i },
+  { k:'notes',        t:'Notes',         re:/note|message|comment|question|remark/i }
+];
+
+function downloadTemplate() {
+  const csv = 'Parent name,Mobile,Child name,Class wanted,Area / village,Notes\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  a.download = 'enquiries-blank.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'up-file') return;
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { showToast('⚠️ The Excel reader did not load. Check the internet and refresh.', 'error'); return; }
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type:'array', raw:false });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const grid = XLSX.utils.sheet_to_json(sheet, { header:1, defval:'', raw:false })
+      .filter(r => r.some(c => String(c).trim() !== ''));
+    if (grid.length < 2) { showToast('⚠️ That file has no rows under the headings.', 'error'); return; }
+    upData = { headers: grid[0].map(h => String(h).trim()), body: grid.slice(1) };
+    buildMapping();
+  } catch (err) {
+    showToast('⚠️ Could not read that file: ' + err.message, 'error');
+  }
+});
+
+function buildMapping() {
+  const H = upData.headers;
+  const used = {};
+  const guess = {};
+  // Meta's own column names first, then by meaning
+  UP_FIELDS.forEach(f => {
+    let idx = -1;
+    if (f.k === 'parent_name') idx = H.findIndex(h => /^full_name$/i.test(h));
+    if (f.k === 'mobile' && idx < 0) idx = H.findIndex(h => /^phone_number$/i.test(h));
+    if (idx < 0) idx = H.findIndex((h, i) => !used[i] && f.re.test(h) && !(f.k === 'parent_name' && /child|student/i.test(h)));
+    if (idx >= 0) { used[idx] = true; guess[f.k] = idx; }
+  });
+  document.getElementById('up-map').innerHTML = UP_FIELDS.map(f =>
+    '<div><label class="form-label">' + f.t + (f.k === 'mobile' ? ' <span class="req">*</span>' : '') + '</label>'
+    + '<select class="form-control" id="map-' + f.k + '" onchange="renderPreview()"><option value="">— not in file —</option>'
+    + H.map((h, i) => '<option value="' + i + '"' + (guess[f.k] === i ? ' selected' : '') + '>' + esc(h || ('Column ' + (i + 1))) + '</option>').join('')
+    + '</select></div>').join('');
+  document.getElementById('up-info').innerHTML = '<b>' + upData.body.length + ' rows found.</b> Check that each box below points to the right column of your file.';
+  document.getElementById('up-step2').classList.remove('hidden');
+  renderPreview();
+}
+
+function mappedRows() {
+  const m = {};
+  UP_FIELDS.forEach(f => { const v = document.getElementById('map-' + f.k).value; m[f.k] = v === '' ? -1 : parseInt(v, 10); });
+  return upData.body.map(r => {
+    const o = {};
+    UP_FIELDS.forEach(f => { o[f.k] = m[f.k] >= 0 ? String(r[m[f.k]] == null ? '' : r[m[f.k]]).trim() : ''; });
+    // Meta writes "p:+91…" in phone columns — keep only the number
+    o.mobile = o.mobile.replace(/^p:/i, '');
+    return o;
+  });
+}
+
+function renderPreview() {
+  const list = mappedRows().slice(0, 8);
+  document.getElementById('up-preview').innerHTML = '<table><tr>' + UP_FIELDS.map(f => '<th>' + f.t + '</th>').join('') + '</tr>'
+    + list.map(r => '<tr>' + UP_FIELDS.map(f => '<td>' + esc(r[f.k]) + '</td>').join('') + '</tr>').join('')
+    + '</table>' + (upData.body.length > 8 ? '<div class="help" style="padding:6px 8px">…and ' + (upData.body.length - 8) + ' more rows</div>' : '');
+}
+
+async function doImport() {
+  if (!upData) return;
+  if (document.getElementById('map-mobile').value === '') { showToast('⚠️ Please choose which column has the mobile number.', 'error'); return; }
+  const all = mappedRows();
+  if (!confirmAction('Add ' + all.length + ' enquiries from this file?')) return;
+  const src = document.getElementById('up-source').value;
+  let added = 0, dup = 0, bad = 0;
+  try {
+    for (let i = 0; i < all.length; i += 500) {
+      showLoading('Adding ' + Math.min(i + 500, all.length) + ' of ' + all.length + '...');
+      const res = await call('import', { rows: all.slice(i, i + 500), source: src });
+      added += res.added || 0; dup += res.dup || 0; bad += res.bad || 0;
+    }
+    hideLoading();
+    alert('Done.\n\n✓ ' + added + ' new enquiries added'
+      + (dup ? '\n• ' + dup + ' skipped — mobile already in your list' : '')
+      + (bad ? '\n• ' + bad + ' skipped — no proper mobile number or name' : ''));
+    upData = null;
+    document.getElementById('up-file').value = '';
+    document.getElementById('up-step2').classList.add('hidden');
+    await loadAll();
+    switchTab('today');
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+// ── Report ──
+function periodStart() {
+  const p = document.getElementById('r-period').value;
+  const t = todayStr();
+  if (p === 'month') return t.slice(0, 8) + '01';
+  if (p === 'year') {
+    const y = parseInt(t.slice(0, 4), 10), m = parseInt(t.slice(5, 7), 10);
+    return (m >= 6 ? y : y - 1) + '-06-01';
+  }
+  return '';
+}
+
+function renderReport() {
+  const from = periodStart();
+  const list = rows.filter(r => !from || (r.created_at || '').slice(0, 10) >= from);
+  const groups = (keyFn, names) => {
+    const g = {};
+    list.forEach(r => {
+      const k = keyFn(r) || '—';
+      g[k] = g[k] || { n:0, visited:0, admitted:0, lost:0 };
+      g[k].n++;
+      if (['visited','applied','admitted'].indexOf(r.stage) !== -1) g[k].visited++;
+      if (r.stage === 'admitted') g[k].admitted++;
+      if (r.stage === 'lost') g[k].lost++;
+    });
+    return Object.keys(g).map(k => ({ k: names ? (names[k] || k) : k, ...g[k] })).sort((a, b) => b.n - a.n);
+  };
+  const table = (data, head) => {
+    if (!data.length) return '<tr><td class="help">No enquiries in this period yet.</td></tr>';
+    const max = Math.max.apply(null, data.map(d => d.admitted ? d.admitted / d.n : 0).concat([0.0001]));
+    const tot = data.reduce((a, d) => ({ n:a.n + d.n, visited:a.visited + d.visited, admitted:a.admitted + d.admitted }), { n:0, visited:0, admitted:0 });
+    return '<tr><th>' + head + '</th><th class="n">Enquiries</th><th class="n">Visited</th><th class="n">Admitted</th><th class="n">Became admission</th><th></th></tr>'
+      + data.map(d => {
+          const pct = d.n ? Math.round(d.admitted * 100 / d.n) : 0;
+          return '<tr><td>' + esc(d.k) + '</td><td class="n">' + d.n + '</td><td class="n">' + d.visited + '</td><td class="n">' + d.admitted
+            + '</td><td class="n"><b>' + pct + '%</b></td><td><div class="bar"><span style="width:' + Math.round((d.admitted / d.n) / max * 100) + '%"></span></div></td></tr>';
+        }).join('')
+      + '<tr style="font-weight:700"><td>Total</td><td class="n">' + tot.n + '</td><td class="n">' + tot.visited + '</td><td class="n">' + tot.admitted
+      + '</td><td class="n">' + (tot.n ? Math.round(tot.admitted * 100 / tot.n) : 0) + '%</td><td></td></tr>';
+  };
+  document.getElementById('rep-source').innerHTML = table(groups(r => r.source, SRC_NAME), 'Came from');
+  const byClass = groups(r => r.class_wanted).sort((a, b) => CLASSES.indexOf(a.k) - CLASSES.indexOf(b.k));
+  document.getElementById('rep-class').innerHTML = table(byClass, 'Class wanted');
+
+  const reasons = list.filter(r => r.stage === 'lost').map(r => {
+    const h = (r.history || []).slice().reverse().find(x => x.stage === 'lost' && x.note);
+    return h ? h.note : '';
+  }).filter(Boolean);
+  document.getElementById('rep-lost').innerHTML = reasons.length
+    ? '<ul style="margin:6px 0 0 18px">' + reasons.slice(0, 40).map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>'
+    : 'None yet. When a family is marked "Not interested", the reason staff write shows here.';
+}
+
+// ── Start ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('enquiry');
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
+  fillSelect('f-stage', [{ v:'open', t:'Still in progress' }].concat(STAGES.map(s => ({ v:s.v, t:STAGE_SHORT[s.v] }))), 'All stages');
+  fillSelect('f-source', SOURCES, 'All sources');
+  fillSelect('f-class', CLASSES, 'All classes');
+  fillSelect('a-class', CLASSES, '— choose —');
+  fillSelect('u-class', CLASSES, '— choose —');
+  fillSelect('a-source', SOURCES);
+  fillSelect('u-source', SOURCES);
+  fillSelect('u-stage', STAGES);
+  fillSelect('up-source', SOURCES);
+  document.getElementById('up-source').value = 'meta_ad';
+  await loadAll();
+});
+</script>
+</body>
+</html>
