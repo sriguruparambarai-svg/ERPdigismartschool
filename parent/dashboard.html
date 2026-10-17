@@ -29,6 +29,73 @@
   window.psDel = function (k) { try { sessionStorage.removeItem(k); } catch (e) {} try { localStorage.removeItem(k); } catch (e) {} };
 })();
 </script>
+<script>
+// ══ MORE THAN ONE CHILD ON THIS PHONE ══
+// Each child keeps their own login (their own PIN). The phone just remembers
+// every child the parent has added, in "parent_children", so the parent can
+// switch between them without logging out. Each login still lasts 30 days.
+(function () {
+  function expired(tok) {
+    try { var d = JSON.parse(atob(String(tok).split('.')[0])); return !d.exp || Date.now() > d.exp; } catch (e) { return true; }
+  }
+  function idOf(c) { try { return String(JSON.parse(c.session).student_id || ''); } catch (e) { return ''; } }
+  function read() {
+    try { var l = JSON.parse(localStorage.getItem('parent_children') || '[]'); return Array.isArray(l) ? l : []; } catch (e) { return []; }
+  }
+  function write(l) { try { localStorage.setItem('parent_children', JSON.stringify(l)); } catch (e) {} }
+  window.psChildId = idOf;
+  window.psChildren = function () {
+    return read().filter(function (c) { return c && c.token && c.session && idOf(c) && !expired(c.token); });
+  };
+  // Save (or refresh) the child now on screen into the list
+  window.psSyncCurrent = function () {
+    var list = psChildren();
+    var tok = sessionStorage.getItem('parent_token'), ses = sessionStorage.getItem('parent_session');
+    if (tok && ses && !expired(tok)) {
+      var row = { token: tok, session: ses }, id = idOf(row);
+      if (id) {
+        var i = -1;
+        list.forEach(function (c, k) { if (idOf(c) === id) i = k; });
+        if (i >= 0) list[i] = row; else list.push(row);
+      }
+    }
+    write(list);
+    return list;
+  };
+  window.psUseChild = function (id) {
+    var c = psChildren().filter(function (x) { return idOf(x) === String(id); })[0];
+    if (!c) return false;
+    psSet('parent_token', c.token);
+    psSet('parent_session', c.session);
+    return true;
+  };
+  window.psRemoveChild = function (id) {
+    write(psChildren().filter(function (c) { return idOf(c) !== String(id); }));
+  };
+  // Login no longer valid: drop this child, open another saved child if there is one
+  window.psSessionEnded = function () {
+    try { psRemoveChild(JSON.parse(sessionStorage.getItem('parent_session') || '{}').student_id); } catch (e) {}
+    psDel('parent_token');
+    psDel('parent_session');
+    var l = psChildren();
+    window.location.href = (l.length && psUseChild(idOf(l[0]))) ? 'dashboard.html' : 'index.html';
+  };
+  try {
+    psSyncCurrent();
+    // A phone alert for one child opens the app on that child (…?child=<id>)
+    var want = new URLSearchParams(window.location.search).get('child');
+    if (want) {
+      psUseChild(want);
+      history.replaceState(null, '', window.location.pathname);
+    }
+    // This child's login ran out, but another child is still saved: open that one
+    if (!sessionStorage.getItem('parent_session')) {
+      var l = psChildren();
+      if (l.length) psUseChild(idOf(l[0]));
+    }
+  } catch (e) {}
+})();
+</script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -151,6 +218,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .alert-card .ac-text{font-size:12px;opacity:.9;line-height:1.5;margin-bottom:10px}
 .alert-card button{background:#D4A843;color:#3A1A00;border:none;border-radius:10px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}
 .alert-card .ac-steps{font-size:12px;line-height:1.7;background:rgba(255,255,255,.1);border-radius:10px;padding:8px 10px}
+/* Child tabs (parents with more than one child) */
+.child-switch{display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px;scrollbar-width:none}
+.child-switch::-webkit-scrollbar{display:none}
+.child-chip{flex-shrink:0;border:1.5px solid rgba(245,230,200,.35);background:transparent;color:var(--sandal);border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
+.child-chip span{font-weight:400;opacity:.75;font-size:11px}
+.child-chip.on{background:var(--gold);border-color:var(--gold);color:var(--maroon)}
+.child-chip.on span{opacity:.8}
+.child-chip.add{border-style:dashed;font-weight:700}
 </style>
 </head>
 <body>
@@ -164,6 +239,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
     <div class="top-avatar notif-dot" id="top-avatar" onclick="showTab('settings')">DS</div>
   </div>
+  <div class="child-switch" id="child-switch" style="display:none"></div>
 </div>
 
 <!-- MAIN CONTENT -->
@@ -519,6 +595,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="settings-arrow">›</div>
     </div>
 
+    <div class="settings-item" onclick="showAddChild()">
+      <div class="settings-icon">👨‍👩‍👧‍👦</div>
+      <div class="settings-label">Add another child</div>
+      <div class="settings-arrow">›</div>
+    </div>
+
     <div class="settings-item" onclick="showChangePw()">
       <div class="settings-icon">🔑</div>
       <div class="settings-label">Change Password</div>
@@ -615,6 +697,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     </div>
     <button onclick="changePassword()" style="width:100%;padding:13px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Update Password</button>
     <button class="modal-close" onclick="closeModal('pw-modal')">Cancel</button>
+  </div>
+</div>
+
+<!-- ADD ANOTHER CHILD -->
+<div class="modal-overlay" id="addchild-modal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Add another child</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:14px">Have another child in this school? Enter that child's roll number and the parent PIN the school gave for that child. You can then switch between your children at the top of the screen.</div>
+    <div id="ac-alert" style="padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:12px;display:none"></div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Roll Number</label>
+      <input type="text" id="ac-roll" autocapitalize="characters" style="width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit" placeholder="Roll number">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Parent PIN or Password</label>
+      <input type="password" id="ac-pin" style="width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:10px;font-size:14px;font-family:inherit" placeholder="PIN for this child">
+    </div>
+    <button id="ac-btn" onclick="addChild()" style="width:100%;padding:13px;background:var(--maroon);color:var(--sandal);border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Add child</button>
+    <button class="modal-close" onclick="closeModal('addchild-modal')">Cancel</button>
   </div>
 </div>
 
@@ -981,11 +1083,25 @@ async function enableAlerts() {
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(keyOut.key) });
     const out = await pushApi('subscribe', { subscription: sub.toJSON() });
     if (!out || !out.ok) { alert((out && out.error) || 'Could not turn on alerts. Please try again.'); setAlertsUi('off'); return; }
+    await pushLinkOtherChildren(sub);
     setAlertsUi('on');
     alert('✅ Alerts are on. You will be notified if your child is absent, and for new notices, homework and results.');
   } catch (e) {
     alert('Could not turn on alerts on this phone. Please try again in Google Chrome.');
     setAlertsUi('off');
+  }
+}
+// Parents with more than one child: this phone gets alerts for all of them
+async function pushLinkOtherChildren(sub) {
+  const mine = String(session && session.student_id);
+  for (const c of psChildren()) {
+    if (psChildId(c) === mine) continue;
+    try {
+      await fetch('/api/push', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: c.token, action: 'subscribe', subscription: sub.toJSON() })
+      });
+    } catch (e) { /* that child links itself when next opened */ }
   }
 }
 async function toggleAlertsFromSettings() {
@@ -1021,6 +1137,69 @@ function setupUI() {
   document.getElementById('set-avatar').textContent = initials;
   document.getElementById('set-name').textContent = session.student_name;
   document.getElementById('set-class').textContent = session.class + (session.section?' – '+session.section:'');
+  renderChildSwitch();
+}
+
+// ══ SWITCH BETWEEN CHILDREN ══
+function renderChildSwitch() {
+  const box = document.getElementById('child-switch');
+  if (!box) return;
+  const list = psChildren();
+  if (list.length < 2) { box.style.display = 'none'; return; }
+  box.innerHTML = list.map(c => {
+    let s = {};
+    try { s = JSON.parse(c.session); } catch (e) {}
+    const first = String(s.student_name || '').trim().split(/\s+/)[0] || 'Child';
+    const on = String(s.student_id) === String(session.student_id);
+    return '<button class="child-chip' + (on ? ' on' : '') + '" data-id="' + escapeHtml(String(s.student_id)) + '" onclick="switchChild(this.dataset.id)">'
+      + escapeHtml(first) + ' <span>' + escapeHtml(String(s.class || '')) + (s.section ? ' ' + escapeHtml(String(s.section)) : '') + '</span></button>';
+  }).join('') + '<button class="child-chip add" onclick="showAddChild()" aria-label="Add another child">+</button>';
+  box.style.display = 'flex';
+}
+function switchChild(id) {
+  if (String(id) === String(session.student_id)) return;
+  psSyncCurrent();
+  if (psUseChild(id)) window.location.href = 'dashboard.html';
+}
+function showAddChild() {
+  document.getElementById('ac-roll').value = '';
+  document.getElementById('ac-pin').value = '';
+  document.getElementById('ac-alert').style.display = 'none';
+  document.getElementById('addchild-modal').classList.add('open');
+}
+function showAddChildMsg(text, good) {
+  const el = document.getElementById('ac-alert');
+  el.textContent = text;
+  el.style.background = good ? '#E8F5EB' : '#FCEBEB';
+  el.style.color = good ? '#2D7A3A' : '#A32D2D';
+  el.style.display = 'block';
+}
+async function addChild() {
+  const roll = document.getElementById('ac-roll').value.trim();
+  const pin = document.getElementById('ac-pin').value;
+  if (!roll || !pin) { showAddChildMsg('⚠️ Please enter the roll number and PIN.'); return; }
+  const btn = document.getElementById('ac-btn');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try {
+    // Same login check as the sign-in page — the PIN is checked on the server
+    const res = await fetch('/api/parent-login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roll_no: roll, password: pin, school_id: session.school_id })
+    });
+    const out = await res.json();
+    if (!res.ok || !out.ok) { showAddChildMsg('⚠️ ' + (out.error || 'Could not add this child. Please try again.')); return; }
+    if (String(out.student.student_id) === String(session.student_id)) { showAddChildMsg('ℹ️ This child is already open in the app.'); return; }
+    psSyncCurrent();                          // keep the child on screen saved
+    psSet('parent_token', out.parent_token);  // then open the new child
+    psSet('parent_session', JSON.stringify(out.student));
+    psSyncCurrent();
+    showAddChildMsg('✓ ' + out.student.student_name + ' added.', true);
+    setTimeout(() => { window.location.href = 'dashboard.html'; }, 900);
+  } catch (e) {
+    showAddChildMsg('⚠️ Could not add the child. Please check your internet connection.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Add child';
+  }
 }
 
 // ── LOAD DATA ──
@@ -1443,9 +1622,7 @@ async function parentApi(action, extra) {
     });
     const out = await res.json();
     if (res.status === 401) {
-      psDel('parent_token');
-      psDel('parent_session');
-      window.location.href = 'index.html';
+      psSessionEnded();
       return { ok: false, error: 'Session expired' };
     }
     return out;
@@ -1814,12 +1991,25 @@ function buildReceiptPdf(JsPDF, r, logoDataUrl) {
 
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-function doLogout() {
-  if (confirm('Are you sure you want to logout?')) {
-    psDel('parent_session');
-    psDel('parent_token');
-    window.location.href = 'index.html';
+async function doLogout() {
+  const others = psChildren().filter(c => psChildId(c) !== String(session.student_id));
+  const ask = others.length
+    ? 'Logout ' + session.student_name + ' from this phone? Your other ' + (others.length > 1 ? 'children stay' : 'child stays') + ' logged in.'
+    : 'Are you sure you want to logout?';
+  if (!confirm(ask)) return;
+  if (others.length && alertsSupported()) {
+    // Stop this child's alerts on this phone; the other children keep theirs
+    try {
+      const reg = await getSwReg();
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await pushApi('unsubscribe', { endpoint: sub.endpoint });
+    } catch (e) {}
   }
+  psRemoveChild(session.student_id);
+  psDel('parent_session');
+  psDel('parent_token');
+  if (others.length && psUseChild(psChildId(others[0]))) { window.location.href = 'dashboard.html'; return; }
+  window.location.href = 'index.html';
 }
 
 // ── HELPERS ──
@@ -1918,9 +2108,7 @@ async function leaveApi(action, extra) {
     });
     const out = await res.json();
     if (res.status === 401) {
-      psDel('parent_token');
-      psDel('parent_session');
-      window.location.href = 'index.html';
+      psSessionEnded();
       return { ok: false, error: 'Session expired' };
     }
     return out;
