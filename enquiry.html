@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Admission Enquiry</title>
+<style>
+:root{--maroon:#6B1A1A;--maroon-dark:#4A1010;--gold:#C9A84C;--sandal:#F5E6C8;--sandal-light:#FDF8F0;--border:#E8E0D5;--text:#1A1A1A;--muted:#6B6560}
+*{box-sizing:border-box}
+body{margin:0;background:var(--sandal-light);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Noto Sans Tamil",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:480px;margin:0 auto;padding:16px 16px 40px}
+.head{background:var(--maroon);color:#fff;border-radius:16px 16px 0 0;padding:20px 18px 18px;text-align:center;position:relative}
+.logo{width:72px;height:72px;border-radius:50%;background:#fff;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:3px solid var(--gold)}
+.logo img{width:100%;height:100%;object-fit:contain}
+.logo span{font-weight:800;color:var(--maroon);font-size:20px}
+.school{font-size:18px;font-weight:700;line-height:1.3}
+.tagline{font-size:13px;color:var(--sandal);margin-top:4px}
+.lang{position:absolute;top:12px;right:12px;display:flex;border:1px solid rgba(255,255,255,.35);border-radius:8px;overflow:hidden}
+.lang button{background:none;border:0;color:#fff;font-size:12px;padding:5px 9px;cursor:pointer}
+.lang button.on{background:var(--gold);color:var(--maroon-dark);font-weight:700}
+.body{background:#fff;border:1px solid var(--border);border-top:0;border-radius:0 0 16px 16px;padding:18px}
+h1{font-size:17px;margin:0 0 4px;color:var(--maroon)}
+.sub{font-size:13px;color:var(--muted);margin:0 0 16px;line-height:1.5}
+label{display:block;font-size:13px;font-weight:600;margin:12px 0 5px}
+.req{color:#A32D2D}
+input,select,textarea{width:100%;font:inherit;font-size:16px;padding:11px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);border-color:var(--gold)}
+textarea{resize:vertical;min-height:70px}
+.trap{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.btn{display:block;width:100%;margin-top:18px;padding:14px;border:0;border-radius:12px;background:var(--gold);color:var(--maroon-dark);font-size:16px;font-weight:700;cursor:pointer}
+.btn:disabled{opacity:.6}
+.btn-out{background:#fff;border:1.5px solid var(--maroon);color:var(--maroon);text-decoration:none;text-align:center}
+.err{background:#FCEBEB;color:#A32D2D;border-radius:10px;padding:10px 12px;font-size:13px;margin-top:14px;display:none}
+.note{font-size:11px;color:var(--muted);margin-top:12px;text-align:center;line-height:1.5}
+.done{text-align:center;padding:16px 4px}
+.done .tick{width:64px;height:64px;border-radius:50%;background:#E8F5EB;color:#2D7A3A;font-size:34px;line-height:64px;margin:0 auto 12px}
+.done h2{font-size:18px;color:#2D7A3A;margin:0 0 6px}
+.done p{font-size:14px;color:var(--muted);line-height:1.6;margin:0}
+.hidden{display:none}
+.foot{text-align:center;font-size:11px;color:#9B928A;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="lang"><button id="l-en" class="on" onclick="setLang('en')">English</button><button id="l-ta" onclick="setLang('ta')">தமிழ்</button></div>
+    <div class="logo" id="logo"><span>🏫</span></div>
+    <div class="school" id="school-name">&nbsp;</div>
+    <div class="tagline" data-t="admissionsOpen"></div>
+  </div>
+  <div class="body">
+    <div id="form-box">
+      <h1 data-t="title"></h1>
+      <p class="sub" data-t="sub"></p>
+
+      <label for="parent"><span data-t="parent"></span> <span class="req">*</span></label>
+      <input id="parent" autocomplete="name" maxlength="120">
+
+      <label for="mobile"><span data-t="mobile"></span> <span class="req">*</span></label>
+      <input id="mobile" type="tel" inputmode="numeric" autocomplete="tel" maxlength="14" placeholder="98765 43210">
+
+      <label for="child" data-t="child"></label>
+      <input id="child" maxlength="120">
+
+      <label for="cls" data-t="cls"></label>
+      <select id="cls"></select>
+
+      <label for="area" data-t="area"></label>
+      <input id="area" maxlength="120">
+
+      <label for="msg" data-t="msg"></label>
+      <textarea id="msg" maxlength="1000"></textarea>
+
+      <div class="trap" aria-hidden="true"><input id="website" tabindex="-1" autocomplete="off"></div>
+
+      <div class="err" id="err"></div>
+      <button class="btn" id="send" onclick="send()" data-t="send"></button>
+      <div class="note" data-t="privacy"></div>
+    </div>
+
+    <div id="done-box" class="hidden">
+      <div class="done">
+        <div class="tick">✓</div>
+        <h2 data-t="thanks"></h2>
+        <p data-t="thanksSub"></p>
+      </div>
+      <a class="btn btn-out hidden" id="call-btn" href="#"><span data-t="callSchool"></span></a>
+    </div>
+
+    <div id="bad-box" class="hidden">
+      <div class="done"><p data-t="badLink"></p></div>
+    </div>
+  </div>
+  <div class="foot">DigiSmart School</div>
+</div>
+
+<script>
+const API = '/api/enquiry-data';
+const params = new URLSearchParams(location.search);
+const SCHOOL = (params.get('s') || '').trim();
+const SRC = (params.get('src') || 'website').trim();
+
+const TEXT = {
+  en: {
+    admissionsOpen: 'Admissions open',
+    title: 'Admission Enquiry',
+    sub: 'Fill in your details. Our school office will call you.',
+    parent: 'Parent name',
+    mobile: 'Mobile number',
+    child: "Child's name",
+    cls: 'Class wanted',
+    choose: '— Choose class —',
+    area: 'Area / village',
+    msg: 'Any question? (optional)',
+    send: 'Send enquiry',
+    sending: 'Sending…',
+    privacy: 'Your details are used only by the school to contact you about admission.',
+    thanks: 'Thank you!',
+    thanksSub: 'We have received your enquiry. Our school office will call you soon.',
+    callSchool: '📞 Call the school now',
+    badLink: 'This enquiry link is not complete. Please ask the school for the correct link.',
+    needName: 'Please enter your name.',
+    needMobile: 'Please enter a correct 10-digit mobile number.',
+    netErr: 'Could not send. Please check your internet and try again.'
+  },
+  ta: {
+    admissionsOpen: 'சேர்க்கை நடைபெறுகிறது',
+    title: 'சேர்க்கை விசாரணை',
+    sub: 'உங்கள் விவரங்களை நிரப்புங்கள். எங்கள் பள்ளி அலுவலகம் உங்களைத் தொடர்பு கொள்ளும்.',
+    parent: 'பெற்றோர் பெயர்',
+    mobile: 'கைபேசி எண்',
+    child: 'குழந்தையின் பெயர்',
+    cls: 'சேர விரும்பும் வகுப்பு',
+    choose: '— வகுப்பைத் தேர்ந்தெடுக்கவும் —',
+    area: 'ஊர் / பகுதி',
+    msg: 'ஏதேனும் கேள்வி? (விருப்பம்)',
+    send: 'விசாரணையை அனுப்பு',
+    sending: 'அனுப்புகிறது…',
+    privacy: 'உங்கள் விவரங்கள் சேர்க்கை தொடர்பாக உங்களைத் தொடர்பு கொள்ள மட்டுமே பள்ளியால் பயன்படுத்தப்படும்.',
+    thanks: 'நன்றி!',
+    thanksSub: 'உங்கள் விசாரணை கிடைத்தது. எங்கள் பள்ளி அலுவலகம் விரைவில் உங்களை அழைக்கும்.',
+    callSchool: '📞 இப்போதே பள்ளியை அழைக்க',
+    badLink: 'இந்த இணைப்பு முழுமையாக இல்லை. சரியான இணைப்பைப் பள்ளியிடம் கேட்கவும்.',
+    needName: 'உங்கள் பெயரை உள்ளிடவும்.',
+    needMobile: 'சரியான 10 இலக்க கைபேசி எண்ணை உள்ளிடவும்.',
+    netErr: 'அனுப்ப முடியவில்லை. இணைய இணைப்பைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்.'
+  }
+};
+
+// Values stay in English (that is what the office sees); Tamil is shown alongside
+const CLASSES = [
+  ['PreKG', 'Pre-KG'], ['LKG', 'LKG'], ['UKG', 'UKG'],
+  ['Class 1', '1ஆம் வகுப்பு'], ['Class 2', '2ஆம் வகுப்பு'], ['Class 3', '3ஆம் வகுப்பு'],
+  ['Class 4', '4ஆம் வகுப்பு'], ['Class 5', '5ஆம் வகுப்பு'], ['Class 6', '6ஆம் வகுப்பு'],
+  ['Class 7', '7ஆம் வகுப்பு'], ['Class 8', '8ஆம் வகுப்பு'], ['Class 9', '9ஆம் வகுப்பு'],
+  ['Class 10', '10ஆம் வகுப்பு'], ['Class 11', '11ஆம் வகுப்பு'], ['Class 12', '12ஆம் வகுப்பு']
+];
+
+let lang = 'en';
+try { if (localStorage.getItem('enq_lang') === 'ta') lang = 'ta'; } catch (e) {}
+
+function t(k) { return (TEXT[lang] && TEXT[lang][k]) || TEXT.en[k] || ''; }
+
+function setLang(l) {
+  lang = l === 'ta' ? 'ta' : 'en';
+  try { localStorage.setItem('enq_lang', lang); } catch (e) {}
+  document.documentElement.lang = lang;
+  document.getElementById('l-en').classList.toggle('on', lang === 'en');
+  document.getElementById('l-ta').classList.toggle('on', lang === 'ta');
+  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
+  const sel = document.getElementById('cls');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">' + t('choose') + '</option>' + CLASSES.map(c =>
+    '<option value="' + c[0] + '">' + (lang === 'ta' && /\d/.test(c[0]) ? c[1] + ' (' + c[0] + ')' : c[1].replace(/\d+ஆம் வகுப்பு/, c[0])) + '</option>').join('');
+  sel.value = keep;
+}
+
+function showErr(m) {
+  const e = document.getElementById('err');
+  e.textContent = m; e.style.display = m ? 'block' : 'none';
+}
+
+function cleanMobile(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+  if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return /^[6-9]\d{9}$/.test(d) ? d : '';
+}
+
+async function post(body) {
+  const r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+  let data = null;
+  try { data = await r.json(); } catch (e) {}
+  return data || { ok:false, error: t('netErr') };
+}
+
+let schoolPhone = '';
+
+async function loadSchool() {
+  if (!/^[a-zA-Z0-9_-]{2,64}$/.test(SCHOOL)) { badLink(); return; }
+  try {
+    const d = await post({ action:'school_info', school: SCHOOL });
+    if (!d.ok) { badLink(); return; }
+    const name = d.name || '';
+    document.getElementById('school-name').textContent = name;
+    document.title = (lang === 'ta' ? 'சேர்க்கை விசாரணை' : 'Admission Enquiry') + (name ? ' — ' + name : '');
+    if (d.logo) {
+      const img = new Image();
+      img.alt = '';
+      img.onload = () => { const box = document.getElementById('logo'); box.innerHTML = ''; box.appendChild(img); };
+      img.src = d.logo;
+    }
+    schoolPhone = String(d.phone || '').replace(/[^\d+]/g, '');
+  } catch (e) { /* the form still works without the name */ }
+}
+
+function badLink() {
+  document.getElementById('form-box').classList.add('hidden');
+  document.getElementById('bad-box').classList.remove('hidden');
+}
+
+async function send() {
+  showErr('');
+  const parent = document.getElementById('parent').value.trim();
+  const child = document.getElementById('child').value.trim();
+  const mobile = cleanMobile(document.getElementById('mobile').value);
+  if (!parent) { showErr(t('needName')); document.getElementById('parent').focus(); return; }
+  if (!mobile) { showErr(t('needMobile')); document.getElementById('mobile').focus(); return; }
+
+  const btn = document.getElementById('send');
+  btn.disabled = true; btn.textContent = t('sending');
+  try {
+    const d = await post({
+      action:'submit', school: SCHOOL, src: SRC,
+      website: document.getElementById('website').value,
+      entry: {
+        parent_name: parent, mobile: mobile, child_name: child,
+        class_wanted: document.getElementById('cls').value,
+        area: document.getElementById('area').value.trim(),
+        message: document.getElementById('msg').value.trim()
+      }
+    });
+    if (!d.ok) throw new Error(d.error || t('netErr'));
+    document.getElementById('form-box').classList.add('hidden');
+    document.getElementById('done-box').classList.remove('hidden');
+    if (schoolPhone) {
+      const c = document.getElementById('call-btn');
+      c.href = 'tel:' + schoolPhone;
+      c.classList.remove('hidden');
+    }
+    window.scrollTo(0, 0);
+  } catch (e) {
+    showErr(e.message || t('netErr'));
+    btn.disabled = false; btn.textContent = t('send');
+  }
+}
+
+setLang(lang);
+loadSchool();
+</script>
+</body>
+</html>
