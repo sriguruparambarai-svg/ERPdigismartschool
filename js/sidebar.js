@@ -110,6 +110,15 @@ async function renderSidebar(activePage) {
     }
   } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
 
+  // Feature-flagged: Social Media Posts only shows for schools with has_social = true
+  // (switched on per school by the super admin in Supabase, like 5-Year Scheme)
+  try {
+    const { data } = await supabase.from('schools').select('has_social').eq('school_id', SCHOOL_ID).single();
+    if (data && data.has_social) {
+      nav.find(g => g.group === 'Parents').items.push({ id:'social', icon:'📱', label:'Social Media Posts', href:'social-posts.html' });
+    }
+  } catch(e) { /* fails silently — menu just won't show if flag can't be checked */ }
+
   // Feature-flagged: TN Term Card only shows for schools with has_tn_card = true
   // (switched on per school by the super admin in Supabase, like 5-Year Scheme)
   try {
