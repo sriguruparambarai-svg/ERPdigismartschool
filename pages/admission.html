@@ -605,7 +605,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadStats();
   Promise.all([loadSchemeMarks(), loadVanMarks()]);
   await createTableIfNeeded();
+  openFromEnquiry();
 });
+
+// ── Coming from Admission Enquiries ("Admitted → Add student") ──
+// The enquiry page leaves the family's details here; open a new admission
+// form with them filled in. Used once, then cleared.
+function openFromEnquiry() {
+  let p = null;
+  try { p = JSON.parse(sessionStorage.getItem('enquiry_prefill') || 'null'); } catch (e) { p = null; }
+  try { sessionStorage.removeItem('enquiry_prefill'); } catch (e) {}
+  if (!p || typeof p !== 'object') return;
+  openAddModal();
+  const put = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+  put('f-name', p.child_name);
+  put('f-father', p.parent_name);
+  put('f-mobile', p.mobile);
+  put('f-whatsapp', p.mobile);
+  put('f-city', p.area);
+  const cls = String(p.class_wanted || '').replace(/^pre-?kg$/i, 'PreKG');
+  const sel = document.getElementById('f-class');
+  if (sel && Array.from(sel.options).some(o => o.value === cls)) sel.value = cls;
+  showToast('Details filled in from the enquiry — please check the parent name and complete the form.', 'success');
+}
 
 // ── Transport Route dropdown: real routes from the Transport module ──
 async function loadRouteOptions() {
