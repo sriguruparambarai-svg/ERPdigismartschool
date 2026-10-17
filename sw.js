@@ -94,7 +94,13 @@ self.addEventListener('notificationclick', event => {
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
         const open = list.find(c => c.url.includes('/parent/'));
-        if (open) return open.focus();
+        if (open) {
+          // An alert about one child (…?child=) switches the open app to that child
+          if (url.includes('child=') && open.navigate) {
+            return open.focus().then(w => (w || open).navigate(url)).catch(() => clients.openWindow(url));
+          }
+          return open.focus();
+        }
         return clients.openWindow(url);
       })
     );
