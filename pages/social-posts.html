@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Social Media Posts — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
+.tab{padding:9px 14px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
+.tab .cnt{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--maroon);color:#fff;font-size:11px;line-height:18px;text-align:center}
+.help{font-size:12px;color:var(--text-muted);line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:10px}
+.thumb{position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:#F5F1EA}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .x{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;border:0;border-radius:50%;width:22px;height:22px;font-size:13px;line-height:1;cursor:pointer}
+.warnbox{background:#FFF8E6;border:1px solid #F0DDAA;border-radius:10px;padding:12px 14px;margin-top:14px}
+.warnbox.ok{background:#E8F5EB;border-color:#C8E6CE}
+.warnbox .names{font-size:13px;font-weight:600;color:var(--maroon);margin:6px 0}
+.tick{display:flex;gap:9px;align-items:flex-start;margin-top:10px;font-size:13px;font-weight:600;cursor:pointer}
+.tick input{width:18px;height:18px;margin-top:1px;flex:none}
+.post{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:14px}
+.post-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.post-title{font-size:14px;font-weight:700}
+.post-meta{font-size:11px;color:var(--text-light);margin-top:3px}
+.strip{display:flex;gap:8px;overflow-x:auto;margin:12px 0 10px;padding-bottom:4px}
+.strip img{height:150px;border-radius:8px;border:1px solid var(--border);flex:none;cursor:zoom-in}
+.ai-warn{background:#FCEBEB;color:#A32D2D;border-radius:8px;padding:9px 12px;font-size:12px;font-weight:600;margin-bottom:10px}
+.caption-view{white-space:pre-wrap;font-size:13px;line-height:1.6;background:var(--sandal-light);border:1px solid var(--border);border-radius:10px;padding:12px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600}
+.st-photos{background:#EDE7F6;color:#4A2C8A}.st-draft{background:#FFF8E6;color:#8B5E00}.st-approved{background:#E6F1FB;color:#185FA5}
+.st-posted{background:#E8F5EB;color:#2D7A3A}.st-rejected{background:#F0EDE8;color:#6B6560}
+textarea.form-control{font-family:inherit}
+.lbl{font-size:12px;font-weight:600;margin:10px 0 4px}
+.stu-list{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:8px;margin-top:10px}
+.stu{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
+.stu:last-child{border-bottom:0}
+.stu input{width:17px;height:17px}
+.stu.on{background:#FCEBEB}
+.stu .c{margin-left:auto;font-size:11px;color:var(--text-light)}
+.progress{height:6px;background:#F0EDE8;border-radius:4px;overflow:hidden;margin-top:10px}
+.progress span{display:block;height:100%;background:var(--gold);width:0;transition:width .3s}
+#viewer{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:300;cursor:zoom-out}
+#viewer img{max-width:94vw;max-height:90vh;border-radius:8px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Social Media Posts</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Parents → Social Media Posts</div>
+      </div>
+      <div class="topbar-right"><div style="font-size:12px;color:#9B928A" id="today-date"></div></div>
+    </div>
+
+    <div class="page-body">
+      <div id="not-on" class="card hidden"></div>
+
+      <div id="app" class="hidden">
+        <div class="tab-bar">
+          <div class="tab active" data-tab="new" onclick="switchTab('new')" id="tab-new-label">➕ New Post</div>
+          <div class="tab upload-only" data-tab="mine" onclick="switchTab('mine')">🗂 My Uploads</div>
+          <div class="tab full-only" data-tab="photos" onclick="switchTab('photos')">📥 Photos from Teachers <span class="cnt" id="cnt-photos">0</span></div>
+          <div class="tab full-only" data-tab="wait" onclick="switchTab('wait')">⏳ Check & Approve <span class="cnt" id="cnt-wait">0</span></div>
+          <div class="tab full-only" data-tab="ready" onclick="switchTab('ready')">✅ Ready to Post <span class="cnt" id="cnt-ready">0</span></div>
+          <div class="tab full-only" data-tab="done" onclick="switchTab('done')">📚 Posted</div>
+          <div class="tab full-only" data-tab="settings" onclick="switchTab('settings')">🚫 No-Photo Children & Settings</div>
+        </div>
+
+        <!-- ══ NEW ══ -->
+        <div id="tab-new">
+          <div class="card">
+            <div class="card-title" id="n-title">Make a post from today's photos</div>
+            <div class="help" style="margin:4px 0 12px" id="n-help">Choose the class and add up to 6 photos. The AI looks at the photos and writes the post in English and Tamil — no typing needed. You check it before anything goes out.</div>
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
+              <div>
+                <label class="form-label">Class</label>
+                <select id="n-class" class="form-control" onchange="renderNoPhotoBox()"></select>
+              </div>
+              <div>
+                <label class="form-label">What happened? <span style="font-weight:400;color:var(--text-light)">(optional, a few words)</span></label>
+                <input id="n-note" class="form-control" maxlength="300" placeholder="e.g. Learnt parts of a plant with real plants / Diwali celebration">
+              </div>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="file" id="n-file" accept="image/*" multiple class="form-control" style="max-width:300px">
+              <button class="btn btn-secondary btn-sm" onclick="clearPicked()">Clear photos</button>
+              <span class="help" id="n-count">No photos yet</span>
+            </div>
+            <div class="grid" id="n-preview"></div>
+
+            <div id="np-box" class="warnbox"></div>
+
+            <div class="progress hidden" id="n-bar"><span id="n-fill"></span></div>
+            <div class="help" id="n-status" style="margin-top:6px"></div>
+            <button class="btn btn-gold mt-3" id="n-go" onclick="makePost()">✨ Make the post</button>
+          </div>
+        </div>
+
+        <!-- ══ PHOTOS FROM TEACHERS (principal) ══ -->
+        <div id="tab-photos" class="hidden">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+            <div class="help">Photos sent by teachers. Tap <b>✨ Write post</b> and the AI writes it from the photos — then check it in <b>Check & Approve</b>.</div>
+            <button class="btn btn-gold btn-sm" id="write-all" onclick="writeAll()">✨ Write posts for all</button>
+          </div>
+          <div id="photos-list"></div>
+        </div>
+
+        <!-- ══ MY UPLOADS (teacher) ══ -->
+        <div id="tab-mine" class="hidden">
+          <div class="help" style="margin-bottom:12px">Photos you sent. The principal / admin writes and posts them. You can take back an upload until the principal has used it.</div>
+          <div id="mine-list"></div>
+        </div>
+
+        <!-- ══ WAITING ══ -->
+        <div id="tab-wait" class="hidden">
+          <div class="help" style="margin-bottom:12px" id="wait-help"></div>
+          <div id="wait-list"></div>
+        </div>
+
+        <!-- ══ READY ══ -->
+        <div id="tab-ready" class="hidden">
+          <div class="help" style="margin-bottom:12px">
+            <b>On a phone:</b> tap <b>📤 Share</b> — the post text is copied, then choose Instagram, Facebook or WhatsApp, and paste the text.
+            <b>On a computer:</b> tap <b>⬇ Download photos</b> and <b>📋 Copy post text</b>, then post them from Facebook / Instagram.
+            Afterwards tap <b>✓ I have posted it</b>.
+          </div>
+          <div id="ready-list"></div>
+        </div>
+
+        <!-- ══ DONE ══ -->
+        <div id="tab-done" class="hidden"><div id="done-list"></div></div>
+
+        <!-- ══ SETTINGS ══ -->
+        <div id="tab-settings" class="hidden">
+          <div class="card">
+            <div class="card-title">🚫 Children whose parents said "no photos"</div>
+            <div class="help" style="margin:4px 0 8px">Tick every child who must never appear in social media photos. When staff make a post for a class, these names are shown so they can check the photos first. Keep this updated when parents tell you.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <select id="s-class" class="form-control" style="width:auto;min-width:150px" onchange="renderStudents()"></select>
+              <input id="s-search" class="form-control" style="width:auto;min-width:200px" placeholder="Search name…" oninput="renderStudents()">
+              <label class="tick" style="margin:0;align-items:center"><input type="checkbox" id="s-only" onchange="renderStudents()"> Show only ticked</label>
+            </div>
+            <div class="help mt-1" id="s-count"></div>
+            <div class="stu-list" id="s-list"><div class="help" style="padding:12px">Loading…</div></div>
+          </div>
+
+          <div class="card mt-3">
+            <div class="card-title">Post settings</div>
+            <div class="lbl">Line added at the end of every post</div>
+            <input id="s-footer" class="form-control" maxlength="300">
+            <div class="lbl">Extra hashtags for every post <span style="font-weight:400;color:var(--text-light)">(optional)</span></div>
+            <input id="s-tags" class="form-control" maxlength="300" placeholder="#ARKGlobalSchool #Mayiladuthurai">
+            <div class="lbl">Language</div>
+            <select id="s-lang" class="form-control" style="max-width:260px">
+              <option value="both">English + Tamil</option>
+              <option value="en">English only</option>
+            </select>
+          </div>
+          <button class="btn btn-gold mt-3" onclick="saveSettings()">✓ Save list and settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="viewer" onclick="this.style.display='none'"><img id="viewer-img" alt=""></div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const API = '/api/social-posts';
+const MAX_PHOTOS = 6;
+const CLASSES = ['Whole school / Event', 'PreKG', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6',
+                 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+
+let level = 'upload';
+let settings = { no_photo_ids: [], footer_line: '', hashtags: '', language: 'both' };
+let students = [];        // active students (for the no-photo list)
+let noPhoto = new Set();  // working copy in Settings
+let posts = [];
+let picked = [];          // data URLs
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+function staffLabel() { return (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : 'Office'; }
+function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function niceTime(iso) { try { return new Date(iso).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'numeric', minute:'2-digit' }); } catch (e) { return ''; } }
+
+async function call(action, extra) {
+  const r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(Object.assign({ action, token: token(), by: staffLabel() }, extra || {})) });
+  let data;
+  try { data = await r.json(); } catch (e) { throw new Error('The server sent back something unreadable (' + r.status + ').'); }
+  if (r.status === 401) {
+    showToast('Session expired — please log in again', 'error');
+    setTimeout(() => { window.location.href = '../index.html'; }, 1500);
+  }
+  if (!data.ok) { const e = new Error(data.error || 'Something went wrong.'); e.status = r.status; throw e; }
+  return data;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  ['new','mine','photos','wait','ready','done','settings'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== name));
+  if (name === 'settings') loadStudents();
+}
+
+function view(url) { document.getElementById('viewer-img').src = url; document.getElementById('viewer').style.display = 'flex'; }
+
+// ── Photos: shrink in the browser before upload ──
+function shrinkImage(src, maxSide, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      const s = Math.min(1, maxSide / Math.max(w, h));
+      w = Math.round(w * s); h = Math.round(h * s);
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('That file is not a photo.'));
+    img.src = src;
+  });
+}
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('Could not read that file.'));
+    r.readAsDataURL(file);
+  });
+}
+
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'n-file') return;
+  const files = Array.from(e.target.files || []);
+  const room = MAX_PHOTOS - picked.length;
+  if (room <= 0) { showToast('⚠️ A post can have 6 photos. Remove one first.', 'error'); e.target.value = ''; return; }
+  if (files.length > room) showToast('Only ' + room + ' more photo(s) fit — the best 6 photos work best.', 'success');
+  document.getElementById('n-status').textContent = 'Preparing photos…';
+  for (const f of files.slice(0, room)) {
+    if (!/^image\//.test(f.type)) { showToast('⚠️ ' + f.name + ' is not a photo.', 'error'); continue; }
+    try { picked.push(await shrinkImage(await fileToDataUrl(f), 1440, 0.82)); }
+    catch (err) { showToast('⚠️ ' + err.message, 'error'); }
+  }
+  document.getElementById('n-status').textContent = '';
+  e.target.value = '';
+  renderPicked();
+});
+
+function renderPicked() {
+  document.getElementById('n-count').textContent = picked.length ? picked.length + ' of ' + MAX_PHOTOS + ' photos' : 'No photos yet';
+  document.getElementById('n-preview').innerHTML = picked.map((p, i) =>
+    '<div class="thumb"><img src="' + p + '" alt=""><button class="x" onclick="removePicked(' + i + ')">×</button></div>').join('');
+}
+function removePicked(i) { picked.splice(i, 1); renderPicked(); }
+function clearPicked() { picked = []; renderPicked(); }
+
+// ── The "No photos" check for the chosen class ──
+function noPhotoNamesFor(cls) {
+  const ids = new Set(settings.no_photo_ids || []);
+  return students.filter(s => ids.has(s.id) && (cls === CLASSES[0] || s.class === cls));
+}
+function renderNoPhotoBox() {
+  const cls = document.getElementById('n-class').value;
+  const box = document.getElementById('np-box');
+  const list = noPhotoNamesFor(cls);
+  const whole = cls === CLASSES[0];
+  if (!students.length && (settings.no_photo_ids || []).length) {
+    box.className = 'warnbox';
+    box.innerHTML = '<div class="help">Loading the "No photos" list…</div>';
+    return;
+  }
+  if (list.length) {
+    box.className = 'warnbox';
+    box.innerHTML = '<div style="font-size:13px;font-weight:700;color:#8B5E00">🚫 Parents of these children said NO photos' + (whole ? ' (whole school)' : ' in ' + esc(cls)) + ':</div>'
+      + '<div class="names">' + list.map(s => esc(s.full_name) + (whole ? ' <span style="font-weight:400;color:var(--text-muted)">(' + esc(s.class) + ')</span>' : '')).join(', ') + '</div>'
+      + '<label class="tick"><input type="checkbox" id="n-checked"> I have checked every photo — none of these children can be seen.</label>';
+  } else {
+    box.className = 'warnbox ok';
+    box.innerHTML = '<div style="font-size:13px;color:#2D7A3A">✓ No child' + (whole ? '' : ' in ' + esc(cls)) + ' is on the "No photos" list.</div>'
+      + '<label class="tick"><input type="checkbox" id="n-checked"> I have checked the photos — they are fine to share with the public.</label>';
+  }
+}
+
+async function makePost() {
+  const cls = document.getElementById('n-class').value;
+  const note = document.getElementById('n-note').value.trim();
+  if (!picked.length) { showToast('⚠️ Please add at least one photo.', 'error'); return; }
+  const chk = document.getElementById('n-checked');
+  if (!chk || !chk.checked) { showToast('⚠️ Please tick that you checked the photos.', 'error'); return; }
+
+  const btn = document.getElementById('n-go');
+  const bar = document.getElementById('n-bar'), fill = document.getElementById('n-fill'), st = document.getElementById('n-status');
+  btn.disabled = true; bar.classList.remove('hidden');
+  try {
+    const urls = [];
+    for (let i = 0; i < picked.length; i++) {
+      st.textContent = 'Uploading photo ' + (i + 1) + ' of ' + picked.length + '…';
+      fill.style.width = Math.round(i / picked.length * 60) + '%';
+      urls.push((await call('photo', { data_url: picked[i] })).url);
+    }
+    fill.style.width = '75%';
+    st.textContent = level === 'full' ? '✨ AI is looking at the photos and writing the post… (about 15–30 seconds)' : 'Sending to the principal…';
+    const res = await call('create', { class_name: cls, note, photos: urls, checked: true });
+    fill.style.width = '100%';
+    picked = []; renderPicked();
+    document.getElementById('n-note').value = '';
+    renderNoPhotoBox();
+    await loadPosts();
+    if (level !== 'full') { showToast('Photos sent to the principal. Thank you!', 'success'); switchTab('mine'); }
+    else if (res.ai_error) { showToast('⚠️ Photos saved, but the AI could not write the post: ' + res.ai_error, 'error'); switchTab('photos'); }
+    else { showToast('Post written — check it and approve.', 'success'); switchTab('wait'); }
+  } catch (e) {
+    showToast('⚠️ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; bar.classList.add('hidden'); fill.style.width = '0'; st.textContent = '';
+  }
+}
+
+// ── Lists ──
+async function loadPosts() {
+  try {
+    const res = await call('list');
+    posts = res.rows || [];
+    renderPosts();
+  } catch (e) {
+    ['wait-list','ready-list','done-list'].forEach(id =>
+      document.getElementById(id).innerHTML = '<div class="card" style="color:#A32D2D;font-size:13px">Could not load posts: ' + esc(e.message) + '</div>');
+  }
+}
+
+function fullText(p) {
+  const parts = [];
+  if (p.caption_en) parts.push(p.caption_en);
+  if (p.caption_ta) parts.push(p.caption_ta);
+  if (settings.footer_line) parts.push(settings.footer_line);
+  const tags = [p.hashtags, settings.hashtags].filter(Boolean).join(' ').trim();
+  if (tags) parts.push(Array.from(new Set(tags.split(/\s+/))).join(' '));
+  return parts.join('\n\n');
+}
+
+function strip(p) {
+  if (p.photos_removed) return '<div class="help" style="margin:8px 0">Photos were removed after 90 days to save space.</div>';
+  return '<div class="strip">' + (p.photos || []).map(u => '<img loading="lazy" src="' + esc(u) + '" onclick="view(\'' + esc(u) + '\')" alt="">').join('') + '</div>';
+}
+function head(p) {
+  const st = { photos:'Photos sent — not written yet', draft:'Waiting for approval', approved:'Approved — ready to post', posted:'Posted', rejected:'Not approved' }[p.status] || p.status;
+  return '<div class="post-head"><div><div class="post-title">' + esc(p.title || p.class_name) + '</div>'
+    + '<div class="post-meta">' + esc(p.class_name) + ' · by ' + esc(p.created_by || '') + ' · ' + esc(niceTime(p.created_at))
+    + (p.posted_at ? ' · posted ' + esc(niceTime(p.posted_at)) : '') + '</div></div>'
+    + '<span class="pill st-' + esc(p.status) + '">' + esc(st) + '</span></div>';
+}
+
+function draftCard(p) {
+  const canFull = level === 'full';
+  return '<div class="post" id="post-' + esc(p.id) + '">' + head(p) + strip(p)
+    + (p.ai_warning ? '<div class="ai-warn">⚠️ AI noticed: ' + esc(p.ai_warning) + '</div>' : '')
+    + (p.status === 'rejected' && p.reject_note ? '<div class="ai-warn" style="background:#F0EDE8;color:#6B6560">Not approved: ' + esc(p.reject_note) + '</div>' : '')
+    + (p.note ? '<div class="help">Teacher\'s note: ' + esc(p.note) + '</div>' : '')
+    + '<div class="lbl">English</div><textarea class="form-control" rows="3" id="en-' + esc(p.id) + '">' + esc(p.caption_en) + '</textarea>'
+    + (settings.language !== 'en' || p.caption_ta ? '<div class="lbl">தமிழ்</div><textarea class="form-control" rows="3" id="ta-' + esc(p.id) + '">' + esc(p.caption_ta) + '</textarea>' : '')
+    + '<div class="lbl">Hashtags</div><input class="form-control" id="tg-' + esc(p.id) + '" value="' + esc(p.hashtags) + '">'
+    + '<div class="actions">'
+    +   (canFull ? '<button class="btn btn-gold btn-sm" onclick="approve(\'' + esc(p.id) + '\')">✓ Approve</button>' : '')
+    +   (canFull ? '<button class="btn btn-secondary btn-sm" onclick="saveEdit(\'' + esc(p.id) + '\')">💾 Save changes</button>' : '')
+    +   (canFull ? '<button class="btn btn-secondary btn-sm" onclick="rewrite(\'' + esc(p.id) + '\')">✨ Write again</button>' : '')
+    +   (canFull && p.status !== 'rejected' ? '<button class="btn btn-secondary btn-sm" onclick="reject(\'' + esc(p.id) + '\')">✗ Don\'t post</button>' : '')
+    +   (canFull ? '<button class="btn btn-danger btn-sm" onclick="removePost(\'' + esc(p.id) + '\')">🗑 Delete</button>' : '')
+    + '</div></div>';
+}
+
+function readyCard(p) {
+  const canFull = level === 'full';
+  return '<div class="post">' + head(p) + strip(p)
+    + '<div class="caption-view">' + esc(fullText(p)) + '</div>'
+    + '<div class="actions">'
+    +   '<button class="btn btn-gold btn-sm" onclick="sharePost(\'' + esc(p.id) + '\')">📤 Share (phone)</button>'
+    +   '<button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy post text</button>'
+    +   '<button class="btn btn-secondary btn-sm" onclick="downloadPhotos(\'' + esc(p.id) + '\')">⬇ Download photos</button>'
+    +   (p.sent_gallery ? '<span class="pill st-posted" style="align-self:center">📸 In Parent Gallery</span>'
+                        : '<button class="btn btn-secondary btn-sm" onclick="toGallery(\'' + esc(p.id) + '\')">📸 Send to Parent Gallery</button>')
+    +   (canFull ? '<button class="btn btn-primary btn-sm" onclick="markPosted(\'' + esc(p.id) + '\')">✓ I have posted it</button>' : '')
+    +   (canFull ? '<button class="btn btn-secondary btn-sm" onclick="backToDraft(\'' + esc(p.id) + '\')">✏️ Change text</button>' : '')
+    + '</div></div>';
+}
+
+function doneCard(p) {
+  return '<div class="post">' + head(p) + strip(p) + '<div class="caption-view">' + esc(fullText(p)) + '</div>'
+    + '<div class="actions"><button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy text again</button>'
+    + (p.sent_gallery || p.photos_removed ? '' : '<button class="btn btn-secondary btn-sm" onclick="toGallery(\'' + esc(p.id) + '\')">📸 Send to Parent Gallery</button>')
+    + (level === 'full' ? '<button class="btn btn-danger btn-sm" onclick="removePost(\'' + esc(p.id) + '\')">🗑 Delete</button>' : '')
+    + '</div></div>';
+}
+
+function photosCard(p) {
+  return '<div class="post">' + head(p) + strip(p)
+    + (p.note ? '<div class="help">Teacher\'s note: ' + esc(p.note) + '</div>' : '')
+    + '<div class="actions">'
+    +   '<button class="btn btn-gold btn-sm" onclick="writePost(\'' + esc(p.id) + '\')">✨ Write post</button>'
+    +   '<button class="btn btn-danger btn-sm" onclick="removePost(\'' + esc(p.id) + '\')">🗑 Delete</button>'
+    + '</div></div>';
+}
+function mineCard(p) {
+  return '<div class="post">' + head(p) + strip(p)
+    + (p.note ? '<div class="help">Your note: ' + esc(p.note) + '</div>' : '')
+    + (p.status === 'photos' ? '<div class="actions"><button class="btn btn-secondary btn-sm" onclick="removePost(\'' + esc(p.id) + '\')">↩ Take back</button></div>' : '')
+    + '</div>';
+}
+async function writePost(id) { await act('rewrite', id, {}, 'Post written — see "Check & Approve".'); }
+async function writeAll() {
+  const list = posts.filter(p => p.status === 'photos');
+  if (!list.length) return;
+  if (!confirmAction('Let the AI write ' + list.length + ' post(s) now?')) return;
+  let done = 0;
+  for (const p of list) {
+    try { showLoading('AI writing post ' + (done + 1) + ' of ' + list.length + '…'); await call('rewrite', { id: p.id }); done++; }
+    catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); break; }
+  }
+  hideLoading();
+  if (done) showToast(done + ' post(s) written — check them in "Check & Approve".', 'success');
+  await loadPosts();
+  if (done) switchTab('wait');
+}
+
+function renderPosts() {
+  const photos = posts.filter(p => p.status === 'photos');
+  document.getElementById('cnt-photos').textContent = photos.length;
+  document.getElementById('write-all').style.display = photos.length > 1 ? '' : 'none';
+  document.getElementById('photos-list').innerHTML = photos.length ? photos.map(photosCard).join('')
+    : '<div class="empty-state" style="padding:30px"><p>No new photos from teachers.</p></div>';
+  // Each teacher sees only the photos they sent themselves
+  const mine = posts.filter(p => (p.created_by || '') === staffLabel());
+  document.getElementById('mine-list').innerHTML = mine.length ? mine.map(mineCard).join('')
+    : '<div class="empty-state" style="padding:30px"><p>You have not sent any photos yet.</p></div>';
+  const wait = posts.filter(p => p.status === 'draft' || p.status === 'rejected');
+  const ready = posts.filter(p => p.status === 'approved');
+  const done = posts.filter(p => p.status === 'posted');
+  document.getElementById('cnt-wait').textContent = posts.filter(p => p.status === 'draft').length;
+  document.getElementById('cnt-ready').textContent = ready.length;
+  document.getElementById('wait-help').innerHTML = level === 'full'
+    ? 'Read each post. Change any words if needed, then tap <b>✓ Approve</b>. Tap <b>✨ Write again</b> for a fresh version.'
+    : 'These posts are waiting for the principal / admin to approve. You can still correct the words and tap <b>💾 Save changes</b>.';
+  const empty = t => '<div class="empty-state" style="padding:30px"><p>' + t + '</p></div>';
+  document.getElementById('wait-list').innerHTML = wait.length ? wait.map(draftCard).join('') : empty('Nothing waiting. Make a new post from the "New Post" tab.');
+  document.getElementById('ready-list').innerHTML = ready.length ? ready.map(readyCard).join('') : empty('No approved posts waiting to go out.');
+  document.getElementById('done-list').innerHTML = done.length ? done.map(doneCard).join('') : empty('Nothing posted yet.');
+}
+
+function postById(id) { return posts.find(p => p.id === id); }
+
+async function act(action, id, extra, msg) {
+  try {
+    showLoading(action === 'rewrite' ? 'AI is writing again…' : 'Saving...');
+    await call(action, Object.assign({ id }, extra || {}));
+    hideLoading();
+    if (msg) showToast(msg, 'success');
+    await loadPosts();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+function editValues(id) {
+  const g = k => { const el = document.getElementById(k + '-' + id); return el ? el.value : undefined; };
+  const p = postById(id) || {};
+  return { caption_en: g('en'), caption_ta: g('ta') !== undefined ? g('ta') : (p.caption_ta || ''), hashtags: g('tg') };
+}
+async function saveEdit(id) { await act('edit', id, editValues(id), 'Changes saved.'); }
+async function approve(id) {
+  const v = editValues(id);
+  if (!String(v.caption_en || '').trim() && !String(v.caption_ta || '').trim()) { showToast('⚠️ The caption is empty.', 'error'); return; }
+  try { showLoading('Saving...'); await call('edit', Object.assign({ id }, v)); hideLoading(); } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); return; }
+  await act('approve', id, {}, 'Approved — see "Ready to Post".');
+}
+async function rewrite(id) {
+  const hint = prompt('Anything to change? (optional — e.g. "shorter", "mention Children\'s Day", "more about the experiment")\n\nLeave empty and press OK for a fresh version.', '');
+  if (hint === null) return;
+  await act('rewrite', id, { hint }, 'New version written.');
+}
+async function reject(id) {
+  const note = prompt('Why should this not be posted? (helps the teacher next time)', '');
+  if (note === null) return;
+  await act('reject', id, { note }, 'Marked as not to post.');
+}
+async function removePost(id) {
+  if (!confirmAction('Delete this post and its photos completely?')) return;
+  await act('remove', id, {}, 'Post deleted.');
+}
+async function markPosted(id) {
+  if (!confirmAction('Have you posted this on Facebook / Instagram?')) return;
+  await act('posted', id, {}, 'Marked as posted. 🎉');
+}
+async function backToDraft(id) {
+  // Re-open for editing: a rewrite with no hint would replace the text, so we just move it back
+  if (!confirmAction('Move this post back to "Waiting for Approval" to change the text?')) return;
+  await act('reject', id, { note: 'Re-opened to change the text' }, 'Moved back for changes.');
+}
+
+async function copyText(id) {
+  const t = fullText(postById(id));
+  try { await navigator.clipboard.writeText(t); showToast('Post text copied — paste it as the caption.', 'success'); }
+  catch (e) { prompt('Copy this text:', t); }
+}
+
+async function photoFiles(p) {
+  const files = [];
+  for (let i = 0; i < (p.photos || []).length; i++) {
+    const r = await fetch(p.photos[i]);
+    if (!r.ok) throw new Error('Could not fetch photo ' + (i + 1));
+    const b = await r.blob();
+    files.push(new File([b], 'post-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
+  }
+  return files;
+}
+async function downloadPhotos(id) {
+  const p = postById(id);
+  try {
+    showLoading('Preparing photos…');
+    const files = await photoFiles(p);
+    hideLoading();
+    files.forEach((f, i) => setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(f); a.download = (p.title || 'school-post').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '-' + (i + 1) + '.jpg';
+      document.body.appendChild(a); a.click(); a.remove();
+    }, i * 400));
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+async function sharePost(id) {
+  const p = postById(id);
+  const text = fullText(p);
+  try { await navigator.clipboard.writeText(text); } catch (e) {}
+  try {
+    showLoading('Preparing photos…');
+    const files = await photoFiles(p);
+    hideLoading();
+    if (navigator.canShare && navigator.canShare({ files })) {
+      showToast('Text copied — after choosing the app, paste it as the caption.', 'success');
+      await navigator.share({ files, text, title: p.title || '' });
+    } else {
+      showToast('Sharing works on phones. On a computer use Download photos + Copy post text.', 'error');
+    }
+  } catch (e) {
+    hideLoading();
+    if (e && e.name !== 'AbortError') showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+// ── Same photos into the Parent Gallery (uses the existing gallery door) ──
+async function toGallery(id) {
+  const p = postById(id);
+  if (!confirmAction('Also show these ' + p.photos.length + ' photos to parents in the School Gallery (' + (p.class_name === CLASSES[0] ? 'all classes' : p.class_name) + ')?')) return;
+  try {
+    const urls = [];
+    for (let i = 0; i < p.photos.length; i++) {
+      showLoading('Sending photo ' + (i + 1) + ' of ' + p.photos.length + '…');
+      const small = await shrinkImage(p.photos[i], 1200, 0.75);
+      const r = await fetch('/api/gallery-data', { method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ action:'photo', token: token(), school_id: SCHOOL_ID, data_url: small }) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'Gallery upload failed');
+      urls.push(d.url);
+    }
+    showLoading('Saving album…');
+    const cls = p.class_name === CLASSES[0] ? 'all' : p.class_name;
+    const r = await fetch('/api/gallery-data', { method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ action:'create', token: token(), school_id: SCHOOL_ID, title: p.title || p.class_name,
+        event_date: (p.created_at || new Date().toISOString()).slice(0, 10), target_class: cls, photos: urls }) });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'Could not save the album');
+    await call('gallery_done', { id });
+    hideLoading();
+    showToast('Photos sent to the Parent Gallery.', 'success');
+    await loadPosts();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + (/permission|log in/i.test(e.message) ? 'Your login needs "Parent Communication" access to use the gallery. ' : '') + e.message, 'error');
+  }
+}
+
+// ── Settings: no-photo list ──
+let studentsLoaded = false;
+async function loadStudents(force) {
+  if (studentsLoaded && !force) { renderStudents(); return; }
+  try {
+    const res = await call('students');
+    students = res.rows || [];
+    studentsLoaded = true;
+    const classes = Array.from(new Set(students.map(s => s.class).filter(Boolean)))
+      .sort((a, b) => CLASSES.indexOf(a) - CLASSES.indexOf(b));
+    const sel = document.getElementById('s-class');
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">All classes</option>' + classes.map(c => '<option>' + esc(c) + '</option>').join('');
+    sel.value = keep;
+    renderStudents();
+    renderNoPhotoBox();
+  } catch (e) {
+    document.getElementById('s-list').innerHTML = '<div style="padding:12px;color:#A32D2D;font-size:13px">' + esc(e.message) + '</div>';
+  }
+}
+function renderStudents() {
+  const cls = document.getElementById('s-class').value;
+  const q = document.getElementById('s-search').value.trim().toLowerCase();
+  const only = document.getElementById('s-only').checked;
+  const list = students.filter(s => (!cls || s.class === cls) && (!q || String(s.full_name || '').toLowerCase().indexOf(q) !== -1) && (!only || noPhoto.has(s.id)));
+  document.getElementById('s-count').textContent = noPhoto.size + ' child(ren) on the "No photos" list · showing ' + list.length;
+  document.getElementById('s-list').innerHTML = list.length ? list.map(s =>
+    '<label class="stu' + (noPhoto.has(s.id) ? ' on' : '') + '"><input type="checkbox" ' + (noPhoto.has(s.id) ? 'checked' : '')
+    + ' onchange="toggleNoPhoto(\'' + esc(s.id) + '\', this)"> ' + esc(s.full_name)
+    + '<span class="c">' + esc(s.class) + (s.section ? ' ' + esc(s.section) : '') + '</span></label>').join('')
+    : '<div class="help" style="padding:12px">No students match.</div>';
+}
+function toggleNoPhoto(id, el) {
+  if (el.checked) noPhoto.add(id); else noPhoto.delete(id);
+  el.closest('.stu').classList.toggle('on', el.checked);
+  document.getElementById('s-count').textContent = noPhoto.size + ' child(ren) on the "No photos" list';
+}
+async function saveSettings() {
+  try {
+    showLoading('Saving...');
+    const res = await call('save_settings', {
+      no_photo_ids: Array.from(noPhoto),
+      footer_line: document.getElementById('s-footer').value,
+      hashtags: document.getElementById('s-tags').value,
+      language: document.getElementById('s-lang').value
+    });
+    settings = res.settings;
+    hideLoading();
+    showToast('Saved.', 'success');
+    renderNoPhotoBox(); renderPosts();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+// ── Start ──
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('social');
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-IN', { weekday:'long', day:'2-digit', month:'short', year:'numeric' });
+  document.getElementById('n-class').innerHTML = CLASSES.map(c => '<option>' + esc(c) + '</option>').join('');
+  try {
+    const info = await call('info');
+    level = info.level;
+    settings = info.settings;
+  } catch (e) {
+    const box = document.getElementById('not-on');
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="card-title">Social Media Posts</div><div class="help" style="margin-top:6px">' + esc(e.message) + '</div>';
+    return;
+  }
+  document.getElementById('app').classList.remove('hidden');
+  if (level !== 'full') {
+    document.querySelectorAll('.full-only').forEach(el => el.classList.add('hidden'));
+    document.getElementById('tab-new-label').textContent = '📤 Send Photos';
+    document.getElementById('n-title').textContent = "Send today's class photos to the principal";
+    document.getElementById('n-help').textContent = 'Choose the class and add up to 6 good photos. The principal / admin will write the post and share it.';
+    document.getElementById('n-go').textContent = '📤 Send photos to principal';
+  } else {
+    document.querySelectorAll('.upload-only').forEach(el => el.classList.add('hidden'));
+  }
+  noPhoto = new Set(settings.no_photo_ids || []);
+  document.getElementById('s-footer').value = settings.footer_line || '';
+  document.getElementById('s-tags').value = settings.hashtags || '';
+  document.getElementById('s-lang').value = settings.language || 'both';
+  renderNoPhotoBox();
+  // Student names are needed for the "No photos" warning on new posts
+  if ((settings.no_photo_ids || []).length) loadStudents();
+  await loadPosts();
+});
+</script>
+</body>
+</html>
