@@ -127,6 +127,7 @@ textarea.form-control{font-family:inherit}
 
         <!-- ══ READY ══ -->
         <div id="tab-ready" class="hidden">
+          <div class="help" style="margin-bottom:12px" id="ready-help-meta"></div>
           <div class="help" style="margin-bottom:12px">
             <b>On a phone:</b> tap <b>📤 Share</b> — the post text is copied, then choose Instagram, Facebook or WhatsApp, and paste the text.
             <b>On a computer:</b> tap <b>⬇ Download photos</b> and <b>📋 Copy post text</b>, then post them from Facebook / Instagram.
@@ -140,6 +141,11 @@ textarea.form-control{font-family:inherit}
 
         <!-- ══ SETTINGS ══ -->
         <div id="tab-settings" class="hidden">
+          <div class="card mb-3">
+            <div class="card-title">📘 Facebook & Instagram</div>
+            <div class="help" style="margin:4px 0 10px">Connect the school's Facebook Page once. Then <b>🚀 Post now</b> in "Ready to Post" puts the post on Facebook and Instagram by itself. Your Instagram must be a professional account linked to the Page.</div>
+            <div id="meta-box"><div class="help">Checking…</div></div>
+          </div>
           <div class="card">
             <div class="card-title">🚫 Children whose parents said "no photos"</div>
             <div class="help" style="margin:4px 0 8px">Tick every child who must never appear in social media photos. When staff make a post for a class, these names are shown so they can check the photos first. Keep this updated when parents tell you.</div>
@@ -382,6 +388,13 @@ function readyCard(p) {
   const canFull = level === 'full';
   return '<div class="post">' + head(p) + strip(p)
     + '<div class="caption-view">' + esc(fullText(p)) + '</div>'
+    + (p.publish_error ? '<div class="ai-warn" style="margin-top:10px">Last try: ' + esc(p.publish_error) + '</div>' : '')
+    + (p.fb_post_id ? '<div class="help" style="margin-top:8px">✓ Already on Facebook — Post now will send only to Instagram.</div>' : '')
+    + (canFull && meta.connected ? '<div class="actions" style="align-items:center;padding:10px;background:#E6F1FB;border-radius:10px">'
+        + '<button class="btn btn-primary btn-sm" onclick="publishPost(\'' + esc(p.id) + '\')">🚀 Post now</button>'
+        + (p.fb_post_id ? '' : '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="fb-' + esc(p.id) + '" checked> Facebook</label>')
+        + (meta.has_ig && !p.ig_media_id ? '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="ig-' + esc(p.id) + '" checked> Instagram</label>' : '')
+        + '</div>' : '')
     + '<div class="actions">'
     +   '<button class="btn btn-gold btn-sm" onclick="sharePost(\'' + esc(p.id) + '\')">📤 Share (phone)</button>'
     +   '<button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy post text</button>'
@@ -637,6 +650,119 @@ async function saveSettings() {
   } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
 }
 
+// ── Facebook & Instagram (Step B) ──
+const META_API = '/api/social-meta';
+let meta = { connected: false, has_ig: false };
+async function metaCall(action, extra) {
+  const r = await fetch(META_API, { method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(Object.assign({ action, token: token() }, extra || {})) });
+  let d; try { d = await r.json(); } catch (e) { throw new Error('Facebook connection is not installed yet (' + r.status + ').'); }
+  if (!d.ok) { const e = new Error(d.error || 'Something went wrong.'); e.data = d; throw e; }
+  return d;
+}
+async function loadMeta() {
+  const box = document.getElementById('meta-box');
+  try {
+    meta = await metaCall('status');
+  } catch (e) {
+    meta = { connected: false };
+    box.innerHTML = '<div class="help" style="color:#A32D2D">' + esc(e.message) + '</div>';
+    renderMetaHelp(); return;
+  }
+  if (meta.pending && meta.pending.length && !meta.connected) {
+    box.innerHTML = '<div style="font-size:13px;font-weight:600;margin-bottom:8px">You manage more than one Page. Which one is the school\'s?</div>'
+      + meta.pending.map(p => '<div class="link-row" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'
+        + '<div style="flex:1"><b>' + esc(p.name) + '</b>' + (p.ig ? ' <span class="help">· Instagram @' + esc(p.ig) + '</span>' : ' <span class="help">· no Instagram linked</span>') + '</div>'
+        + '<button class="btn btn-gold btn-sm" onclick="choosePage(\'' + esc(p.id) + '\')">Use this Page</button></div>').join('');
+  } else if (meta.connected) {
+    box.innerHTML = '<div class="warnbox ok" style="margin-top:0"><div style="font-size:13px;color:#2D7A3A;font-weight:600">✓ Connected to Facebook Page: ' + esc(meta.page_name) + '</div>'
+      + '<div class="help" style="margin-top:4px">' + (meta.has_ig ? 'Instagram: @' + esc(meta.ig_username) : '⚠️ No Instagram account is linked to this Page — posts will go to Facebook only.') + '</div></div>'
+      + '<div class="actions"><button class="btn btn-secondary btn-sm" onclick="connectMeta()">🔄 Connect again</button>'
+      + '<button class="btn btn-secondary btn-sm" onclick="disconnectMeta()">Disconnect</button></div>';
+  } else {
+    box.innerHTML = (meta.ready === false ? '<div class="help" style="color:#A32D2D;margin-bottom:8px">The Meta app keys are not set in Vercel yet (META_APP_ID, META_APP_SECRET).</div>' : '')
+      + '<button class="btn btn-primary" onclick="connectMeta()">📘 Connect Facebook & Instagram</button>';
+  }
+  renderMetaHelp();
+}
+function renderMetaHelp() {
+  const el = document.getElementById('ready-help-meta');
+  if (!el) return;
+  el.innerHTML = meta.connected
+    ? '🚀 <b>Post now</b> sends the post straight to ' + esc(meta.page_name) + (meta.has_ig ? ' and Instagram @' + esc(meta.ig_username) : '') + '.'
+    : (level === 'full' ? 'Tip: connect Facebook & Instagram in the <b>Settings</b> tab to post with one tap.' : '');
+}
+async function connectMeta() {
+  try { const d = await metaCall('start'); window.location.href = d.url; }
+  catch (e) { showToast('⚠️ ' + e.message, 'error'); }
+}
+async function choosePage(id) {
+  try { showLoading('Saving...'); await metaCall('choose', { page_id: id }); hideLoading(); showToast('Facebook Page connected.', 'success'); await loadMeta(); renderPosts(); }
+  catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+async function disconnectMeta() {
+  if (!confirmAction('Disconnect Facebook & Instagram? You can connect again any time.')) return;
+  try { await metaCall('disconnect'); showToast('Disconnected.', 'success'); await loadMeta(); renderPosts(); }
+  catch (e) { showToast('⚠️ ' + e.message, 'error'); }
+}
+
+// Instagram only accepts photos between tall 4:5 and wide 1.91:1, and a carousel
+// shows every photo in one shape. So we make square copies (or fit a single
+// photo into the allowed shape) with a soft blurred background — nothing is cut off.
+function loadImg(src) {
+  return new Promise((ok, bad) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = () => bad(new Error('Could not load a photo.')); i.src = src; });
+}
+async function instagramCopy(url, square) {
+  const img = await loadImg(url);
+  const r = img.width / img.height;
+  let W = 1080, H = 1080;
+  if (!square) {
+    if (r >= 0.8 && r <= 1.91) return null;          // already fine — use the original
+    if (r < 0.8) { W = 1080; H = 1350; } else { W = 1080; H = 566; }
+  }
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#F5E6C8'; x.fillRect(0, 0, W, H);
+  try {                                                // blurred fill behind
+    x.filter = 'blur(28px) brightness(0.9)';
+    const cs = Math.max(W / img.width, H / img.height);
+    x.drawImage(img, (W - img.width * cs) / 2, (H - img.height * cs) / 2, img.width * cs, img.height * cs);
+    x.filter = 'none';
+  } catch (e) {}
+  const s = Math.min(W / img.width, H / img.height);
+  x.drawImage(img, (W - img.width * s) / 2, (H - img.height * s) / 2, img.width * s, img.height * s);
+  return c.toDataURL('image/jpeg', 0.88);
+}
+
+async function publishPost(id) {
+  const p = postById(id);
+  const fbBox = document.getElementById('fb-' + id), igBox = document.getElementById('ig-' + id);
+  const toFb = !p.fb_post_id && !!(fbBox && fbBox.checked);
+  const toIg = !!(igBox && igBox.checked);
+  if (!toFb && !toIg) { showToast('⚠️ Tick Facebook and/or Instagram.', 'error'); return; }
+  if (!confirmAction('Post this now to ' + [toFb && 'Facebook', toIg && 'Instagram'].filter(Boolean).join(' and ') + '? Everyone will be able to see it.')) return;
+  try {
+    let igPhotos = [];
+    if (toIg) {
+      const square = p.photos.length > 1;
+      for (let i = 0; i < p.photos.length; i++) {
+        showLoading('Preparing photo ' + (i + 1) + ' of ' + p.photos.length + ' for Instagram…');
+        const copy = await instagramCopy(p.photos[i], square);
+        igPhotos.push(copy ? (await call('photo', { data_url: copy })).url : p.photos[i]);
+      }
+    }
+    showLoading('Posting… (up to a minute)');
+    let d;
+    try { d = await metaCall('publish', { id, to_fb: toFb, to_ig: toIg, ig_photos: igPhotos }); }
+    catch (e) { d = e.data || { ok: false, error: e.message }; }
+    hideLoading();
+    const done = [d.fb && 'Facebook', d.ig && 'Instagram'].filter(Boolean);
+    if (done.length) showToast('🎉 Posted to ' + done.join(' and ') + '.' + (d.fb_error || d.ig_error ? ' Problem: ' + (d.fb_error || d.ig_error) : ''), d.fb_error || d.ig_error ? 'error' : 'success');
+    else showToast('⚠️ Not posted: ' + (d.error || d.fb_error || d.ig_error || 'unknown problem'), 'error');
+    await loadPosts();
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
 // ── Start ──
 document.addEventListener('DOMContentLoaded', async () => {
   renderSidebar('social');
@@ -669,6 +795,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderNoPhotoBox();
   // Student names are needed for the "No photos" warning on new posts
   if ((settings.no_photo_ids || []).length) loadStudents();
+  if (level === 'full') {
+    const h = location.hash || '';
+    if (/meta=connected/.test(h)) showToast('✓ Facebook & Instagram connected.', 'success');
+    if (/meta=choose/.test(h)) showToast('Choose which Page is the school\'s.', 'success');
+    const m = h.match(/meta_error=([^&]*)/);
+    if (m) showToast('⚠️ Facebook: ' + decodeURIComponent(m[1]), 'error');
+    if (/meta/.test(h)) { history.replaceState(null, '', location.pathname); switchTab('settings'); }
+    await loadMeta();
+  }
   await loadPosts();
 });
 </script>
