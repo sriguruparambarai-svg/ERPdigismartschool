@@ -71,6 +71,7 @@ async function renderSidebar(activePage) {
       { id: 'dashboard', icon: '🏠', label: 'Dashboard', href: 'dashboard.html' },
     ]},
     { group: 'Students', items: [
+      { id: 'enquiry', icon: '📞', label: 'Admission Enquiries', href: 'enquiries.html' },
       { id: 'admission', icon: '📝', label: 'Admission', href: 'admission.html' },
       { id: 'student-att', icon: '✅', label: 'Student Attendance', href: 'student-attendance.html' },
       { id: 'icard', icon: '🪪', label: 'I-Card', href: 'icard.html' },
