@@ -78,12 +78,24 @@ module.exports = async (req, res) => {
     let alerts = { sent: 0, failed: 0, skipped: 'no phone alerts set up' };
     if (pushReady() && c.id && await logOnce(schoolId, 'comm', String(c.id))) {
       const subs = await subsForClass(schoolId, cls);
-      alerts = await sendToSubs(subs, () => ({
-        title: (type === 'classwork' ? '📖 In class today: ' : '📚 Homework: ') + short(c.title, 60),
-        body: short(c.message, 140),
-        tag: 'comm-' + c.id,
-        url: BASE + '/parent/index.html?school=' + enc(schoolId)
-      }), false);
+      // Parents with more than one child: say which child, and open on that child
+      const names = {};
+      const ids = [...new Set(subs.map(s => String(s.student_id)))];
+      for (let i = 0; i < ids.length; i += 80) {
+        try {
+          const rows = await sb('GET', 'students?id=in.(' + ids.slice(i, i + 80).map(enc).join(',') + ')&select=id,full_name') || [];
+          rows.forEach(r => { const n = String(r.full_name || '').trim().split(/\s+/)[0]; if (n) names[String(r.id)] = n; });
+        } catch (e) { /* alert still goes, just without the name */ }
+      }
+      alerts = await sendToSubs(subs, s => {
+        const who = names[String(s.student_id)];
+        return {
+          title: (type === 'classwork' ? '📖 In class today' : '📚 Homework') + (who ? ' · ' + who : '') + ': ' + short(c.title, 60),
+          body: short(c.message, 140),
+          tag: 'comm-' + c.id + '-' + s.student_id,
+          url: BASE + '/parent/dashboard.html?child=' + enc(s.student_id)
+        };
+      }, false);
     }
     return res.status(200).json({ ok: true, id: c.id || null, alerts });
   } catch (e) {
