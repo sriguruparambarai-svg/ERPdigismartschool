@@ -165,8 +165,24 @@ async function logOnce(schoolId, kind, ref) {
   } catch (e) { return false; }
 }
 
-function parentUrl(schoolId) {
+function parentUrl(schoolId, studentId) {
+  // Parents with more than one child: open the app on the child this alert is about
+  if (studentId) return BASE + '/parent/dashboard.html?child=' + enc(studentId);
   return BASE + '/parent/index.html?school=' + enc(schoolId);
+}
+
+// First names of the given students, so every alert says which child it is about
+async function childNames(studentIds) {
+  const ids = [...new Set((studentIds || []).map(String).filter(Boolean))];
+  const map = {};
+  for (let i = 0; i < ids.length; i += 80) {
+    const part = ids.slice(i, i + 80).map(enc).join(',');
+    try {
+      const rows = await sb('GET', 'students?id=in.(' + part + ')&select=id,full_name') || [];
+      rows.forEach(r => { const n = String(r.full_name || '').trim().split(/\s+/)[0]; if (n) map[String(r.id)] = n; });
+    } catch (e) { /* alert still goes, just without the name */ }
+  }
+  return map;
 }
 function short(t, n) {
   t = String(t || '').replace(/\s+/g, ' ').trim();
@@ -239,7 +255,7 @@ async function runBirthdayJob() {
       title: '🎂 Happy birthday ' + name + '!',
       body: msg,
       tag: 'bday-' + s.id + '-' + today,
-      url: parentUrl(s.school_id)
+      url: parentUrl(s.school_id, s.id)
     }), false);
     sent += out.sent;
   }
@@ -274,7 +290,7 @@ async function runAbsentJob() {
       title: '🔴 Absent today',
       body: name + ' was marked absent today (' + nice + '). If this is a mistake, please contact the school.',
       tag: 'absent-' + a.student_id + '-' + today,
-      url: parentUrl(a.school_id)
+      url: parentUrl(a.school_id, a.student_id)
     }), true);
     sent += out.sent;
   }
@@ -379,12 +395,17 @@ module.exports = async (req, res) => {
       const icons = { homework: '📚 Homework', event: '🗓 School event', consent_form: '📋 Consent form needed' };
       const heading = icons[c.type] || (c.priority === 'urgent' || c.priority === 'important' ? '📢 Important notice' : '📢 New notice');
       const subs = await subsForClass(schoolId, c.target_class, c.target_section);
-      const out = await sendToSubs(subs, () => ({
-        title: heading + ': ' + short(c.title, 60),
-        body: short(c.message, 140),
-        tag: 'comm-' + c.id,
-        url: parentUrl(schoolId)
-      }), c.priority === 'urgent');
+      const forClass = c.target_class && c.target_class !== 'all';
+      const names = forClass ? await childNames(subs.map(s => s.student_id)) : {};
+      const out = await sendToSubs(subs, s => {
+        const who = names[String(s.student_id)];
+        return {
+          title: heading + (who ? ' · ' + who : '') + ': ' + short(c.title, 60),
+          body: short(c.message, 140),
+          tag: forClass ? 'comm-' + c.id + '-' + s.student_id : 'comm-' + c.id,
+          url: forClass ? parentUrl(schoolId, s.student_id) : parentUrl(schoolId)
+        };
+      }, c.priority === 'urgent');
       return res.status(200).json(Object.assign({ ok: true }, out));
     }
 
@@ -408,6 +429,7 @@ module.exports = async (req, res) => {
           + '&student_id=in.(' + part + ')&select=id,student_id,endpoint,p256dh,auth') || []);
       }
 
+      const names = await childNames(stuIds);
       const heads = { homework: '📚 Homework not written', test_not_written: '📝 Class test', test_absent: '📝 Absent for class test', test_low_marks: '📝 Class test marks' };
       let sent = 0, noPhone = 0;
       for (const d of rows) {
@@ -415,10 +437,10 @@ module.exports = async (req, res) => {
         if (!mine.length) { noPhone++; continue; }
         if (!(await logOnce(schoolId, 'defaulter', String(d.id)))) continue;
         const out = await sendToSubs(mine, () => ({
-          title: (heads[d.kind] || '📝 Message from school') + ' · ' + short(d.subject, 30),
+          title: (heads[d.kind] || '📝 Message from school') + (names[String(d.student_id)] ? ' · ' + names[String(d.student_id)] : '') + ' · ' + short(d.subject, 30),
           body: short(d.message, 160),
           tag: 'defaulter-' + d.id,
-          url: parentUrl(schoolId)
+          url: parentUrl(schoolId, d.student_id)
         }), false);
         sent += out.sent;
       }
@@ -434,12 +456,16 @@ module.exports = async (req, res) => {
 
       const classes = Array.isArray(ex.classes) && ex.classes.length ? ex.classes : 'all';
       const subs = await subsForClass(schoolId, classes, null);
-      const out = await sendToSubs(subs, () => ({
-        title: '📝 Results published',
-        body: short(ex.name, 60) + ' results are ready. Tap to view marks.',
-        tag: 'results-' + ex.id,
-        url: parentUrl(schoolId)
-      }), false);
+      const names = await childNames(subs.map(s => s.student_id));
+      const out = await sendToSubs(subs, s => {
+        const who = names[String(s.student_id)];
+        return {
+          title: '📝 Results published' + (who ? ' · ' + who : ''),
+          body: short(ex.name, 60) + ' results are ready. Tap to view marks.',
+          tag: 'results-' + ex.id + '-' + s.student_id,
+          url: parentUrl(schoolId, s.student_id)
+        };
+      }, false);
       return res.status(200).json(Object.assign({ ok: true }, out));
     }
 
