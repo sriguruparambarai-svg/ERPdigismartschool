@@ -26,6 +26,9 @@
   "functions": {
     "api/report-data.js": {
       "maxDuration": 60
+    },
+    "api/social-posts.js": {
+      "maxDuration": 60
     }
   }
 }
