@@ -185,8 +185,19 @@ async function getSettings(sid) {
     no_photo_ids: Array.isArray(s.no_photo_ids) ? s.no_photo_ids : [],
     footer_line: s.footer_line != null ? s.footer_line : '📢 Admissions open! Tap the link in our bio to enquire.',
     hashtags: s.hashtags || '',
-    language: s.language || 'both'
+    language: s.language || 'both',
+    logo_corner: ['off', 'br', 'bl', 'tr', 'tl'].indexOf(s.logo_corner) !== -1 ? s.logo_corner : 'br'
   };
+}
+
+// The school logo saved in I-Card settings (a public link in this school's own folder)
+async function schoolLogo(sid) {
+  try {
+    const r = (await sb('GET', 'icard_settings?school_id=eq.' + encodeURIComponent(sid) + '&select=logo_url&limit=1')) || [];
+    const u = r[0] && r[0].logo_url;
+    const ok = SUPABASE_URL + '/storage/v1/object/public/icard-photos/' + sid + '/';
+    return (u && String(u).indexOf(ok) === 0) ? u : '';
+  } catch (e) { return ''; }
 }
 
 module.exports = async (req, res) => {
@@ -233,7 +244,7 @@ module.exports = async (req, res) => {
       : res.status(403).json({ ok: false, error: 'Only the principal / admin can do this.' });
 
     if (action === 'info') {
-      return res.status(200).json({ ok: true, level, settings: await getSettings(sid), school });
+      return res.status(200).json({ ok: true, level, settings: await getSettings(sid), school, logo_url: await schoolLogo(sid) });
     }
 
     if (action === 'photo') {
@@ -343,6 +354,7 @@ module.exports = async (req, res) => {
         school_id: sid, no_photo_ids: ids, footer_line: str(body.footer_line, 300),
         hashtags: str(body.hashtags, 300), language: lang, updated_at: new Date().toISOString()
       };
+      if (['off', 'br', 'bl', 'tr', 'tl'].indexOf(body.logo_corner) !== -1) row.logo_corner = body.logo_corner;
       await sb('POST', 'social_settings?on_conflict=school_id', row, { Prefer: 'resolution=merge-duplicates,return=representation' });
       return res.status(200).json({ ok: true, settings: await getSettings(sid) });
     }
