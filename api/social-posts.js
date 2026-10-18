@@ -136,6 +136,7 @@ async function writeCaption(post, school, settings, hint) {
     + '- Never name or identify any child, never mention a child\'s looks, and never guess names from badges or books.\n'
     + '- No religious, political or medical claims. No promises about results or marks.\n'
     + '- One or two fitting emojis at most.\n'
+    + '- If a photo is a poster, flyer or banner full of text, give its main message in your own short words — do not copy all of its text, lists or phone numbers.\n'
     + (lang === 'en' ? '- caption_ta must be an empty string.\n'
        : '- caption_ta: the same message in natural, simple written Tamil (not word-for-word, not too formal). Keep class names like "Class 3" or "UKG" as they are.\n')
     + '- hashtags: 5 to 8, no spaces inside a tag, include one tag made from the school name'
@@ -148,32 +149,43 @@ async function writeCaption(post, school, settings, hint) {
 
   let lastErr = '';
   for (const model of AI_MODELS) {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 900, messages: [{ role: 'user', content }] })
-    });
-    const raw = await r.text();
-    if (!r.ok) {
-      lastErr = 'AI error ' + r.status + ': ' + raw.slice(0, 200);
-      if (r.status === 404 || /model/i.test(raw)) continue;   // try the next model
-      throw new Error(lastErr);
+    // Tamil needs many more AI "tokens" than English, so allow a long reply,
+    // and try once more if the reply still comes back cut off or untidy.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model, max_tokens: 3000, messages: [{ role: 'user', content }] })
+      });
+      const raw = await r.text();
+      if (!r.ok) {
+        lastErr = 'AI error ' + r.status + ': ' + raw.slice(0, 200);
+        if (r.status === 404 || /model/i.test(raw)) break;      // try the next model
+        throw new Error(lastErr);
+      }
+      let data; try { data = JSON.parse(raw); } catch (e) { throw new Error('AI reply could not be read.'); }
+      const text = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+      const m = text.match(/\{[\s\S]*\}/);
+      let out = null;
+      if (m) { try { out = JSON.parse(m[0]); } catch (e) { out = null; } }
+      if (!out) {
+        lastErr = data.stop_reason === 'max_tokens'
+          ? 'The AI\'s reply was too long and got cut off. Please press "Write again" (or add a short note).'
+          : 'AI did not return a post' + (text ? ' (it said: "' + text.replace(/\s+/g, ' ').slice(0, 160) + '")' : '') + '. Please press "Write again".';
+        continue;                                                   // one more try
+      }
+      const tags = (Array.isArray(out.hashtags) ? out.hashtags : String(out.hashtags || '').split(/\s+/))
+        .map(t => String(t).trim().replace(/\s+/g, ''))
+        .filter(Boolean).map(t => t.startsWith('#') ? t : '#' + t).slice(0, 10);
+      return {
+        title: str(out.title, 80),
+        caption_en: str(out.caption_en, 1500),
+        caption_ta: lang === 'en' ? '' : str(out.caption_ta, 2000),
+        hashtags: tags.join(' '),
+        ai_warning: str(out.warning, 300)
+      };
     }
-    let data; try { data = JSON.parse(raw); } catch (e) { throw new Error('AI reply could not be read.'); }
-    const text = ((data.content || []).find(c => c.type === 'text') || {}).text || '';
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('AI did not return a post. Please press "Write again".');
-    let out; try { out = JSON.parse(m[0]); } catch (e) { throw new Error('AI reply was not in the right shape. Please press "Write again".'); }
-    const tags = (Array.isArray(out.hashtags) ? out.hashtags : String(out.hashtags || '').split(/\s+/))
-      .map(t => String(t).trim().replace(/\s+/g, ''))
-      .filter(Boolean).map(t => t.startsWith('#') ? t : '#' + t).slice(0, 10);
-    return {
-      title: str(out.title, 80),
-      caption_en: str(out.caption_en, 1500),
-      caption_ta: lang === 'en' ? '' : str(out.caption_ta, 2000),
-      hashtags: tags.join(' '),
-      ai_warning: str(out.warning, 300)
-    };
+    if (lastErr && !/^AI error/.test(lastErr)) throw new Error(lastErr);
   }
   throw new Error(lastErr || 'AI is not available right now.');
 }
