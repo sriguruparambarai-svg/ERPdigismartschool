@@ -2,6 +2,7 @@
 // The one door Vercel's scheduler knocks on, once a day. It does two things:
 //   1. sends the day's foundation question to every class that has one waiting
 //   2. deletes photo albums that are past their one year
+//   3. deletes Social Media class videos the school no longer keeps (its own choice, 1 week by default)
 //
 // Vercel sends a GET with "Authorization: Bearer <CRON_SECRET>". Nothing else
 // gets in. Sundays are skipped for the question; the album tidy-up still runs.
@@ -55,6 +56,18 @@ module.exports = async (req, res) => {
     out.gallery = await r.json();
   } catch (e) {
     out.gallery = { ok: false, error: String(e.message || e) };
+  }
+
+  // ── 3. Clear out old class videos (already on Facebook / Instagram) ──
+  try {
+    const r = await fetch(BASE + '/api/social-posts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'video_cleanup', cron_secret: secret })
+    });
+    out.videos = await r.json();
+  } catch (e) {
+    out.videos = { ok: false, error: String(e.message || e) };
   }
 
   return res.status(200).json(out);
