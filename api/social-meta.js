@@ -13,7 +13,8 @@
 // POST { token, action: 'status' }       → { ok, connected, page_name, ig_username, pending:[{id,name,ig}] }
 // POST { token, action: 'choose', page_id }  → save the chosen page (when you manage several)
 // POST { token, action: 'disconnect' }
-// POST { token, action: 'publish', id, to_fb, to_ig, ig_photos[] }  → posts an approved post
+// POST { token, action: 'publish', id, to_fb, to_ig, fb_photos[], ig_photos[] }  → posts an approved post
+//      fb_photos / ig_photos: copies the browser made (school logo added, Instagram shape) — optional
 
 const crypto = require('crypto');
 
@@ -242,18 +243,20 @@ module.exports = async (req, res) => {
       const toFb = body.to_fb !== false && !post.fb_post_id;
       const toIg = body.to_ig !== false && !!s.meta_ig_id && !post.ig_media_id;
       const igPhotos = (Array.isArray(body.ig_photos) ? body.ig_photos : []).filter(u => isPhotoUrl(u, sid)).slice(0, 10);
+      const fbCopies = (Array.isArray(body.fb_photos) ? body.fb_photos : []).filter(u => isPhotoUrl(u, sid)).slice(0, 10);
+      const fbPhotos = fbCopies.length === photos.length ? fbCopies : photos;
       const text = postText(post, s);
       const token = s.meta_page_token;
       const out = { fb: null, ig: null, fb_error: '', ig_error: '' };
 
       if (toFb) {
         try {
-          if (photos.length === 1) {
-            const r = await graph('POST', '/' + s.meta_page_id + '/photos', { url: photos[0], caption: text, access_token: token });
+          if (fbPhotos.length === 1) {
+            const r = await graph('POST', '/' + s.meta_page_id + '/photos', { url: fbPhotos[0], caption: text, access_token: token });
             out.fb = r.post_id || r.id;
           } else {
             const ids = [];
-            for (const u of photos) {
+            for (const u of fbPhotos) {
               const r = await graph('POST', '/' + s.meta_page_id + '/photos', { url: u, published: 'false', access_token: token });
               ids.push(r.id);
             }
