@@ -60,6 +60,7 @@ textarea.form-control{font-family:inherit}
 #viewer{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:300;cursor:zoom-out}
 #viewer img{max-width:94vw;max-height:90vh;border-radius:8px}
 .hidden{display:none}
+.vid{max-height:420px;max-width:100%;border-radius:10px;background:#000;display:block}
 </style>
 </head>
 <body>
@@ -93,6 +94,11 @@ textarea.form-control{font-family:inherit}
           <div class="card">
             <div class="card-title" id="n-title">Make a post from today's photos</div>
             <div class="help" style="margin:4px 0 12px" id="n-help">Choose the class and add up to 6 photos. The AI looks at the photos and writes the post in English and Tamil — no typing needed. You check it before anything goes out.</div>
+            <div class="style-row" style="margin:0 0 12px">
+              <b style="font-size:12px;margin-right:4px">Post type</b>
+              <label class="chip on" id="nm-photos"><input type="radio" name="n-mode" value="photos" checked onchange="setNewMode('photos')">📷 Photos</label>
+              <label class="chip" id="nm-video"><input type="radio" name="n-mode" value="video" onchange="setNewMode('video')">🎥 Video</label>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px">
               <div>
                 <label class="form-label">Class</label>
@@ -103,12 +109,23 @@ textarea.form-control{font-family:inherit}
                 <input id="n-note" class="form-control" maxlength="300" placeholder="e.g. Learnt parts of a plant with real plants / Diwali celebration">
               </div>
             </div>
-            <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <div id="n-photo-row" style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
               <input type="file" id="n-file" accept="image/*" multiple class="form-control" style="max-width:300px">
               <button class="btn btn-secondary btn-sm" onclick="clearPicked()">Clear photos</button>
               <span class="help" id="n-count">No photos yet</span>
             </div>
             <div class="grid" id="n-preview"></div>
+
+            <div id="n-video-row" class="hidden" style="margin-top:12px">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input type="file" id="n-vfile" accept="video/*" class="form-control" style="max-width:300px">
+                <button class="btn btn-secondary btn-sm" onclick="clearClip()">Clear video</button>
+              </div>
+              <div class="help" style="margin-top:6px">One video, up to 60 seconds. The school logo is added on this phone / computer before sending — a 1-minute video takes about a minute. <b>Keep this screen open</b> while it is prepared.</div>
+              <div class="progress hidden" id="n-vbar"><span id="n-vfill"></span></div>
+              <div class="help" id="n-vstatus" style="margin-top:6px"></div>
+              <div id="n-vprev" style="margin-top:10px"></div>
+            </div>
 
             <div id="np-box" class="warnbox"></div>
 
@@ -197,6 +214,15 @@ textarea.form-control{font-family:inherit}
               <canvas id="logo-preview" width="240" height="160" style="border-radius:8px;border:1px solid var(--border);max-width:180px"></canvas>
             </div>
             <div class="help" id="logo-help" style="margin-top:6px">A small logo is added to every photo when it is posted, shared or downloaded. The photos saved in ERP stay as they were. You can untick it for one post (e.g. a banner that already has the logo).</div>
+            <div class="lbl">Keep class videos after posting</div>
+            <select id="s-vkeep" class="form-control" style="max-width:260px">
+              <option value="3">3 days</option>
+              <option value="7">1 week</option>
+              <option value="15">15 days</option>
+              <option value="30">30 days</option>
+              <option value="90">3 months</option>
+            </select>
+            <div class="help" style="margin-top:6px">After posting, the video is already on Facebook / Instagram, so the copy saved here is deleted after this time to save storage. Videos that are never posted are deleted after 30 days (or the time above, if longer).</div>
           </div>
           <button class="btn btn-gold mt-3" onclick="saveSettings()">✓ Save list and settings</button>
         </div>
@@ -224,6 +250,10 @@ let students = [];        // active students (for the no-photo list)
 let noPhoto = new Set();  // working copy in Settings
 let posts = [];
 let picked = [];          // data URLs
+let mode = 'photos';      // New Post: 'photos' or 'video'
+let clipOut = null;       // the prepared class video { blob, frames, seconds, sound, noLogo }
+let clipBusy = false, clipPreviewUrl = '';
+let photoTexts = null;    // New Post wording for photos (set at start), so the Video choice can switch back
 
 function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
 function staffLabel() { return (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : 'Office'; }
@@ -277,6 +307,129 @@ function fileToDataUrl(file) {
   });
 }
 
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'n-vfile') return;
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  handleClip(f);
+});
+
+// ── Class video: shrink + school logo in the browser, then straight to storage ──
+function setNewMode(m) {
+  if (clipBusy) { showToast('⚠️ Please wait — the video is still being prepared.', 'error'); m = 'video'; }
+  mode = m;
+  document.getElementById('nm-photos').classList.toggle('on', m === 'photos');
+  document.getElementById('nm-video').classList.toggle('on', m === 'video');
+  document.querySelectorAll('input[name="n-mode"]').forEach(r => { r.checked = r.value === m; });
+  ['n-photo-row', 'n-preview'].forEach(id => document.getElementById(id).classList.toggle('hidden', m !== 'photos'));
+  document.getElementById('n-video-row').classList.toggle('hidden', m !== 'video');
+  const t = photoTexts || {};
+  const full = level === 'full';
+  document.getElementById('n-title').textContent = m === 'video' ? (full ? 'Make a post from a class video' : 'Send a class video to the principal') : t.title;
+  document.getElementById('n-help').textContent = m === 'video'
+    ? (full ? 'Choose the class and add one video (up to 60 seconds). The school logo is added, then the AI looks at the video and writes the post in English and Tamil. You check it before anything goes out.'
+            : 'Choose the class and add one good video (up to 60 seconds). The principal / admin will write the post and share it.')
+    : t.help;
+  document.getElementById('n-go').textContent = m === 'video' ? (full ? '✨ Make the post' : '📤 Send video to principal') : t.go;
+  renderNoPhotoBox();
+}
+function clearClip() {
+  if (clipBusy) return;
+  clipOut = null;
+  if (clipPreviewUrl) { URL.revokeObjectURL(clipPreviewUrl); clipPreviewUrl = ''; }
+  document.getElementById('n-vprev').innerHTML = '';
+  document.getElementById('n-vstatus').textContent = '';
+}
+async function handleClip(f) {
+  if (!f || clipBusy) return;
+  if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name)) { showToast('⚠️ ' + f.name + ' is not a video.', 'error'); return; }
+  if (f.size > 700 * 1024 * 1024) { showToast('⚠️ That video file is too big. Please choose a video of 60 seconds or less.', 'error'); return; }
+  clearClip();
+  clipBusy = true;
+  const bar = document.getElementById('n-vbar'), fill = document.getElementById('n-vfill'), st = document.getElementById('n-vstatus');
+  const go = document.getElementById('n-go');
+  go.disabled = true; bar.classList.remove('hidden'); fill.style.width = '0';
+  try {
+    const out = await SD.clip(f, {
+      corner: logoUrl ? settings.logo_corner : 'off',
+      onProgress: (pc, msg) => { fill.style.width = pc + '%'; st.textContent = msg; }
+    });
+    if (!out.blob) {
+      // This browser cannot remake videos: send the original as it is, if Instagram can take it
+      const mb = Math.round(f.size / 1048576);
+      if (!/mp4/i.test(f.type) && !/\.mp4$/i.test(f.name)) throw new Error(out.reason + ' Please use Google Chrome on an Android phone or a laptop.');
+      if (f.size > 50 * 1024 * 1024) throw new Error(out.reason + ' This video (' + mb + ' MB) is too big to send as it is. Please use Google Chrome on an Android phone or a laptop.');
+      out.blob = f; out.noLogo = true;
+    }
+    clipOut = out;
+    clipPreviewUrl = URL.createObjectURL(out.blob);
+    const notes = [Math.round(out.seconds) + ' seconds', Math.round(out.blob.size / 1048576 * 10) / 10 + ' MB'];
+    if (out.noLogo) notes.push('⚠️ this phone could not add the logo — the video is sent as it is');
+    else if (logoUrl && settings.logo_corner !== 'off') notes.push('school logo added');
+    if (!out.sound) notes.push('⚠️ no sound found in this video');
+    document.getElementById('n-vprev').innerHTML = '<video class="vid" src="' + clipPreviewUrl + '" controls playsinline></video>'
+      + '<div class="help" style="margin-top:6px">' + esc(notes.join(' · ')) + '</div>';
+    st.textContent = '✓ Video ready. Check it, then press the button below.';
+  } catch (err) {
+    clipOut = null;
+    st.textContent = '';
+    showToast('⚠️ ' + err.message, 'error');
+  } finally {
+    clipBusy = false; go.disabled = false; bar.classList.add('hidden');
+  }
+}
+// Upload with a progress bar (a 20 MB video can take a while on a phone)
+function putFile(url, blob, onPct) {
+  return new Promise((ok, bad) => {
+    const xr = new XMLHttpRequest();
+    xr.open('PUT', url);
+    xr.setRequestHeader('Content-Type', 'video/mp4');
+    xr.setRequestHeader('x-upsert', 'true');
+    xr.upload.onprogress = (ev) => { if (ev.lengthComputable) onPct(Math.round(ev.loaded / ev.total * 100)); };
+    xr.onload = () => xr.status >= 200 && xr.status < 300 ? ok() : bad(new Error('Could not upload the video (' + xr.status + '): ' + String(xr.responseText || '').slice(0, 120)));
+    xr.onerror = () => bad(new Error('The upload stopped — please check the internet and try again.'));
+    xr.send(blob);
+  });
+}
+async function makeVideoPost() {
+  const cls = document.getElementById('n-class').value;
+  const note = document.getElementById('n-note').value.trim();
+  if (clipBusy) { showToast('⚠️ Please wait — the video is still being prepared.', 'error'); return; }
+  if (!clipOut) { showToast('⚠️ Please add a video.', 'error'); return; }
+  const chk = document.getElementById('n-checked');
+  if (!chk || !chk.checked) { showToast('⚠️ Please tick that you checked the video.', 'error'); return; }
+  const btn = document.getElementById('n-go');
+  const bar = document.getElementById('n-bar'), fill = document.getElementById('n-fill'), st = document.getElementById('n-status');
+  btn.disabled = true; bar.classList.remove('hidden');
+  try {
+    const mb = Math.round(clipOut.blob.size / 1048576 * 10) / 10;
+    st.textContent = 'Uploading the video (' + mb + ' MB)…';
+    const u = await call('clip_url');
+    await putFile(u.upload_url, clipOut.blob, pc => { fill.style.width = Math.round(pc * 0.6) + '%'; st.textContent = 'Uploading the video (' + mb + ' MB)… ' + pc + '%'; });
+    const urls = [];
+    for (let i = 0; i < clipOut.frames.length; i++) {
+      st.textContent = 'Saving pictures from the video…';
+      fill.style.width = (60 + i * 3) + '%';
+      urls.push((await call('photo', { data_url: clipOut.frames[i] })).url);
+    }
+    fill.style.width = '75%';
+    st.textContent = level === 'full' ? '✨ AI is looking at the video and writing the post… (about 15–30 seconds)' : 'Sending to the principal…';
+    const res = await call('create', { class_name: cls, note, photos: urls, checked: true, video: u.public_url, video_seconds: clipOut.seconds });
+    fill.style.width = '100%';
+    clearClip();
+    document.getElementById('n-note').value = '';
+    renderNoPhotoBox();
+    await loadPosts();
+    if (level !== 'full') { showToast('Video sent to the principal. Thank you!', 'success'); switchTab('mine'); }
+    else if (res.ai_error) { showToast('⚠️ Video saved, but the AI could not write the post: ' + res.ai_error, 'error'); switchTab('photos'); }
+    else { showToast('Post written — check it and approve.', 'success'); switchTab('wait'); }
+  } catch (e) {
+    showToast('⚠️ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; bar.classList.add('hidden'); fill.style.width = '0'; st.textContent = '';
+  }
+}
+
 document.addEventListener('change', async (e) => {
   if (e.target.id !== 'n-file') return;
   const files = Array.from(e.target.files || []);
@@ -321,15 +474,16 @@ function renderNoPhotoBox() {
     box.className = 'warnbox';
     box.innerHTML = '<div style="font-size:13px;font-weight:700;color:#8B5E00">🚫 Parents of these children said NO photos' + (whole ? ' (whole school)' : ' in ' + esc(cls)) + ':</div>'
       + '<div class="names">' + list.map(s => esc(s.full_name) + (whole ? ' <span style="font-weight:400;color:var(--text-muted)">(' + esc(s.class) + ')</span>' : '')).join(', ') + '</div>'
-      + '<label class="tick"><input type="checkbox" id="n-checked"> I have checked every photo — none of these children can be seen.</label>';
+      + '<label class="tick"><input type="checkbox" id="n-checked"> I have checked ' + (mode === 'video' ? 'the whole video' : 'every photo') + ' — none of these children can be seen.</label>';
   } else {
     box.className = 'warnbox ok';
     box.innerHTML = '<div style="font-size:13px;color:#2D7A3A">✓ No child' + (whole ? '' : ' in ' + esc(cls)) + ' is on the "No photos" list.</div>'
-      + '<label class="tick"><input type="checkbox" id="n-checked"> I have checked the photos — they are fine to share with the public.</label>';
+      + '<label class="tick"><input type="checkbox" id="n-checked"> I have checked the ' + (mode === 'video' ? 'whole video' : 'photos') + ' — ' + (mode === 'video' ? 'it is' : 'they are') + ' fine to share with the public.</label>';
   }
 }
 
 async function makePost() {
+  if (mode === 'video') return makeVideoPost();
   const cls = document.getElementById('n-class').value;
   const note = document.getElementById('n-note').value.trim();
   if (!picked.length) { showToast('⚠️ Please add at least one photo.', 'error'); return; }
@@ -387,12 +541,18 @@ function fullText(p) {
 }
 
 function strip(p) {
+  if (p.own_video && !p.video_removed) {
+    return '<div style="margin:12px 0 10px"><video class="vid" controls playsinline preload="none" poster="' + esc((p.photos || [])[0] || '') + '" src="' + esc(p.own_video) + '"></video>'
+      + '<div class="help" style="margin-top:4px">🎥 Video' + (p.video_seconds ? ' · ' + Math.round(p.video_seconds) + ' seconds' : '') + '</div></div>';
+  }
+  if (p.own_video) return '<div class="help" style="margin:8px 0">🎥 The video was deleted after the keep-time set in Settings, to save space.</div>'
+    + (p.photos_removed ? '' : '<div class="strip">' + (p.photos || []).map(u => '<img loading="lazy" src="' + esc(u) + '" onclick="view(\'' + esc(u) + '\')" alt="">').join('') + '</div>');
   if (p.photos_removed) return '<div class="help" style="margin:8px 0">Photos were removed after 90 days to save space.</div>';
   return '<div class="strip">' + (p.photos || []).map(u => '<img loading="lazy" src="' + esc(u) + '" onclick="view(\'' + esc(u) + '\')" alt="">').join('') + '</div>';
 }
 function head(p) {
   const st = { photos:'Photos sent — not written yet', draft:'Waiting for approval', approved:'Approved — ready to post', posted:'Posted', rejected:'Not approved' }[p.status] || p.status;
-  return '<div class="post-head"><div><div class="post-title">' + esc(p.title || p.class_name) + '</div>'
+  return '<div class="post-head"><div><div class="post-title">' + (p.own_video ? '🎥 ' : '') + esc(p.title || p.class_name) + '</div>'
     + '<div class="post-meta">' + esc(p.class_name) + ' · by ' + esc(p.created_by || '') + ' · ' + esc(niceTime(p.created_at))
     + (p.posted_at ? ' · posted ' + esc(niceTime(p.posted_at)) : '') + '</div></div>'
     + '<span class="pill st-' + esc(p.status) + '">' + esc(st) + '</span></div>';
@@ -422,8 +582,8 @@ function readyCard(p) {
     + '<div class="caption-view">' + esc(fullText(p)) + '</div>'
     + (p.publish_error ? '<div class="ai-warn" style="margin-top:10px">Last try: ' + esc(p.publish_error) + '</div>' : '')
     + (p.fb_post_id ? '<div class="help" style="margin-top:8px">✓ Already on Facebook — Post now will send only to Instagram.</div>' : '')
-    + styleRow(p)
-    + (logoUrl ? '<label class="tick" id="lgrow-' + esc(p.id) + '" style="margin-top:10px;font-weight:500' + (styleOf(p.id) === 'photos' ? '' : ';display:none') + '"><input type="checkbox" id="lg-' + esc(p.id) + '"'
+    + (p.own_video ? videoRow(p) : styleRow(p))
+    + (logoUrl && !p.own_video ? '<label class="tick" id="lgrow-' + esc(p.id) + '" style="margin-top:10px;font-weight:500' + (styleOf(p.id) === 'photos' ? '' : ';display:none') + '"><input type="checkbox" id="lg-' + esc(p.id) + '"'
         + (settings.logo_corner !== 'off' ? ' checked' : '') + ' onchange="outCache[\'' + esc(p.id) + '\']=null"> 🏫 Add school logo to the photos</label>' : '')
     + (canFull && meta.connected ? '<div class="actions" style="align-items:center;padding:10px;background:#E6F1FB;border-radius:10px">'
         + '<button class="btn btn-primary btn-sm" onclick="publishPost(\'' + esc(p.id) + '\')">🚀 Post now</button>'
@@ -435,7 +595,7 @@ function readyCard(p) {
     +   (canFull ? '<button class="btn btn-sm btn-wa" onclick="sendToWhatsApp(\'' + esc(p.id) + '\')">📲 Send to my WhatsApp</button>' : '')
     +   '<button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy post text</button>'
     +   '<button class="btn btn-secondary btn-sm" onclick="downloadPhotos(\'' + esc(p.id) + '\')">⬇ Download</button>'
-    +   (p.sent_gallery ? '<span class="pill st-posted" style="align-self:center">📸 In Parent Gallery</span>'
+    +   (p.own_video ? '' : p.sent_gallery ? '<span class="pill st-posted" style="align-self:center">📸 In Parent Gallery</span>'
                         : '<button class="btn btn-secondary btn-sm" onclick="toGallery(\'' + esc(p.id) + '\')">📸 Send to Parent Gallery</button>')
     +   (canFull ? '<button class="btn btn-primary btn-sm" onclick="markPosted(\'' + esc(p.id) + '\')">✓ I have posted it</button>' : '')
     +   (canFull ? '<button class="btn btn-secondary btn-sm" onclick="backToDraft(\'' + esc(p.id) + '\')">✏️ Change text</button>' : '')
@@ -445,7 +605,7 @@ function readyCard(p) {
 function doneCard(p) {
   return '<div class="post">' + head(p) + strip(p) + '<div class="caption-view">' + esc(fullText(p)) + '</div>'
     + '<div class="actions"><button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy text again</button>'
-    + (p.sent_gallery || p.photos_removed ? '' : '<button class="btn btn-secondary btn-sm" onclick="toGallery(\'' + esc(p.id) + '\')">📸 Send to Parent Gallery</button>')
+    + (p.sent_gallery || p.photos_removed || p.own_video ? '' : '<button class="btn btn-secondary btn-sm" onclick="toGallery(\'' + esc(p.id) + '\')">📸 Send to Parent Gallery</button>')
     + (level === 'full' ? '<button class="btn btn-danger btn-sm" onclick="removePost(\'' + esc(p.id) + '\')">🗑 Delete</button>' : '')
     + '</div></div>';
 }
@@ -681,7 +841,8 @@ async function saveSettings() {
       owner_whatsapp: document.getElementById('s-wa').value,
       hashtags: document.getElementById('s-tags').value,
       language: document.getElementById('s-lang').value,
-      logo_corner: document.getElementById('s-logo').value
+      logo_corner: document.getElementById('s-logo').value,
+      video_keep_days: Number(document.getElementById('s-vkeep').value)
     });
     settings = res.settings;
     hideLoading();
@@ -845,7 +1006,12 @@ async function showLogoPreview() {
 
 // ── Designs: Photos · Framed · Collage · Reel ──
 const styles = {}, musics = {}, ownMusic = {}, outCache = {};
-function styleOf(id) { return styles[id] || 'photos'; }
+function styleOf(id) { const p = postById(id); if (p && p.own_video) return 'video'; return styles[id] || 'photos'; }
+function videoRow(p) {
+  return '<div class="style-row"><b style="font-size:12px;margin-right:4px">🎥 Video</b>'
+    + '<span class="help">' + (p.video_removed ? '⚠️ This video was deleted after the keep-time — it cannot be posted now.'
+        : 'Posted as it is: a Reel on Instagram, a video on Facebook.') + '</span></div>';
+}
 function styleRow(p) {
   const id = esc(p.id), st = styleOf(p.id), n = (p.photos || []).length;
   const chip = (v, label) => '<label class="chip' + (st === v ? ' on' : '') + '"><input type="radio" name="st-' + id + '" value="' + v + '"'
@@ -891,6 +1057,17 @@ function niceDate(p) {
 }
 // Build what will be posted: { kind:'photos'|'images', items:[url or data URL] } or { kind:'video', blob }
 async function buildOutput(p) {
+  if (p.own_video) {
+    if (p.video_removed) throw new Error('This video was deleted after the keep-time set in Settings.');
+    if (outCache[p.id] && outCache[p.id].key === 'video') return outCache[p.id].out;
+    showLoading('Getting the video…');
+    const r = await fetch(p.own_video);
+    if (!r.ok) { hideLoading(); throw new Error('Could not get the video (' + r.status + ').'); }
+    const out = { kind: 'video', blob: await r.blob(), url: p.own_video };
+    hideLoading();
+    outCache[p.id] = { key: 'video', out };
+    return out;
+  }
   const st = styleOf(p.id);
   const key = st + '|' + (st === 'photos' ? wantLogo(p.id) : '') + '|' + (st === 'reel' ? (musics[p.id] || 'happy-morning') : '');
   if (outCache[p.id] && outCache[p.id].key === key) return outCache[p.id].out;
@@ -951,6 +1128,10 @@ async function publishPost(id) {
   if (!confirmAction('Post this now to ' + [toFb && 'Facebook', toIg && 'Instagram'].filter(Boolean).join(' and ') + '? Everyone will be able to see it.')) return;
   const st = styleOf(id);
   if (st === 'reel') return publishReel(p, toFb, toIg);
+  if (st === 'video') {
+    if (p.video_removed) { showToast('⚠️ This video was deleted after the keep-time set in Settings.', 'error'); return; }
+    return sendPublish(id, { to_fb: toFb, to_ig: toIg, video_url: p.own_video });
+  }
   try {
     if (st === 'framed' || st === 'collage') {
       const out = await buildOutput(p);
@@ -982,59 +1163,49 @@ async function publishPost(id) {
 }
 
 // ── Send to the owner's WhatsApp (free) ──
-// Sends the real picture / Reel file — never a storage link.
-// 1) Share screen (phones, and Windows/Mac computers that have the WhatsApp app): pick WhatsApp → your chat.
-// 2) Otherwise: the files are saved to Downloads, the text is copied, and the WhatsApp chat opens —
-//    click 📎, choose the saved file, then press Ctrl+V for the text.
-function waReadyBox(msg, btnText) {
-  return new Promise(resolve => {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-    box.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:20px;text-align:center;font-size:15px;line-height:1.5">'
-      + '<div style="font-size:34px">✅</div><div style="margin:8px 0 16px;text-align:left">' + msg + '</div>'
-      + '<button class="btn btn-wa" style="width:100%;padding:12px;font-size:16px">' + btnText + '</button>'
-      + '<button class="btn" style="width:100%;margin-top:8px;background:#eee">Cancel</button></div>';
-    const [ok, no] = box.querySelectorAll('button');
-    ok.onclick = () => { box.remove(); resolve(true); };
-    no.onclick = () => { box.remove(); resolve(false); };
-    document.body.appendChild(box);
-  });
-}
-function waSaveFiles(files) {
-  files.forEach((f, i) => setTimeout(() => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(f); a.download = f.name;
-    document.body.appendChild(a); a.click(); a.remove();
-  }, i * 400));
-}
+// Phone: the share screen opens with the finished files — pick WhatsApp → your chat.
+// Computer: WhatsApp Web opens to the owner's number with the text and download links.
+function isPhone() { return /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent); }
 async function sendToWhatsApp(id) {
   const p = postById(id);
   const num = (settings.owner_whatsapp || '').replace(/\D/g, '');
   const text = fullText(p);
-  const chat = num ? 'your chat (+91 ' + num + ')' : '"You (Message yourself)"';
   try {
     if (styleOf(id) === 'reel') { const sup = await SD.reelSupport(!!musicSource(id)); if (!sup.ok) throw new Error(sup.reason); }
-    showLoading(styleOf(id) === 'reel' ? 'Making the Reel…' : 'Preparing the pictures…');
-    const files = await photoFiles(p);
-    hideLoading();
-    const kind = files[0] && files[0].type === 'video/mp4' ? 'Reel' : (files.length > 1 ? files.length + ' pictures' : 'picture');
-
-    // 1) Share screen with the real files
-    if (navigator.canShare && navigator.canShare({ files })) {
-      const go = await waReadyBox('Your ' + kind + ' is ready.<br>Next screen: choose <b>WhatsApp</b> → ' + chat + '.<br><small>The text is copied too — paste it if it does not appear.</small>', '📲 Share to WhatsApp');
-      if (!go) return;
-      try { await navigator.clipboard.writeText(text); } catch (e) {}
-      try { await navigator.share({ files, text }); return; }
-      catch (e) { if (e && e.name === 'AbortError') return; /* share not possible here → use the computer way */ }
+    if (isPhone() && navigator.canShare) {
+      const files = await photoFiles(p);
+      hideLoading();
+      if (navigator.canShare({ files })) {
+        try { await navigator.clipboard.writeText(text); } catch (e) {}
+        showToast('Choose WhatsApp → ' + (num ? 'your chat (+91 ' + num + ')' : '"You (Message yourself)"') + '. The text is copied — paste it if it does not appear.', 'success');
+        await navigator.share({ files, text });
+        return;
+      }
     }
-
-    // 2) Computer way: save files + copy text + open the chat
-    const go = await waReadyBox('Your ' + kind + ' is ready.<br>1. It will be saved to your <b>Downloads</b> folder.<br>2. WhatsApp opens ' + chat + '.<br>3. Click <b>📎 → Photos &amp; videos</b>, pick the saved file.<br>4. Press <b>Ctrl+V</b> to paste the text, then send.', '📥 Save & open WhatsApp');
-    if (!go) return;
-    try { await navigator.clipboard.writeText(text); } catch (e) {}
-    waSaveFiles(files);
+    // Computer (or a phone that cannot share files): links in a WhatsApp message
+    const out = await buildOutput(p);
+    const links = [];
+    if (out.kind === 'video' && out.url) {
+      links.push(out.url);
+    } else if (out.kind === 'video') {
+      showLoading('Uploading the Reel for WhatsApp…');
+      const u = await call('video_url');
+      const r = await fetch(u.upload_url, { method: 'PUT', headers: { 'Content-Type': 'video/mp4', 'x-upsert': 'true' }, body: out.blob });
+      if (!r.ok) throw new Error('Could not upload the Reel (' + r.status + ').');
+      links.push(u.public_url);
+    } else {
+      for (let i = 0; i < out.items.length; i++) {
+        const it = out.items[i];
+        if (/^data:/.test(it)) { showLoading('Uploading picture ' + (i + 1) + ' of ' + out.items.length + '…'); links.push((await call('photo', { data_url: it })).url); }
+        else links.push(it);
+      }
+    }
+    try { await call('add_files', { id, urls: links }); } catch (e) {}
+    hideLoading();
+    const label = out.kind === 'video' ? (out.url ? '🎥 Video (tap to download, then forward):' : '🎬 Reel (tap to download, then forward):') : (links.length > 1 ? '📷 Photos (tap each to download):' : '📷 Picture (tap to download):');
+    const msg = text + '\n\n' + label + '\n' + links.join('\n');
     if (!num) showToast('Tip: save the owner WhatsApp number in Settings to open that chat directly.', 'success');
-    setTimeout(() => window.open('https://wa.me/' + (num ? '91' + num : ''), '_blank'), files.length * 400 + 300);
+    window.open('https://wa.me/' + (num ? '91' + num : '') + '?text=' + encodeURIComponent(msg), '_blank');
   } catch (e) {
     hideLoading();
     if (e && e.name !== 'AbortError') showToast('⚠️ ' + e.message, 'error');
@@ -1099,19 +1270,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('app').classList.remove('hidden');
   if (level !== 'full') {
     document.querySelectorAll('.full-only').forEach(el => el.classList.add('hidden'));
-    document.getElementById('tab-new-label').textContent = '📤 Send Photos';
+    document.getElementById('tab-new-label').textContent = '📤 Send Photos / Video';
     document.getElementById('n-title').textContent = "Send today's class photos to the principal";
     document.getElementById('n-help').textContent = 'Choose the class and add up to 6 good photos. The principal / admin will write the post and share it.';
     document.getElementById('n-go').textContent = '📤 Send photos to principal';
   } else {
     document.querySelectorAll('.upload-only').forEach(el => el.classList.add('hidden'));
   }
+  photoTexts = { title: document.getElementById('n-title').textContent, help: document.getElementById('n-help').textContent, go: document.getElementById('n-go').textContent };
   noPhoto = new Set(settings.no_photo_ids || []);
   document.getElementById('s-footer').value = settings.footer_line || '';
   document.getElementById('s-wa').value = settings.owner_whatsapp || '';
   document.getElementById('s-tags').value = settings.hashtags || '';
   document.getElementById('s-lang').value = settings.language || 'both';
   document.getElementById('s-logo').value = settings.logo_corner || 'br';
+  document.getElementById('s-vkeep').value = String(settings.video_keep_days || 7);
   showLogoPreview();
   renderNoPhotoBox();
   // Student names are needed for the "No photos" warning on new posts
