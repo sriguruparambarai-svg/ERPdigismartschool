@@ -6,7 +6,20 @@
 <title>Social Media Posts — DigiSmart ERP</title>
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js"></script>
+<script src="../js/social-designer.js"></script>
 <style>
+.style-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;background:#FDF8F0;border:1px solid var(--border);border-radius:10px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1px solid var(--border);border-radius:18px;background:#fff;font-size:12px;font-weight:600;cursor:pointer;user-select:none}
+.chip input{display:none}
+.chip.on{background:var(--maroon);border-color:var(--maroon);color:#fff}
+#pv{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:400;padding:16px}
+#pv .box{background:#fff;border-radius:14px;max-width:min(96vw,760px);max-height:94vh;overflow:auto;padding:14px}
+#pv .imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+#pv img{width:100%;border-radius:8px;border:1px solid var(--border)}
+#pv video{max-height:76vh;max-width:100%;border-radius:10px;display:block;margin:0 auto;background:#000}
 .tab-bar{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap}
 .tab{padding:9px 14px;font-size:13px;cursor:pointer;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
 .tab.active{color:var(--maroon);border-bottom-color:var(--maroon);font-weight:600}
@@ -189,6 +202,10 @@ textarea.form-control{font-family:inherit}
   </div>
 </div>
 <div id="viewer" onclick="this.style.display='none'"><img id="viewer-img" alt=""></div>
+<div id="pv" onclick="if(event.target===this)closePreview()"><div class="box">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b id="pv-title">Preview</b><button class="btn btn-secondary btn-sm" onclick="closePreview()">✕ Close</button></div>
+  <div id="pv-body"></div>
+</div></div>
 
 <script src="../js/config.js"></script>
 <script src="../js/sidebar.js"></script>
@@ -402,17 +419,18 @@ function readyCard(p) {
     + '<div class="caption-view">' + esc(fullText(p)) + '</div>'
     + (p.publish_error ? '<div class="ai-warn" style="margin-top:10px">Last try: ' + esc(p.publish_error) + '</div>' : '')
     + (p.fb_post_id ? '<div class="help" style="margin-top:8px">✓ Already on Facebook — Post now will send only to Instagram.</div>' : '')
+    + styleRow(p)
+    + (logoUrl ? '<label class="tick" id="lgrow-' + esc(p.id) + '" style="margin-top:10px;font-weight:500' + (styleOf(p.id) === 'photos' ? '' : ';display:none') + '"><input type="checkbox" id="lg-' + esc(p.id) + '"'
+        + (settings.logo_corner !== 'off' ? ' checked' : '') + ' onchange="outCache[\'' + esc(p.id) + '\']=null"> 🏫 Add school logo to the photos</label>' : '')
     + (canFull && meta.connected ? '<div class="actions" style="align-items:center;padding:10px;background:#E6F1FB;border-radius:10px">'
         + '<button class="btn btn-primary btn-sm" onclick="publishPost(\'' + esc(p.id) + '\')">🚀 Post now</button>'
         + (p.fb_post_id ? '' : '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="fb-' + esc(p.id) + '" checked> Facebook</label>')
         + (meta.has_ig && !p.ig_media_id ? '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="ig-' + esc(p.id) + '" checked> Instagram</label>' : '')
         + '</div>' : '')
-    + (logoUrl ? '<label class="tick" style="margin-top:10px;font-weight:500"><input type="checkbox" id="lg-' + esc(p.id) + '"'
-        + (settings.logo_corner !== 'off' ? ' checked' : '') + '> 🏫 Add school logo to the photos</label>' : '')
     + '<div class="actions">'
     +   '<button class="btn btn-gold btn-sm" onclick="sharePost(\'' + esc(p.id) + '\')">📤 Share (phone)</button>'
     +   '<button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy post text</button>'
-    +   '<button class="btn btn-secondary btn-sm" onclick="downloadPhotos(\'' + esc(p.id) + '\')">⬇ Download photos</button>'
+    +   '<button class="btn btn-secondary btn-sm" onclick="downloadPhotos(\'' + esc(p.id) + '\')">⬇ Download</button>'
     +   (p.sent_gallery ? '<span class="pill st-posted" style="align-self:center">📸 In Parent Gallery</span>'
                         : '<button class="btn btn-secondary btn-sm" onclick="toGallery(\'' + esc(p.id) + '\')">📸 Send to Parent Gallery</button>')
     +   (canFull ? '<button class="btn btn-primary btn-sm" onclick="markPosted(\'' + esc(p.id) + '\')">✓ I have posted it</button>' : '')
@@ -537,19 +555,14 @@ async function copyText(id) {
 }
 
 async function photoFiles(p) {
+  const out = await buildOutput(p);
+  const base = (p.title || 'school-post').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'school-post';
+  if (out.kind === 'video') return [new File([out.blob], base + '-reel.mp4', { type: 'video/mp4' })];
   const files = [];
-  const logo = wantLogo(p.id);
-  for (let i = 0; i < (p.photos || []).length; i++) {
-    if (logo) {
-      const d = await renderPhoto(p.photos[i], 'orig', true);
-      const b = await (await fetch(d)).blob();
-      files.push(new File([b], 'post-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
-      continue;
-    }
-    const r = await fetch(p.photos[i]);
+  for (let i = 0; i < out.items.length; i++) {
+    const r = await fetch(out.items[i]);
     if (!r.ok) throw new Error('Could not fetch photo ' + (i + 1));
-    const b = await r.blob();
-    files.push(new File([b], 'post-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
+    files.push(new File([await r.blob()], base + '-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
   }
   return files;
 }
@@ -561,7 +574,7 @@ async function downloadPhotos(id) {
     hideLoading();
     files.forEach((f, i) => setTimeout(() => {
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(f); a.download = (p.title || 'school-post').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') + '-' + (i + 1) + '.jpg';
+      a.href = URL.createObjectURL(f); a.download = f.name;
       document.body.appendChild(a); a.click(); a.remove();
     }, i * 400));
   } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
@@ -825,6 +838,105 @@ async function showLogoPreview() {
   catch (e) { help.textContent = '⚠️ ' + e.message; }
 }
 
+// ── Designs: Photos · Framed · Collage · Reel ──
+const styles = {}, musics = {}, ownMusic = {}, outCache = {};
+function styleOf(id) { return styles[id] || 'photos'; }
+function styleRow(p) {
+  const id = esc(p.id), st = styleOf(p.id), n = (p.photos || []).length;
+  const chip = (v, label) => '<label class="chip' + (st === v ? ' on' : '') + '"><input type="radio" name="st-' + id + '" value="' + v + '"'
+    + (st === v ? ' checked' : '') + ' onchange="setStyle(\'' + id + '\',this.value)">' + label + '</label>';
+  const mu = musics[p.id] || 'happy-morning';
+  return '<div class="style-row"><b style="font-size:12px;margin-right:4px">🎨 Style</b>'
+    + chip('photos', '📷 Photos') + chip('framed', '🖼 Framed') + (n > 1 ? chip('collage', '🧩 Collage') : '') + chip('reel', '🎬 Reel + music')
+    + '<button class="btn btn-secondary btn-sm" style="margin-left:auto" onclick="previewPost(\'' + id + '\')">👁 Preview</button>'
+    + '<div id="reelopt-' + id + '" style="width:100%;' + (st === 'reel' ? '' : 'display:none;') + 'margin-top:6px">'
+    + '<span style="font-size:12px;font-weight:600">🎵 Music </span><select class="form-control" style="display:inline-block;width:auto;padding:5px 8px" id="mu-' + id + '" onchange="setMusic(\'' + id + '\',this.value)">'
+    + SD.MUSIC.map(m => '<option value="' + m.id + '"' + (mu === m.id ? ' selected' : '') + '>' + esc(m.name) + '</option>').join('')
+    + '<option value="none"' + (mu === 'none' ? ' selected' : '') + '>🔇 No music</option>'
+    + '<option value="own"' + (mu === 'own' ? ' selected' : '') + '>📁 My own MP3…</option></select>'
+    + '<input type="file" accept="audio/*" id="mf-' + id + '" style="display:none" onchange="ownMusicPicked(\'' + id + '\',this)">'
+    + '<div class="help" style="margin-top:4px">A ' + Math.round(2.4 + n * 2.8 + 3) + '-second Reel: school intro → each photo with gentle zoom → "Admissions Open" ending. Use only music you have the right to use — film songs get muted by Instagram.</div>'
+    + '</div></div>';
+}
+function setStyle(id, v) {
+  styles[id] = v; outCache[id] = null;
+  document.querySelectorAll('input[name="st-' + id + '"]').forEach(r => r.parentElement.classList.toggle('on', r.value === v));
+  const ro = document.getElementById('reelopt-' + id); if (ro) ro.style.display = v === 'reel' ? '' : 'none';
+  const lg = document.getElementById('lgrow-' + id); if (lg) lg.style.display = v === 'photos' ? '' : 'none';
+}
+function setMusic(id, v) {
+  musics[id] = v; outCache[id] = null;
+  if (v === 'own') document.getElementById('mf-' + id).click();
+}
+async function ownMusicPicked(id, el) {
+  const f = el.files && el.files[0];
+  if (!f) return;
+  if (f.size > 15 * 1024 * 1024) { showToast('⚠️ That music file is too big (max 15 MB).', 'error'); return; }
+  ownMusic[id] = await f.arrayBuffer(); outCache[id] = null;
+  showToast('Music added: ' + f.name, 'success');
+}
+function musicSource(id) {
+  const m = musics[id] || 'happy-morning';
+  if (m === 'none') return null;
+  if (m === 'own') { if (!ownMusic[id]) throw new Error('Please choose your MP3 file, or pick another music.'); return ownMusic[id]; }
+  return '../assets/music/' + m + '.mp3';
+}
+function niceDate(p) {
+  try { return new Date(p.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return ''; }
+}
+// Build what will be posted: { kind:'photos'|'images', items:[url or data URL] } or { kind:'video', blob }
+async function buildOutput(p) {
+  const st = styleOf(p.id);
+  const key = st + '|' + (st === 'photos' ? wantLogo(p.id) : '') + '|' + (st === 'reel' ? (musics[p.id] || 'happy-morning') : '');
+  if (outCache[p.id] && outCache[p.id].key === key) return outCache[p.id].out;
+  const title = p.title || p.class_name || '';
+  let out;
+  if (st === 'framed') {
+    const items = [];
+    for (let i = 0; i < p.photos.length; i++) { showLoading('Designing photo ' + (i + 1) + ' of ' + p.photos.length + '…'); items.push(await SD.framed(p.photos[i], title)); }
+    out = { kind: 'images', items };
+  } else if (st === 'collage') {
+    showLoading('Designing the collage…');
+    out = { kind: 'images', items: [await SD.collage(p.photos, title, niceDate(p))] };
+  } else if (st === 'reel') {
+    const music = musicSource(p.id);
+    const blob = await SD.reel(p.photos, { title, dateText: niceDate(p), music, onProgress: (pc, msg) => showLoading('🎬 ' + msg) });
+    out = { kind: 'video', blob };
+  } else {
+    const items = [];
+    const logo = wantLogo(p.id);
+    for (let i = 0; i < p.photos.length; i++) {
+      if (logo) { showLoading('Adding the school logo to photo ' + (i + 1) + '…'); items.push(await renderPhoto(p.photos[i], 'orig', true)); }
+      else items.push(p.photos[i]);
+    }
+    out = { kind: 'photos', items };
+  }
+  hideLoading();
+  outCache[p.id] = { key, out };
+  return out;
+}
+async function previewPost(id) {
+  const p = postById(id);
+  try {
+    if (styleOf(id) === 'reel') { const sup = await SD.reelSupport(!!musicSource(id)); if (!sup.ok) throw new Error(sup.reason); }
+    const out = await buildOutput(p);
+    hideLoading();
+    const body = document.getElementById('pv-body');
+    document.getElementById('pv-title').textContent = { photos: '📷 Photos', framed: '🖼 Framed photos', collage: '🧩 Collage', reel: '🎬 Reel' }[styleOf(id)] + ' — preview';
+    if (out.kind === 'video') {
+      const u = URL.createObjectURL(out.blob);
+      body.innerHTML = '<video src="' + u + '" controls autoplay playsinline></video><div class="help" style="margin-top:6px;text-align:center">' + Math.round(out.blob.size / 1024 / 1024 * 10) / 10 + ' MB · this is exactly what will be posted</div>';
+    } else {
+      body.innerHTML = '<div class="imgs">' + out.items.map(u => '<img src="' + esc(u) + '" alt="">').join('') + '</div>';
+    }
+    document.getElementById('pv').style.display = 'flex';
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+function closePreview() {
+  const v = document.querySelector('#pv video'); if (v) v.pause();
+  document.getElementById('pv').style.display = 'none';
+}
+
 async function publishPost(id) {
   const p = postById(id);
   const fbBox = document.getElementById('fb-' + id), igBox = document.getElementById('ig-' + id);
@@ -832,7 +944,18 @@ async function publishPost(id) {
   const toIg = !!(igBox && igBox.checked);
   if (!toFb && !toIg) { showToast('⚠️ Tick Facebook and/or Instagram.', 'error'); return; }
   if (!confirmAction('Post this now to ' + [toFb && 'Facebook', toIg && 'Instagram'].filter(Boolean).join(' and ') + '? Everyone will be able to see it.')) return;
+  const st = styleOf(id);
+  if (st === 'reel') return publishReel(p, toFb, toIg);
   try {
+    if (st === 'framed' || st === 'collage') {
+      const out = await buildOutput(p);
+      const urls = [];
+      for (let i = 0; i < out.items.length; i++) {
+        showLoading('Uploading design ' + (i + 1) + ' of ' + out.items.length + '…');
+        urls.push((await call('photo', { data_url: out.items[i] })).url);
+      }
+      return sendPublish(id, { to_fb: toFb, to_ig: toIg, fb_photos: urls, ig_photos: urls });  // 4:5 — fine for Instagram as is
+    }
     const logo = wantLogo(id);
     let igPhotos = [], fbPhotos = [];
     if (toFb && logo) {
@@ -849,15 +972,45 @@ async function publishPost(id) {
         igPhotos.push(copy ? (await call('photo', { data_url: copy })).url : p.photos[i]);
       }
     }
-    showLoading('Posting… (up to a minute)');
-    let d;
-    try { d = await metaCall('publish', { id, to_fb: toFb, to_ig: toIg, fb_photos: fbPhotos, ig_photos: igPhotos }); }
-    catch (e) { d = e.data || { ok: false, error: e.message }; }
-    hideLoading();
-    const done = [d.fb && 'Facebook', d.ig && 'Instagram'].filter(Boolean);
-    if (done.length) showToast('🎉 Posted to ' + done.join(' and ') + '.' + (d.fb_error || d.ig_error ? ' Problem: ' + (d.fb_error || d.ig_error) : ''), d.fb_error || d.ig_error ? 'error' : 'success');
-    else showToast('⚠️ Not posted: ' + (d.error || d.fb_error || d.ig_error || 'unknown problem'), 'error');
-    await loadPosts();
+    return sendPublish(id, { to_fb: toFb, to_ig: toIg, fb_photos: fbPhotos, ig_photos: igPhotos });
+  } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
+}
+
+async function sendPublish(id, extra) {
+  showLoading('Posting… (up to a minute)');
+  let d;
+  try { d = await metaCall('publish', Object.assign({ id }, extra)); }
+  catch (e) { d = e.data || { ok: false, error: e.message }; }
+  if (d.ig_pending) {                      // Instagram needs a minute or two to prepare a Reel
+    for (let i = 0; i < 60; i++) {
+      showLoading('Instagram is preparing the Reel… (' + (i * 5) + ' s, usually 1–3 minutes)');
+      await new Promise(r => setTimeout(r, 5000));
+      let c;
+      try { c = await metaCall('reel_check', { id, fb_wanted: extra.to_fb !== false }); }
+      catch (e) { c = e.data || { ok: false, error: e.message }; }
+      if (c.pending) continue;
+      if (c.ok) d.ig = c.ig || true; else d.ig_error = c.error || 'Instagram could not prepare the Reel.';
+      break;
+    }
+    if (!d.ig && !d.ig_error) d.ig_error = 'Instagram is still preparing it — check again in a few minutes (press Post now again).';
+  }
+  hideLoading();
+  const done = [d.fb && 'Facebook', d.ig && 'Instagram'].filter(Boolean);
+  if (done.length) showToast('🎉 Posted to ' + done.join(' and ') + '.' + (d.fb_error || d.ig_error ? ' Problem: ' + (d.fb_error || d.ig_error) : ''), d.fb_error || d.ig_error ? 'error' : 'success');
+  else showToast('⚠️ Not posted: ' + (d.error || d.fb_error || d.ig_error || 'unknown problem'), 'error');
+  await loadPosts();
+}
+
+async function publishReel(p, toFb, toIg) {
+  try {
+    const sup = await SD.reelSupport(!!musicSource(p.id));
+    if (!sup.ok) throw new Error(sup.reason);
+    const out = await buildOutput(p);
+    showLoading('Uploading the Reel (' + Math.round(out.blob.size / 1024 / 1024 * 10) / 10 + ' MB)…');
+    const u = await call('video_url');
+    const r = await fetch(u.upload_url, { method: 'PUT', headers: { 'Content-Type': 'video/mp4', 'x-upsert': 'true' }, body: out.blob });
+    if (!r.ok) throw new Error('Could not upload the Reel (' + r.status + '): ' + (await r.text()).slice(0, 120));
+    return sendPublish(p.id, { to_fb: toFb, to_ig: toIg, video_url: u.public_url });
   } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
 }
 
@@ -871,6 +1024,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     level = info.level;
     settings = info.settings;
     logoUrl = info.logo_url || '';
+    if (window.SD) SD.init({ logoUrl, school: info.school || {} });
   } catch (e) {
     const box = document.getElementById('not-on');
     box.classList.remove('hidden');
