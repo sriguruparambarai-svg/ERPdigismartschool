@@ -169,6 +169,18 @@ textarea.form-control{font-family:inherit}
               <option value="both">English + Tamil</option>
               <option value="en">English only</option>
             </select>
+            <div class="lbl">School logo on photos</div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <select id="s-logo" class="form-control" style="max-width:260px" onchange="showLogoPreview()">
+                <option value="br">Yes — bottom right</option>
+                <option value="bl">Yes — bottom left</option>
+                <option value="tr">Yes — top right</option>
+                <option value="tl">Yes — top left</option>
+                <option value="off">No logo</option>
+              </select>
+              <canvas id="logo-preview" width="240" height="160" style="border-radius:8px;border:1px solid var(--border);max-width:180px"></canvas>
+            </div>
+            <div class="help" id="logo-help" style="margin-top:6px">A small logo is added to every photo when it is posted, shared or downloaded. The photos saved in ERP stay as they were. You can untick it for one post (e.g. a banner that already has the logo).</div>
           </div>
           <button class="btn btn-gold mt-3" onclick="saveSettings()">✓ Save list and settings</button>
         </div>
@@ -395,6 +407,8 @@ function readyCard(p) {
         + (p.fb_post_id ? '' : '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="fb-' + esc(p.id) + '" checked> Facebook</label>')
         + (meta.has_ig && !p.ig_media_id ? '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="ig-' + esc(p.id) + '" checked> Instagram</label>' : '')
         + '</div>' : '')
+    + (logoUrl ? '<label class="tick" style="margin-top:10px;font-weight:500"><input type="checkbox" id="lg-' + esc(p.id) + '"'
+        + (settings.logo_corner !== 'off' ? ' checked' : '') + '> 🏫 Add school logo to the photos</label>' : '')
     + '<div class="actions">'
     +   '<button class="btn btn-gold btn-sm" onclick="sharePost(\'' + esc(p.id) + '\')">📤 Share (phone)</button>'
     +   '<button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy post text</button>'
@@ -457,7 +471,7 @@ function renderPosts() {
   const wait = posts.filter(p => p.status === 'draft' || p.status === 'rejected');
   const ready = posts.filter(p => p.status === 'approved');
   const done = posts.filter(p => p.status === 'posted');
-  document.getElementById('cnt-wait').textContent = posts.filter(p => p.status === 'draft').length;
+  document.getElementById('cnt-wait').textContent = wait.length;
   document.getElementById('cnt-ready').textContent = ready.length;
   document.getElementById('wait-help').innerHTML = level === 'full'
     ? 'Read each post. Change any words if needed, then tap <b>✓ Approve</b>. Tap <b>✨ Write again</b> for a fresh version.'
@@ -524,7 +538,14 @@ async function copyText(id) {
 
 async function photoFiles(p) {
   const files = [];
+  const logo = wantLogo(p.id);
   for (let i = 0; i < (p.photos || []).length; i++) {
+    if (logo) {
+      const d = await renderPhoto(p.photos[i], 'orig', true);
+      const b = await (await fetch(d)).blob();
+      files.push(new File([b], 'post-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
+      continue;
+    }
     const r = await fetch(p.photos[i]);
     if (!r.ok) throw new Error('Could not fetch photo ' + (i + 1));
     const b = await r.blob();
@@ -641,7 +662,8 @@ async function saveSettings() {
       no_photo_ids: Array.from(noPhoto),
       footer_line: document.getElementById('s-footer').value,
       hashtags: document.getElementById('s-tags').value,
-      language: document.getElementById('s-lang').value
+      language: document.getElementById('s-lang').value,
+      logo_corner: document.getElementById('s-logo').value
     });
     settings = res.settings;
     hideLoading();
@@ -712,26 +734,95 @@ async function disconnectMeta() {
 function loadImg(src) {
   return new Promise((ok, bad) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => ok(i); i.onerror = () => bad(new Error('Could not load a photo.')); i.src = src; });
 }
-async function instagramCopy(url, square) {
+// ── School logo on photos ──
+let logoUrl = '';
+let logoImg = null;
+function wantLogo(id) {
+  if (!logoUrl) return false;
+  const el = document.getElementById('lg-' + id);
+  return el ? el.checked : settings.logo_corner !== 'off';
+}
+async function getLogo() {
+  if (!logoImg) logoImg = await loadImg(logoUrl).catch(() => { throw new Error('Could not load the school logo. Check it in I-Card settings.'); });
+  return logoImg;
+}
+// Draw the logo in the chosen corner on a light badge so it shows on any photo
+function drawLogo(x, W, H, logo, corner) {
+  const side = Math.min(W, H);
+  const box = Math.max(28, Math.round(side * 0.14));
+  const m = Math.round(side * 0.03);
+  const r = logo.width / logo.height;
+  const round = r > 0.85 && r < 1.18;
+  let bw = box, bh = box;
+  if (!round) { if (r > 1) bh = Math.round(box / Math.min(r, 3)); else bw = Math.round(box * Math.max(r, 0.4)); }
+  const pad = Math.round(box * 0.08);
+  const bx = corner[1] === 'l' ? m : W - m - bw - pad * 2;
+  const by = corner[0] === 't' ? m : H - m - bh - pad * 2;
+  x.save();
+  x.shadowColor = 'rgba(0,0,0,0.30)'; x.shadowBlur = Math.round(box * 0.12); x.shadowOffsetY = Math.round(box * 0.03);
+  x.fillStyle = 'rgba(255,255,255,0.94)';
+  x.beginPath();
+  if (round) x.arc(bx + pad + bw / 2, by + pad + bh / 2, bw / 2 + pad, 0, Math.PI * 2);
+  else if (x.roundRect) x.roundRect(bx, by, bw + pad * 2, bh + pad * 2, Math.round(box * 0.14));
+  else x.rect(bx, by, bw + pad * 2, bh + pad * 2);
+  x.fill();
+  x.restore();
+  const s = Math.min(bw / logo.width, bh / logo.height);
+  const lw = logo.width * s, lh = logo.height * s;
+  x.drawImage(logo, bx + pad + (bw - lw) / 2, by + pad + (bh - lh) / 2, lw, lh);
+}
+// mode: 'orig' = same shape · 'ig' = Instagram-allowed shape · 'square' = square (carousel)
+// Returns a new photo (data URL), or null when nothing needs changing.
+async function renderPhoto(url, mode, logo) {
   const img = await loadImg(url);
   const r = img.width / img.height;
-  let W = 1080, H = 1080;
-  if (!square) {
-    if (r >= 0.8 && r <= 1.91) return null;          // already fine — use the original
-    if (r < 0.8) { W = 1080; H = 1350; } else { W = 1080; H = 566; }
+  let W, H, fit = true;
+  if (mode === 'square') { W = 1080; H = 1080; }
+  else if (mode === 'ig' && r < 0.8) { W = 1080; H = 1350; }
+  else if (mode === 'ig' && r > 1.91) { W = 1080; H = 566; }
+  else {
+    if (!logo) return null;                          // already fine — use the original
+    const k = Math.min(1, 1440 / Math.max(img.width, img.height));
+    W = Math.round(img.width * k); H = Math.round(img.height * k); fit = false;
   }
   const c = document.createElement('canvas'); c.width = W; c.height = H;
   const x = c.getContext('2d');
-  x.fillStyle = '#F5E6C8'; x.fillRect(0, 0, W, H);
-  try {                                                // blurred fill behind
-    x.filter = 'blur(28px) brightness(0.9)';
-    const cs = Math.max(W / img.width, H / img.height);
-    x.drawImage(img, (W - img.width * cs) / 2, (H - img.height * cs) / 2, img.width * cs, img.height * cs);
-    x.filter = 'none';
-  } catch (e) {}
-  const s = Math.min(W / img.width, H / img.height);
-  x.drawImage(img, (W - img.width * s) / 2, (H - img.height * s) / 2, img.width * s, img.height * s);
+  if (fit) {
+    x.fillStyle = '#F5E6C8'; x.fillRect(0, 0, W, H);
+    try {                                              // blurred fill behind — nothing is cut off
+      x.filter = 'blur(28px) brightness(0.9)';
+      const cs = Math.max(W / img.width, H / img.height);
+      x.drawImage(img, (W - img.width * cs) / 2, (H - img.height * cs) / 2, img.width * cs, img.height * cs);
+      x.filter = 'none';
+    } catch (e) {}
+    const s = Math.min(W / img.width, H / img.height);
+    x.drawImage(img, (W - img.width * s) / 2, (H - img.height * s) / 2, img.width * s, img.height * s);
+  } else {
+    x.drawImage(img, 0, 0, W, H);
+  }
+  if (logo) drawLogo(x, W, H, await getLogo(), settings.logo_corner === 'off' ? 'br' : settings.logo_corner);
   return c.toDataURL('image/jpeg', 0.88);
+}
+async function instagramCopy(url, square, logo) { return renderPhoto(url, square ? 'square' : 'ig', !!logo); }
+
+// Settings preview: a sample photo with the logo in the chosen corner
+async function showLogoPreview() {
+  const cv = document.getElementById('logo-preview');
+  const help = document.getElementById('logo-help');
+  if (!cv) return;
+  const x = cv.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 240, 160);
+  g.addColorStop(0, '#9CC3A0'); g.addColorStop(1, '#E8C99A');
+  x.fillStyle = g; x.fillRect(0, 0, 240, 160);
+  x.fillStyle = 'rgba(255,255,255,0.5)'; x.font = '600 13px sans-serif'; x.fillText('Sample photo', 76, 84);
+  if (!logoUrl) {
+    help.innerHTML = '⚠️ No school logo found. Add your logo in <b>I-Card → Settings</b> first, then come back here.';
+    return;
+  }
+  const v = document.getElementById('s-logo').value;
+  if (v === 'off') return;
+  try { drawLogo(x, 240, 160, await getLogo(), v); }
+  catch (e) { help.textContent = '⚠️ ' + e.message; }
 }
 
 async function publishPost(id) {
@@ -742,18 +833,25 @@ async function publishPost(id) {
   if (!toFb && !toIg) { showToast('⚠️ Tick Facebook and/or Instagram.', 'error'); return; }
   if (!confirmAction('Post this now to ' + [toFb && 'Facebook', toIg && 'Instagram'].filter(Boolean).join(' and ') + '? Everyone will be able to see it.')) return;
   try {
-    let igPhotos = [];
+    const logo = wantLogo(id);
+    let igPhotos = [], fbPhotos = [];
+    if (toFb && logo) {
+      for (let i = 0; i < p.photos.length; i++) {
+        showLoading('Adding the school logo to photo ' + (i + 1) + ' of ' + p.photos.length + '…');
+        fbPhotos.push((await call('photo', { data_url: await renderPhoto(p.photos[i], 'orig', true) })).url);
+      }
+    }
     if (toIg) {
       const square = p.photos.length > 1;
       for (let i = 0; i < p.photos.length; i++) {
         showLoading('Preparing photo ' + (i + 1) + ' of ' + p.photos.length + ' for Instagram…');
-        const copy = await instagramCopy(p.photos[i], square);
+        const copy = await instagramCopy(p.photos[i], square, logo);
         igPhotos.push(copy ? (await call('photo', { data_url: copy })).url : p.photos[i]);
       }
     }
     showLoading('Posting… (up to a minute)');
     let d;
-    try { d = await metaCall('publish', { id, to_fb: toFb, to_ig: toIg, ig_photos: igPhotos }); }
+    try { d = await metaCall('publish', { id, to_fb: toFb, to_ig: toIg, fb_photos: fbPhotos, ig_photos: igPhotos }); }
     catch (e) { d = e.data || { ok: false, error: e.message }; }
     hideLoading();
     const done = [d.fb && 'Facebook', d.ig && 'Instagram'].filter(Boolean);
@@ -772,6 +870,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const info = await call('info');
     level = info.level;
     settings = info.settings;
+    logoUrl = info.logo_url || '';
   } catch (e) {
     const box = document.getElementById('not-on');
     box.classList.remove('hidden');
@@ -792,6 +891,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('s-footer').value = settings.footer_line || '';
   document.getElementById('s-tags').value = settings.hashtags || '';
   document.getElementById('s-lang').value = settings.language || 'both';
+  document.getElementById('s-logo').value = settings.logo_corner || 'br';
+  showLogoPreview();
   renderNoPhotoBox();
   // Student names are needed for the "No photos" warning on new posts
   if ((settings.no_photo_ids || []).length) loadStudents();
