@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js"></script>
 <script src="../js/social-designer.js"></script>
 <style>
+.btn-wa{background:#1E8E3E;color:#fff;border:0}.btn-wa:hover{background:#17752F}
 .style-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;background:#FDF8F0;border:1px solid var(--border);border-radius:10px}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1px solid var(--border);border-radius:18px;background:#fff;font-size:12px;font-weight:600;cursor:pointer;user-select:none}
 .chip input{display:none}
@@ -175,6 +176,8 @@ textarea.form-control{font-family:inherit}
             <div class="card-title">Post settings</div>
             <div class="lbl">Line added at the end of every post</div>
             <input id="s-footer" class="form-control" maxlength="300">
+            <div class="lbl">Owner / admin WhatsApp number <span style="font-weight:400;color:var(--text-light)">(for "📲 Send to my WhatsApp")</span></div>
+            <input id="s-wa" class="form-control" type="tel" maxlength="14" placeholder="10-digit number" style="max-width:260px">
             <div class="lbl">Extra hashtags for every post <span style="font-weight:400;color:var(--text-light)">(optional)</span></div>
             <input id="s-tags" class="form-control" maxlength="300" placeholder="#ARKGlobalSchool #Mayiladuthurai">
             <div class="lbl">Language</div>
@@ -429,6 +432,7 @@ function readyCard(p) {
         + '</div>' : '')
     + '<div class="actions">'
     +   '<button class="btn btn-gold btn-sm" onclick="sharePost(\'' + esc(p.id) + '\')">📤 Share (phone)</button>'
+    +   (canFull ? '<button class="btn btn-sm btn-wa" onclick="sendToWhatsApp(\'' + esc(p.id) + '\')">📲 Send to my WhatsApp</button>' : '')
     +   '<button class="btn btn-secondary btn-sm" onclick="copyText(\'' + esc(p.id) + '\')">📋 Copy post text</button>'
     +   '<button class="btn btn-secondary btn-sm" onclick="downloadPhotos(\'' + esc(p.id) + '\')">⬇ Download</button>'
     +   (p.sent_gallery ? '<span class="pill st-posted" style="align-self:center">📸 In Parent Gallery</span>'
@@ -674,6 +678,7 @@ async function saveSettings() {
     const res = await call('save_settings', {
       no_photo_ids: Array.from(noPhoto),
       footer_line: document.getElementById('s-footer').value,
+      owner_whatsapp: document.getElementById('s-wa').value,
       hashtags: document.getElementById('s-tags').value,
       language: document.getElementById('s-lang').value,
       logo_corner: document.getElementById('s-logo').value
@@ -976,6 +981,54 @@ async function publishPost(id) {
   } catch (e) { hideLoading(); showToast('⚠️ ' + e.message, 'error'); }
 }
 
+// ── Send to the owner's WhatsApp (free) ──
+// Phone: the share screen opens with the finished files — pick WhatsApp → your chat.
+// Computer: WhatsApp Web opens to the owner's number with the text and download links.
+function isPhone() { return /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent); }
+async function sendToWhatsApp(id) {
+  const p = postById(id);
+  const num = (settings.owner_whatsapp || '').replace(/\D/g, '');
+  const text = fullText(p);
+  try {
+    if (styleOf(id) === 'reel') { const sup = await SD.reelSupport(!!musicSource(id)); if (!sup.ok) throw new Error(sup.reason); }
+    if (isPhone() && navigator.canShare) {
+      const files = await photoFiles(p);
+      hideLoading();
+      if (navigator.canShare({ files })) {
+        try { await navigator.clipboard.writeText(text); } catch (e) {}
+        showToast('Choose WhatsApp → ' + (num ? 'your chat (+91 ' + num + ')' : '"You (Message yourself)"') + '. The text is copied — paste it if it does not appear.', 'success');
+        await navigator.share({ files, text });
+        return;
+      }
+    }
+    // Computer (or a phone that cannot share files): links in a WhatsApp message
+    const out = await buildOutput(p);
+    const links = [];
+    if (out.kind === 'video') {
+      showLoading('Uploading the Reel for WhatsApp…');
+      const u = await call('video_url');
+      const r = await fetch(u.upload_url, { method: 'PUT', headers: { 'Content-Type': 'video/mp4', 'x-upsert': 'true' }, body: out.blob });
+      if (!r.ok) throw new Error('Could not upload the Reel (' + r.status + ').');
+      links.push(u.public_url);
+    } else {
+      for (let i = 0; i < out.items.length; i++) {
+        const it = out.items[i];
+        if (/^data:/.test(it)) { showLoading('Uploading picture ' + (i + 1) + ' of ' + out.items.length + '…'); links.push((await call('photo', { data_url: it })).url); }
+        else links.push(it);
+      }
+    }
+    try { await call('add_files', { id, urls: links }); } catch (e) {}
+    hideLoading();
+    const label = out.kind === 'video' ? '🎬 Reel (tap to download, then forward):' : (links.length > 1 ? '📷 Photos (tap each to download):' : '📷 Picture (tap to download):');
+    const msg = text + '\n\n' + label + '\n' + links.join('\n');
+    if (!num) showToast('Tip: save the owner WhatsApp number in Settings to open that chat directly.', 'success');
+    window.open('https://wa.me/' + (num ? '91' + num : '') + '?text=' + encodeURIComponent(msg), '_blank');
+  } catch (e) {
+    hideLoading();
+    if (e && e.name !== 'AbortError') showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
 async function sendPublish(id, extra) {
   showLoading('Posting… (up to a minute)');
   let d;
@@ -1043,6 +1096,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   noPhoto = new Set(settings.no_photo_ids || []);
   document.getElementById('s-footer').value = settings.footer_line || '';
+  document.getElementById('s-wa').value = settings.owner_whatsapp || '';
   document.getElementById('s-tags').value = settings.hashtags || '';
   document.getElementById('s-lang').value = settings.language || 'both';
   document.getElementById('s-logo').value = settings.logo_corner || 'br';
