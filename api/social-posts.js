@@ -200,7 +200,8 @@ async function getSettings(sid) {
     footer_line: s.footer_line != null ? s.footer_line : '📢 Admissions open! Tap the link in our bio to enquire.',
     hashtags: s.hashtags || '',
     language: s.language || 'both',
-    logo_corner: ['off', 'br', 'bl', 'tr', 'tl'].indexOf(s.logo_corner) !== -1 ? s.logo_corner : 'br'
+    logo_corner: ['off', 'br', 'bl', 'tr', 'tl'].indexOf(s.logo_corner) !== -1 ? s.logo_corner : 'br',
+    owner_whatsapp: s.owner_whatsapp || ''
   };
 }
 
@@ -316,7 +317,7 @@ module.exports = async (req, res) => {
     }
 
     // ── Everything below works on one post of this school ──
-    if (['rewrite', 'edit', 'approve', 'reject', 'posted', 'gallery_done', 'remove'].indexOf(action) !== -1) {
+    if (['rewrite', 'edit', 'approve', 'reject', 'posted', 'gallery_done', 'remove', 'add_files'].indexOf(action) !== -1) {
       if (!isId(body.id)) return res.status(400).json({ ok: false, error: 'Invalid post.' });
       const post = ((await sb('GET', 'social_posts?id=eq.' + enc(body.id) + '&' + mine + '&select=*&limit=1')) || [])[0];
       if (!post) return res.status(404).json({ ok: false, error: 'Post not found.' });
@@ -356,6 +357,13 @@ module.exports = async (req, res) => {
         if (post.status !== 'approved' && post.status !== 'posted') return res.status(400).json({ ok: false, error: 'Approve the post first.' });
         return patchAndReturn({ status: 'posted', posted_at: now });
       }
+      if (action === 'add_files') {
+        // Copies uploaded for WhatsApp links — remembered so deleting the post removes them too
+        if (needFull()) return;
+        const add = (Array.isArray(body.urls) ? body.urls : []).filter(u => { const k = pathFromUrl(u); return k && k.startsWith(sid + '/'); }).slice(0, 12);
+        const extra = Array.from(new Set((post.extra_files || []).concat(add))).filter(u => (post.photos || []).indexOf(u) === -1).slice(-60);
+        return patchAndReturn({ extra_files: extra });
+      }
       if (action === 'gallery_done') {
         return patchAndReturn({ sent_gallery: true });
       }
@@ -382,6 +390,13 @@ module.exports = async (req, res) => {
         hashtags: str(body.hashtags, 300), language: lang, updated_at: new Date().toISOString()
       };
       if (['off', 'br', 'bl', 'tr', 'tl'].indexOf(body.logo_corner) !== -1) row.logo_corner = body.logo_corner;
+      if (body.owner_whatsapp !== undefined) {
+        let d = String(body.owner_whatsapp || '').replace(/\D/g, '');
+        if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+        if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+        if (d && !/^[6-9]\d{9}$/.test(d)) return res.status(400).json({ ok: false, error: 'Please enter a correct 10-digit WhatsApp number.' });
+        row.owner_whatsapp = d;
+      }
       await sb('POST', 'social_settings?on_conflict=school_id', row, { Prefer: 'resolution=merge-duplicates,return=representation' });
       return res.status(200).json({ ok: true, settings: await getSettings(sid) });
     }
