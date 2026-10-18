@@ -13,7 +13,10 @@
 //   photo     { data_url }                         → { ok, url }
 //   video_url {}                                   → { ok, upload_url, public_url }  (Reels: the browser
 //             uploads the finished MP4 straight to storage — too big for this door)
-//   create    { class_name, note, photos[], checked }  → { ok, row }
+//   clip_url  {}                                   → { ok, upload_url, public_url }  (a class video from
+//             teachers or the principal — shrunk and given the logo in the browser first)
+//   create    { class_name, note, photos[], checked, video?, video_seconds? }  → { ok, row }
+//             video posts: photos[] are 4 still pictures from the video, for the AI and the list
 //             teacher upload → status 'photos' (no AI); principal upload → AI writes it → 'draft'
 //   rewrite   { id, hint? }                        → AI writes / writes again (principal) → { ok, row }
 //   list      {}                                   → { ok, rows }
@@ -21,8 +24,10 @@
 //   approve   { id } | reject { id, note } | posted { id } | gallery_done { id }
 //   remove    { id }                               → deletes the post and its photos
 //   students  {}                                   → active students for the no-photo list
-//   save_settings { no_photo_ids[], footer_line, hashtags, language }
+//   save_settings { no_photo_ids[], footer_line, hashtags, language, video_keep_days? }
 //   cleanup   { cron_secret }                      → photos of finished posts after 90 days
+//   video_cleanup { cron_secret }                  → class videos, N days after posting (school's choice,
+//             1 week by default); videos never posted go after 30 days (or N, if longer)
 
 const crypto = require('crypto');
 
@@ -30,6 +35,9 @@ const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const BUCKET = 'social-posts';
 const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 900 * 1024;   // browser shrinks to ~250KB
+const MAX_VIDEO_BYTES = 60 * 1024 * 1024;  // a 60-second class video is ~20MB after the browser shrinks it
+const MAX_VIDEO_SECONDS = 60;
+const KEEP_DAYS = [3, 7, 15, 30, 90];       // how long a school keeps its videos after posting
 // Newest model first; the older one is a safety net if the first is unavailable
 const AI_MODELS = [process.env.SOCIAL_AI_MODEL || 'claude-sonnet-5-5', 'claude-sonnet-4-5'];
 // photos = teacher's upload, not written yet · draft = AI written, principal checking
@@ -130,6 +138,9 @@ async function writeCaption(post, school, settings, hint) {
     + 'School: ' + (school.name || 'our school') + (school.city ? ', ' + school.city : '') + '\n'
     + 'Class in the photos: ' + (post.class_name || 'whole school') + '\n'
     + (post.note ? 'What the teacher says happened: ' + post.note + '\n' : '')
+    + (post.own_video ? 'These pictures are still frames taken from one short video'
+        + (post.video_seconds ? ' (' + Math.round(post.video_seconds) + ' seconds)' : '')
+        + ' that will be posted as a Reel. Write about the video, not about "photos".\n' : '')
     + (hint ? 'Change requested by the principal: ' + hint + '\n' : '')
     + '\nLook at the photos and write ONE post about what the children are doing and learning.\n'
     + 'Rules:\n'
@@ -201,7 +212,8 @@ async function getSettings(sid) {
     hashtags: s.hashtags || '',
     language: s.language || 'both',
     logo_corner: ['off', 'br', 'bl', 'tr', 'tl'].indexOf(s.logo_corner) !== -1 ? s.logo_corner : 'br',
-    owner_whatsapp: s.owner_whatsapp || ''
+    owner_whatsapp: s.owner_whatsapp || '',
+    video_keep_days: KEEP_DAYS.indexOf(Number(s.video_keep_days)) !== -1 ? Number(s.video_keep_days) : 7
   };
 }
 
@@ -240,6 +252,32 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, cleaned: old.length });
     }
 
+    // ── Nightly: delete class videos the school no longer needs (they are already on Facebook / Instagram) ──
+    if (action === 'video_cleanup') {
+      const secret = process.env.CRON_SECRET || '';
+      if (!secret || String(body.cron_secret || '') !== secret) return res.status(401).json({ ok: false, error: 'Not allowed.' });
+      const rows = (await sb('GET', 'social_posts?own_video=not.is.null&video_removed=is.false'
+        + '&select=id,school_id,status,own_video,posted_at,updated_at,created_at&order=created_at.asc&limit=300')) || [];
+      const keep = {};
+      let cleaned = 0;
+      for (const p of rows) {
+        if (!(p.school_id in keep)) {
+          try { keep[p.school_id] = (await getSettings(p.school_id)).video_keep_days; } catch (e) { keep[p.school_id] = 7; }
+        }
+        const days = keep[p.school_id];
+        let from, wait;
+        if (p.status === 'posted') { from = p.posted_at || p.updated_at; wait = days; }
+        else if (p.status === 'rejected') { from = p.updated_at || p.created_at; wait = days; }
+        else { from = p.created_at; wait = Math.max(30, days); }   // never posted
+        if (Date.now() - new Date(from).getTime() < wait * 86400000) continue;
+        const k = pathFromUrl(p.own_video);
+        if (k) await deletePhoto(k);
+        await sb('PATCH', 'social_posts?id=eq.' + enc(p.id), { video_removed: true });
+        cleaned++;
+      }
+      return res.status(200).json({ ok: true, checked: rows.length, cleaned });
+    }
+
     const session = verifySessionToken(body.token);
     if (!session) return res.status(401).json({ ok: false, error: 'Session expired. Please log in again.' });
     const level = accessLevel(session);
@@ -275,6 +313,22 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, upload_url: SUPABASE_URL + '/storage/v1' + signed, public_url: publicUrl(path) });
     }
 
+    if (action === 'clip_url') {
+      // Teachers may upload class videos too; the browser sends the file straight to storage
+      const path = sid + '/' + new Date().toISOString().slice(0, 7) + '/clip-' + crypto.randomUUID() + '.mp4';
+      const key = getServiceKey();
+      const r = await fetch(SUPABASE_URL + '/storage/v1/object/upload/sign/' + BUCKET + '/' + path, {
+        method: 'POST', headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: '{}'
+      });
+      const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch (e) {}
+      const signed = d && (d.url || d.signedURL);
+      if (!r.ok || !signed) {
+        if (/bucket not found/i.test(t)) return res.status(500).json({ ok: false, error: 'The "social-posts" photo folder is missing in Supabase Storage. Please create it (public).' });
+        return res.status(500).json({ ok: false, error: 'Could not prepare the video upload: ' + t.slice(0, 160) });
+      }
+      return res.status(200).json({ ok: true, upload_url: SUPABASE_URL + '/storage/v1' + signed, public_url: publicUrl(path) });
+    }
+
     if (action === 'photo') {
       const m = String(body.data_url || '').match(/^data:image\/(jpeg|jpg|png);base64,(.+)$/);
       if (!m) return res.status(400).json({ ok: false, error: 'Only photos can be uploaded.' });
@@ -296,11 +350,26 @@ module.exports = async (req, res) => {
       }
       if (body.checked !== true) return res.status(400).json({ ok: false, error: 'Please tick that you checked the "No photos" children are not in these photos.' });
 
+      // A class video: it must be this school's upload, a real file, and not too big
+      let video = '', videoSecs = null;
+      if (body.video) {
+        const vp = pathFromUrl(body.video);
+        if (!vp || !vp.startsWith(sid + '/') || !/\/clip-[a-zA-Z0-9-]+\.mp4$/.test(vp)) return res.status(400).json({ ok: false, error: 'That video is not from this school.' });
+        const h = await fetch(publicUrl(vp), { method: 'HEAD' });
+        if (!h.ok) return res.status(400).json({ ok: false, error: 'The video did not finish uploading. Please try again.' });
+        const size = Number(h.headers.get('content-length') || 0);
+        if (size > MAX_VIDEO_BYTES) { await deletePhoto(vp); return res.status(400).json({ ok: false, error: 'That video is too big (' + Math.round(size / 1048576) + ' MB). Please keep it under 60 seconds.' }); }
+        const secs = Number(body.video_seconds);
+        if (secs && secs > MAX_VIDEO_SECONDS + 1) { await deletePhoto(vp); return res.status(400).json({ ok: false, error: 'Videos can be at most ' + MAX_VIDEO_SECONDS + ' seconds.' }); }
+        video = publicUrl(vp); videoSecs = secs ? Math.round(secs * 10) / 10 : null;
+      }
+
       const row = {
         school_id: sid, class_name: str(body.class_name, 40) || 'Whole school',
         note: str(body.note, 300), photos, status: 'photos', created_by: by, checked_by: by,
         title: str(body.note, 60) || str(body.class_name, 40) || 'School activity'
       };
+      if (video) { row.own_video = video; row.video_seconds = videoSecs; }
       // Teachers only hand over photos. The principal's own uploads are written straight away.
       let aiErr = '';
       if (level === 'full') {
@@ -370,7 +439,7 @@ module.exports = async (req, res) => {
       if (action === 'remove') {
         // A teacher may take back an upload only until the principal has used it
         if (level !== 'full' && post.status !== 'photos') return res.status(403).json({ ok: false, error: 'Only the principal / admin can delete this.' });
-        for (const u of (post.photos || []).concat(post.extra_files || [])) { const k = pathFromUrl(u); if (k) await deletePhoto(k); }
+        for (const u of (post.photos || []).concat(post.extra_files || [], post.own_video ? [post.own_video] : [])) { const k = pathFromUrl(u); if (k) await deletePhoto(k); }
         await sb('DELETE', one);
         return res.status(200).json({ ok: true });
       }
@@ -390,6 +459,7 @@ module.exports = async (req, res) => {
         hashtags: str(body.hashtags, 300), language: lang, updated_at: new Date().toISOString()
       };
       if (['off', 'br', 'bl', 'tr', 'tl'].indexOf(body.logo_corner) !== -1) row.logo_corner = body.logo_corner;
+      if (body.video_keep_days !== undefined && KEEP_DAYS.indexOf(Number(body.video_keep_days)) !== -1) row.video_keep_days = Number(body.video_keep_days);
       if (body.owner_whatsapp !== undefined) {
         let d = String(body.owner_whatsapp || '').replace(/\D/g, '');
         if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
