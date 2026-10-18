@@ -4,6 +4,7 @@
 //   SD.collage(urls, title, date)    → JPEG data URL, 1080×1350, 1–6 photos in one designed tile
 //   SD.reel(urls, opts)              → MP4 Blob, 720×1280 Reel with music (H.264 + AAC)
 //   SD.reelSupport()                 → { ok, reason }
+//   SD.clip(file, opts)              → a teacher's class video, shrunk to Reel size with the school logo (H.264 + AAC)
 // Needs: mp4-muxer (window.Mp4Muxer) for Reels. Brand colours: maroon, gold, sandal.
 
 (function () {
@@ -403,9 +404,214 @@
     return new Blob([muxer.target.buffer], { type: 'video/mp4' });
   }
 
+  // ── 4. Class video (teacher / principal upload): shrink to Reel size, add the school logo, keep the sound ──
+  // SD.clip(file, { corner, onProgress }) → { blob, frames[4 JPEG data URLs], seconds, width, height, sound }
+  //   blob is null (with .reason) when this browser cannot remake videos — the page may then send the original.
+  // The video plays once, hidden, at normal speed, so a 60-second video takes about a minute.
+  const CLIP_MAX_SECONDS = 60, CLIP_FPS = 30, CLIP_BITRATE = 3000000;
+
+  function clipSize(vw, vh) {
+    const k = Math.min(1, 1280 / Math.max(vw, vh), 720 / Math.min(vw, vh));
+    const even = n => Math.max(2, Math.round(n / 2) * 2);
+    return { W: even(vw * k), H: even(vh * k) };
+  }
+  async function clipSupport(W, H) {
+    const no = 'This browser cannot add the logo to videos';
+    if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined' || typeof AudioEncoder === 'undefined') return { ok: false, reason: no + '.' };
+    if (typeof Mp4Muxer === 'undefined') return { ok: false, reason: 'The video maker did not load. Check the internet and refresh the page.' };
+    let codec = null;
+    for (const c of (window.__SD_TEST_VIDEO_CODECS || VIDEO_CODECS)) {
+      try { if ((await VideoEncoder.isConfigSupported({ codec: c, width: W, height: H, bitrate: CLIP_BITRATE, framerate: CLIP_FPS })).supported) { codec = c; break; } } catch (e) {}
+    }
+    if (!codec) return { ok: false, reason: no + ' (H.264).' };
+    const acodec = await pickAudioCodec();
+    if (!acodec) return { ok: false, reason: no + ' with sound.' };
+    return { ok: true, codec, acodec };
+  }
+  // The school logo in a corner on a light badge (same look as on photos)
+  function cornerLogo(x, W, H, logo, corner) {
+    const side = Math.min(W, H);
+    const box = Math.max(28, Math.round(side * 0.14));
+    const m = Math.round(side * 0.03);
+    const r = logo.width / logo.height;
+    const round = r > 0.85 && r < 1.18;
+    let bw = box, bh = box;
+    if (!round) { if (r > 1) bh = Math.round(box / Math.min(r, 3)); else bw = Math.round(box * Math.max(r, 0.4)); }
+    const pad = Math.round(box * 0.08);
+    const bx = corner[1] === 'l' ? m : W - m - bw - pad * 2;
+    const by = corner[0] === 't' ? m : H - m - bh - pad * 2;
+    x.save();
+    x.shadowColor = 'rgba(0,0,0,0.30)'; x.shadowBlur = Math.round(box * 0.12); x.shadowOffsetY = Math.round(box * 0.03);
+    x.fillStyle = 'rgba(255,255,255,0.94)';
+    x.beginPath();
+    if (round) x.arc(bx + pad + bw / 2, by + pad + bh / 2, bw / 2 + pad, 0, Math.PI * 2);
+    else if (x.roundRect) x.roundRect(bx, by, bw + pad * 2, bh + pad * 2, Math.round(box * 0.14));
+    else x.rect(bx, by, bw + pad * 2, bh + pad * 2);
+    x.fill();
+    x.restore();
+    const s = Math.min(bw / logo.width, bh / logo.height);
+    const lw = logo.width * s, lh = logo.height * s;
+    x.drawImage(logo, bx + pad + (bw - lw) / 2, by + pad + (bh - lh) / 2, lw, lh);
+  }
+  function openVideo(file) {
+    return new Promise((ok, bad) => {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+      // Kept on the page (almost invisible) — some phones stop decoding videos that are not on the page
+      v.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1';
+      const url = URL.createObjectURL(file);
+      const done = (err) => { if (err) { URL.revokeObjectURL(url); v.remove(); bad(err); } else ok({ v, url }); };
+      v.onloadeddata = () => done(null);
+      v.onerror = () => done(new Error('This video could not be opened here. If it is from an iPhone, set Settings → Camera → Formats → "Most Compatible" and record again, or send it from an Android phone.'));
+      document.body.appendChild(v);
+      v.src = url;
+    });
+  }
+  function closeVideo(o) { try { o.v.pause(); o.v.removeAttribute('src'); o.v.load(); } catch (e) {} o.v.remove(); URL.revokeObjectURL(o.url); }
+  function stillFrom(v, W, H) {
+    const c = document.createElement('canvas');
+    const k = Math.min(1, 1280 / Math.max(W, H));
+    c.width = Math.round(W * k); c.height = Math.round(H * k);
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.82);
+  }
+  function seekTo(v, t) {
+    return new Promise((ok, bad) => {
+      const tm = setTimeout(() => bad(new Error('The video stopped responding.')), 8000);
+      v.onseeked = () => { clearTimeout(tm); v.onseeked = null; ok(); };
+      v.currentTime = t;
+    });
+  }
+  async function stills(v, dur, W, H) {
+    const out = [];
+    for (const f of [0.1, 0.35, 0.6, 0.85]) { await seekTo(v, Math.max(0, Math.min(dur - 0.05, dur * f))); out.push(stillFrom(v, W, H)); }
+    return out;
+  }
+  async function clipAudio(file, seconds) {
+    try {
+      const buf = await file.arrayBuffer();
+      const ac = new (window.AudioContext || window.webkitAudioContext)();
+      let audio;
+      try { audio = await ac.decodeAudioData(buf); } finally { try { ac.close(); } catch (e) {} }
+      const len = Math.max(1, Math.ceil(seconds * 44100));
+      const off = new OfflineAudioContext(2, len, 44100);
+      const n = off.createBufferSource(); n.buffer = audio; n.connect(off.destination); n.start(0);
+      return await off.startRendering();
+    } catch (e) { return null; }     // no sound in the video, or it could not be read
+  }
+
+  async function clip(file, opts) {
+    opts = opts || {};
+    const onProgress = opts.onProgress || function () {};
+    const maxS = opts.maxSeconds || CLIP_MAX_SECONDS;
+    onProgress(0, 'Opening the video…');
+    const o = await openVideo(file);
+    const v = o.v;
+    try {
+      const dur = v.duration;
+      if (!isFinite(dur) || dur <= 0) throw new Error('This video could not be read (its length is unknown). Please try another video.');
+      if (dur > maxS + 0.5) throw new Error('This video is ' + Math.round(dur) + ' seconds long. Videos can be at most ' + maxS + ' seconds — please trim it on the phone first (open the video → Edit → trim), then choose it again.');
+      if (!v.videoWidth || !v.videoHeight) throw new Error('This file has no picture. Please choose a video.');
+      const { W, H } = clipSize(v.videoWidth, v.videoHeight);
+      const sup = await clipSupport(W, H);
+      if (!sup.ok) {
+        onProgress(50, 'Taking pictures for the AI…');
+        const frames = await stills(v, dur, W, H);
+        return { blob: null, reason: sup.reason, frames, seconds: dur, width: W, height: H, sound: true };
+      }
+      const logo = opts.corner && opts.corner !== 'off' ? await getLogo() : null;
+      const corner = opts.corner && opts.corner !== 'off' ? opts.corner : 'br';
+
+      onProgress(3, 'Reading the sound…');
+      const audio = await clipAudio(file, dur);
+
+      const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+      const x = canvas.getContext('2d');
+      const muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { codec: sup.codec.startsWith('avc') ? 'avc' : 'vp9', width: W, height: H, frameRate: CLIP_FPS },
+        audio: audio ? { codec: sup.acodec.startsWith('mp4a') ? 'aac' : 'opus', numberOfChannels: 2, sampleRate: 44100 } : undefined,
+        fastStart: 'in-memory',                     // index at the front — what Instagram asks for
+        firstTimestampBehavior: 'offset'
+      });
+      let encErr = null;
+      const venc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encErr = e; } });
+      venc.configure({ codec: sup.codec, width: W, height: H, bitrate: CLIP_BITRATE, framerate: CLIP_FPS,
+        ...(sup.codec.startsWith('avc') ? { avc: { format: 'avc' } } : {}) });
+
+      // Play once, hidden; every new picture → canvas → logo → encoder
+      const want = [0.1, 0.35, 0.6, 0.85].map(f => f * dur);
+      const frames = [];
+      let lastT = -1, count = 0, lastMove = Date.now();
+      const draw = (t) => {
+        if (encErr || t <= lastT || (lastT >= 0 && t - lastT < 1 / CLIP_FPS - 0.004)) return;
+        x.drawImage(v, 0, 0, W, H);
+        while (frames.length < want.length && t >= want[frames.length]) frames.push(stillFrom(canvas, W, H));
+        if (logo) cornerLogo(x, W, H, logo, corner);
+        if (venc.encodeQueueSize < 40) {        // a slow phone drops a picture rather than falling behind
+          const fr = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / CLIP_FPS) });
+          venc.encode(fr, { keyFrame: count % (CLIP_FPS * 2) === 0 });
+          fr.close();
+          count++;
+        }
+        lastT = t; lastMove = Date.now();
+        if (count % 15 === 0) onProgress(5 + Math.round(t / dur * 85), 'Adding the school logo… ' + Math.round(t / dur * 100) + '% (keep this screen open)');
+      };
+      await new Promise((ok, bad) => {
+        let finished = false;
+        const end = (err) => { if (finished) return; finished = true; clearInterval(watch); document.removeEventListener('visibilitychange', wake); err ? bad(err) : ok(); };
+        const wake = () => { if (!document.hidden && v.paused && !v.ended) v.play().catch(() => {}); };
+        document.addEventListener('visibilitychange', wake);
+        v.onended = () => end();
+        v.onerror = () => end(new Error('The video stopped while being prepared. Please try again.'));
+        const watch = setInterval(() => {
+          if (encErr) return end(new Error('Video making failed: ' + encErr.message));
+          if (v.paused && !v.ended && !document.hidden) v.play().catch(() => {});
+          if (Date.now() - lastMove > (document.hidden ? 120000 : 15000)) end(new Error('The video stopped while being prepared. Keep this screen open and try again.'));
+        }, 1000);
+        if (v.requestVideoFrameCallback) {
+          const tick = (now, m) => { draw(m.mediaTime); if (!finished) v.requestVideoFrameCallback(tick); };
+          v.requestVideoFrameCallback(tick);
+        } else {
+          const tick = () => { draw(v.currentTime); if (!finished) requestAnimationFrame(tick); };
+          requestAnimationFrame(tick);
+        }
+        (v.currentTime > 0 ? seekTo(v, 0) : Promise.resolve()).catch(() => {}).then(() => v.play()).catch(e => end(new Error('The video could not be played here: ' + e.message)));
+      });
+      if (encErr) throw new Error('Video making failed: ' + encErr.message);
+      if (count < Math.min(10, dur * 5)) throw new Error('The video could not be prepared (too few pictures came through). Keep this screen open and try again.');
+      await venc.flush(); venc.close();
+
+      if (audio) {
+        onProgress(92, 'Adding the sound…');
+        const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: e => { encErr = e; } });
+        aenc.configure({ codec: sup.acodec, sampleRate: 44100, numberOfChannels: 2, bitrate: 128000 });
+        const L = audio.getChannelData(0), R = audio.getChannelData(1);
+        const N = 1024;
+        for (let i = 0; i < audio.length; i += N) {
+          const n = Math.min(N, audio.length - i);
+          const data = new Float32Array(n * 2);
+          data.set(L.subarray(i, i + n), 0); data.set(R.subarray(i, i + n), n);
+          const ad = new AudioData({ format: 'f32-planar', sampleRate: 44100, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(i * 1e6 / 44100), data });
+          aenc.encode(ad); ad.close();
+        }
+        await aenc.flush(); aenc.close();
+        if (encErr) throw new Error('Adding the sound failed: ' + encErr.message);
+      }
+      muxer.finalize();
+      // Pictures for the AI: any the playback skipped are taken now
+      if (frames.length < want.length) {
+        const more = await stills(v, dur, W, H);
+        while (frames.length < want.length) frames.push(more[frames.length]);
+      }
+      onProgress(100, 'Video ready');
+      return { blob: new Blob([muxer.target.buffer], { type: 'video/mp4' }), frames, seconds: dur, width: W, height: H, sound: !!audio };
+    } finally { closeVideo(o); }
+  }
+
   window.SD = {
     init(o) { cfg = Object.assign(cfg, o || {}); if (o && 'logoUrl' in o) logoImg = null; },
-    framed, collage, reel, reelSupport,
+    framed, collage, reel, reelSupport, clip, CLIP_MAX_SECONDS,
     MUSIC: [
       { id: 'happy-morning', name: '☀️ Happy Morning (upbeat)' },
       { id: 'festival-joy', name: '🪔 Festival Joy (Indian festive)' },
