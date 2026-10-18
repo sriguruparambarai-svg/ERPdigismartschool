@@ -982,47 +982,59 @@ async function publishPost(id) {
 }
 
 // ── Send to the owner's WhatsApp (free) ──
-// Phone: the share screen opens with the finished files — pick WhatsApp → your chat.
-// Computer: WhatsApp Web opens to the owner's number with the text and download links.
-function isPhone() { return /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent); }
+// Sends the real picture / Reel file — never a storage link.
+// 1) Share screen (phones, and Windows/Mac computers that have the WhatsApp app): pick WhatsApp → your chat.
+// 2) Otherwise: the files are saved to Downloads, the text is copied, and the WhatsApp chat opens —
+//    click 📎, choose the saved file, then press Ctrl+V for the text.
+function waReadyBox(msg, btnText) {
+  return new Promise(resolve => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    box.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;padding:20px;text-align:center;font-size:15px;line-height:1.5">'
+      + '<div style="font-size:34px">✅</div><div style="margin:8px 0 16px;text-align:left">' + msg + '</div>'
+      + '<button class="btn btn-wa" style="width:100%;padding:12px;font-size:16px">' + btnText + '</button>'
+      + '<button class="btn" style="width:100%;margin-top:8px;background:#eee">Cancel</button></div>';
+    const [ok, no] = box.querySelectorAll('button');
+    ok.onclick = () => { box.remove(); resolve(true); };
+    no.onclick = () => { box.remove(); resolve(false); };
+    document.body.appendChild(box);
+  });
+}
+function waSaveFiles(files) {
+  files.forEach((f, i) => setTimeout(() => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(f); a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }, i * 400));
+}
 async function sendToWhatsApp(id) {
   const p = postById(id);
   const num = (settings.owner_whatsapp || '').replace(/\D/g, '');
   const text = fullText(p);
+  const chat = num ? 'your chat (+91 ' + num + ')' : '"You (Message yourself)"';
   try {
     if (styleOf(id) === 'reel') { const sup = await SD.reelSupport(!!musicSource(id)); if (!sup.ok) throw new Error(sup.reason); }
-    if (isPhone() && navigator.canShare) {
-      const files = await photoFiles(p);
-      hideLoading();
-      if (navigator.canShare({ files })) {
-        try { await navigator.clipboard.writeText(text); } catch (e) {}
-        showToast('Choose WhatsApp → ' + (num ? 'your chat (+91 ' + num + ')' : '"You (Message yourself)"') + '. The text is copied — paste it if it does not appear.', 'success');
-        await navigator.share({ files, text });
-        return;
-      }
-    }
-    // Computer (or a phone that cannot share files): links in a WhatsApp message
-    const out = await buildOutput(p);
-    const links = [];
-    if (out.kind === 'video') {
-      showLoading('Uploading the Reel for WhatsApp…');
-      const u = await call('video_url');
-      const r = await fetch(u.upload_url, { method: 'PUT', headers: { 'Content-Type': 'video/mp4', 'x-upsert': 'true' }, body: out.blob });
-      if (!r.ok) throw new Error('Could not upload the Reel (' + r.status + ').');
-      links.push(u.public_url);
-    } else {
-      for (let i = 0; i < out.items.length; i++) {
-        const it = out.items[i];
-        if (/^data:/.test(it)) { showLoading('Uploading picture ' + (i + 1) + ' of ' + out.items.length + '…'); links.push((await call('photo', { data_url: it })).url); }
-        else links.push(it);
-      }
-    }
-    try { await call('add_files', { id, urls: links }); } catch (e) {}
+    showLoading(styleOf(id) === 'reel' ? 'Making the Reel…' : 'Preparing the pictures…');
+    const files = await photoFiles(p);
     hideLoading();
-    const label = out.kind === 'video' ? '🎬 Reel (tap to download, then forward):' : (links.length > 1 ? '📷 Photos (tap each to download):' : '📷 Picture (tap to download):');
-    const msg = text + '\n\n' + label + '\n' + links.join('\n');
+    const kind = files[0] && files[0].type === 'video/mp4' ? 'Reel' : (files.length > 1 ? files.length + ' pictures' : 'picture');
+
+    // 1) Share screen with the real files
+    if (navigator.canShare && navigator.canShare({ files })) {
+      const go = await waReadyBox('Your ' + kind + ' is ready.<br>Next screen: choose <b>WhatsApp</b> → ' + chat + '.<br><small>The text is copied too — paste it if it does not appear.</small>', '📲 Share to WhatsApp');
+      if (!go) return;
+      try { await navigator.clipboard.writeText(text); } catch (e) {}
+      try { await navigator.share({ files, text }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; /* share not possible here → use the computer way */ }
+    }
+
+    // 2) Computer way: save files + copy text + open the chat
+    const go = await waReadyBox('Your ' + kind + ' is ready.<br>1. It will be saved to your <b>Downloads</b> folder.<br>2. WhatsApp opens ' + chat + '.<br>3. Click <b>📎 → Photos &amp; videos</b>, pick the saved file.<br>4. Press <b>Ctrl+V</b> to paste the text, then send.', '📥 Save & open WhatsApp');
+    if (!go) return;
+    try { await navigator.clipboard.writeText(text); } catch (e) {}
+    waSaveFiles(files);
     if (!num) showToast('Tip: save the owner WhatsApp number in Settings to open that chat directly.', 'success');
-    window.open('https://wa.me/' + (num ? '91' + num : '') + '?text=' + encodeURIComponent(msg), '_blank');
+    setTimeout(() => window.open('https://wa.me/' + (num ? '91' + num : ''), '_blank'), files.length * 400 + 300);
   } catch (e) {
     hideLoading();
     if (e && e.name !== 'AbortError') showToast('⚠️ ' + e.message, 'error');
