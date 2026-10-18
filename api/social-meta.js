@@ -13,7 +13,9 @@
 // POST { token, action: 'status' }       → { ok, connected, page_name, ig_username, pending:[{id,name,ig}] }
 // POST { token, action: 'choose', page_id }  → save the chosen page (when you manage several)
 // POST { token, action: 'disconnect' }
-// POST { token, action: 'publish', id, to_fb, to_ig, fb_photos[], ig_photos[] }  → posts an approved post
+// POST { token, action: 'publish', id, to_fb, to_ig, fb_photos[], ig_photos[], video_url? }  → posts an approved post
+//      video_url: a Reel the browser made → Facebook video + Instagram Reel (finished by reel_check)
+// POST { token, action: 'reel_check', id, fb_wanted }  → { pending } until Instagram has the Reel ready, then publishes it
 //      fb_photos / ig_photos: copies the browser made (school logo added, Instagram shape) — optional
 
 const crypto = require('crypto');
@@ -75,7 +77,7 @@ async function sb(method, path, bodyObj, extra) {
   let data = null; try { data = text ? JSON.parse(text) : null; } catch (e) {}
   if (!r.ok) {
     const msg = (data && data.message) || ('Database error ' + r.status);
-    if (/meta_|fb_post_id|ig_media_id/.test(msg) && /does not exist|schema cache|not find/i.test(msg)) {
+    if (/meta_|fb_post_id|ig_media_id|ig_container|video_url|extra_files/.test(msg) && /does not exist|schema cache|not find/i.test(msg)) {
       throw new Error('The Facebook connection is not set up yet. Please run the Step B SQL in Supabase once.');
     }
     throw new Error(msg);
@@ -230,28 +232,52 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    if (action === 'publish') {
+    if (action === 'publish' || action === 'reel_check') {
       if (!s || !s.meta_page_token) return res.status(400).json({ ok: false, error: 'Facebook is not connected yet. Connect it in Settings.' });
       if (!isId(body.id)) return res.status(400).json({ ok: false, error: 'Invalid post.' });
       const one = 'social_posts?id=eq.' + enc(body.id) + '&school_id=eq.' + enc(sid);
       const post = ((await sb('GET', one + '&select=*&limit=1')) || [])[0];
       if (!post) return res.status(404).json({ ok: false, error: 'Post not found.' });
+      const token = s.meta_page_token;
+      const now = () => new Date().toISOString();
+
+      // ── Instagram takes a while to prepare a Reel; the browser asks here every few seconds ──
+      if (action === 'reel_check') {
+        if (!post.ig_container) return res.status(200).json({ ok: true, done: true, row: post });
+        const st = await graph('GET', '/' + post.ig_container, { fields: 'status_code,status', access_token: token });
+        if (st.status_code === 'IN_PROGRESS' || !st.status_code) return res.status(200).json({ ok: true, pending: true });
+        if (st.status_code !== 'FINISHED') {
+          const msg = 'Instagram could not prepare the Reel (' + (st.status || st.status_code) + ').';
+          const saved = ((await sb('PATCH', one, { ig_container: null, publish_error: 'Instagram: ' + msg, updated_at: now() })) || [])[0];
+          return res.status(200).json({ ok: false, error: msg, row: saved });
+        }
+        const ig = (await graph('POST', '/' + s.meta_ig_id + '/media_publish', { creation_id: post.ig_container, access_token: token })).id;
+        const patch = { ig_media_id: ig, ig_container: null, updated_at: now() };
+        if (post.fb_post_id || body.fb_wanted === false) { patch.status = 'posted'; patch.posted_at = now(); patch.publish_error = null; }
+        const saved = ((await sb('PATCH', one, patch)) || [])[0];
+        return res.status(200).json({ ok: true, done: true, ig, row: saved });
+      }
+
       if (post.status !== 'approved') return res.status(400).json({ ok: false, error: 'Only approved posts can be posted.' });
       const photos = (post.photos || []).filter(u => isPhotoUrl(u, sid));
       if (!photos.length) return res.status(400).json({ ok: false, error: 'This post has no photos.' });
 
       const toFb = body.to_fb !== false && !post.fb_post_id;
       const toIg = body.to_ig !== false && !!s.meta_ig_id && !post.ig_media_id;
+      const video = isPhotoUrl(body.video_url, sid) && /\.mp4$/.test(body.video_url) ? body.video_url : '';
       const igPhotos = (Array.isArray(body.ig_photos) ? body.ig_photos : []).filter(u => isPhotoUrl(u, sid)).slice(0, 10);
       const fbCopies = (Array.isArray(body.fb_photos) ? body.fb_photos : []).filter(u => isPhotoUrl(u, sid)).slice(0, 10);
-      const fbPhotos = fbCopies.length === photos.length ? fbCopies : photos;
+      // Designed copies (logo, frame, collage) may differ in number from the originals (a collage is one picture)
+      const fbPhotos = fbCopies.length ? fbCopies : photos;
       const text = postText(post, s);
-      const token = s.meta_page_token;
-      const out = { fb: null, ig: null, fb_error: '', ig_error: '' };
+      const out = { fb: null, ig: null, ig_pending: false, fb_error: '', ig_error: '' };
 
       if (toFb) {
         try {
-          if (fbPhotos.length === 1) {
+          if (video) {
+            const r = await graph('POST', '/' + s.meta_page_id + '/videos', { file_url: video, description: text, access_token: token });
+            out.fb = r.id;
+          } else if (fbPhotos.length === 1) {
             const r = await graph('POST', '/' + s.meta_page_id + '/photos', { url: fbPhotos[0], caption: text, access_token: token });
             out.fb = r.post_id || r.id;
           } else {
@@ -268,36 +294,48 @@ module.exports = async (req, res) => {
         } catch (e) { out.fb_error = e.message; }
       }
 
+      let container = null;
       if (toIg) {
         try {
-          const list = igPhotos.length ? igPhotos : photos;   // the browser sends Instagram-shaped copies
-          let creation;
-          if (list.length === 1) {
-            creation = (await graph('POST', '/' + s.meta_ig_id + '/media', { image_url: list[0], caption: text, access_token: token })).id;
+          if (video) {
+            container = (await graph('POST', '/' + s.meta_ig_id + '/media', {
+              media_type: 'REELS', video_url: video, caption: text, share_to_feed: 'true', access_token: token })).id;
+            out.ig_pending = true;                      // finished by 'reel_check'
           } else {
-            const kids = [];
-            for (const u of list) {
-              const k = (await graph('POST', '/' + s.meta_ig_id + '/media', { image_url: u, is_carousel_item: 'true', access_token: token })).id;
-              await waitReady(k, token);
-              kids.push(k);
+            const list = igPhotos.length ? igPhotos : photos;   // the browser sends Instagram-shaped copies
+            let creation;
+            if (list.length === 1) {
+              creation = (await graph('POST', '/' + s.meta_ig_id + '/media', { image_url: list[0], caption: text, access_token: token })).id;
+            } else {
+              const kids = [];
+              for (const u of list) {
+                const k = (await graph('POST', '/' + s.meta_ig_id + '/media', { image_url: u, is_carousel_item: 'true', access_token: token })).id;
+                await waitReady(k, token);
+                kids.push(k);
+              }
+              creation = (await graph('POST', '/' + s.meta_ig_id + '/media', { media_type: 'CAROUSEL', children: kids.join(','), caption: text, access_token: token })).id;
             }
-            creation = (await graph('POST', '/' + s.meta_ig_id + '/media', { media_type: 'CAROUSEL', children: kids.join(','), caption: text, access_token: token })).id;
+            await waitReady(creation, token);
+            out.ig = (await graph('POST', '/' + s.meta_ig_id + '/media_publish', { creation_id: creation, access_token: token })).id;
           }
-          await waitReady(creation, token);
-          out.ig = (await graph('POST', '/' + s.meta_ig_id + '/media_publish', { creation_id: creation, access_token: token })).id;
         } catch (e) { out.ig_error = e.message; }
       }
 
-      const patch = { updated_at: new Date().toISOString(),
+      // Remember the copies made for posting, so deleting the post later removes them too
+      const extra = Array.from(new Set((post.extra_files || []).concat(fbCopies, igPhotos, video ? [video] : [])))
+        .filter(u => photos.indexOf(u) === -1).slice(-60);
+      const patch = { updated_at: now(), extra_files: extra,
         publish_error: [out.fb_error && ('Facebook: ' + out.fb_error), out.ig_error && ('Instagram: ' + out.ig_error)].filter(Boolean).join(' | ') || null };
+      if (video) patch.video_url = video;
+      if (container) patch.ig_container = container;
       if (out.fb) patch.fb_post_id = out.fb;
       if (out.ig) patch.ig_media_id = out.ig;
       const fbDone = !!(out.fb || post.fb_post_id || body.to_fb === false);
       const igDone = !!(out.ig || post.ig_media_id || body.to_ig === false || !s.meta_ig_id);
-      if ((out.fb || out.ig) && fbDone && igDone) { patch.status = 'posted'; patch.posted_at = new Date().toISOString(); }
+      if ((out.fb || out.ig) && fbDone && igDone) { patch.status = 'posted'; patch.posted_at = now(); }
       const saved = ((await sb('PATCH', one, patch)) || [])[0];
-      return res.status(200).json({ ok: !!(out.fb || out.ig), row: saved, ...out,
-        error: (!out.fb && !out.ig) ? (patch.publish_error || 'Nothing was posted.') : undefined });
+      return res.status(200).json({ ok: !!(out.fb || out.ig || out.ig_pending), row: saved, ...out,
+        error: (!out.fb && !out.ig && !out.ig_pending) ? (patch.publish_error || 'Nothing was posted.') : undefined });
     }
 
     return res.status(400).json({ ok: false, error: 'Unknown action.' });

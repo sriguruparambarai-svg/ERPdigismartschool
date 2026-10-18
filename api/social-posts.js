@@ -11,6 +11,8 @@
 // POST { token, action, ... }
 //   info      {}                                   → { ok, level, settings, school }
 //   photo     { data_url }                         → { ok, url }
+//   video_url {}                                   → { ok, upload_url, public_url }  (Reels: the browser
+//             uploads the finished MP4 straight to storage — too big for this door)
 //   create    { class_name, note, photos[], checked }  → { ok, row }
 //             teacher upload → status 'photos' (no AI); principal upload → AI writes it → 'draft'
 //   rewrite   { id, hint? }                        → AI writes / writes again (principal) → { ok, row }
@@ -229,9 +231,9 @@ module.exports = async (req, res) => {
       if (!secret || String(body.cron_secret || '') !== secret) return res.status(401).json({ ok: false, error: 'Not allowed.' });
       const cutoff = new Date(Date.now() - 90 * 86400000).toISOString();
       const old = (await sb('GET', 'social_posts?created_at=lt.' + enc(cutoff)
-        + '&status=in.(posted,rejected)&photos_removed=is.false&select=id,photos&limit=200')) || [];
+        + '&status=in.(posted,rejected)&photos_removed=is.false&select=*&limit=200')) || [];
       for (const p of old) {
-        for (const u of (p.photos || [])) { const k = pathFromUrl(u); if (k) await deletePhoto(k); }
+        for (const u of (p.photos || []).concat(p.extra_files || [])) { const k = pathFromUrl(u); if (k) await deletePhoto(k); }
         await sb('PATCH', 'social_posts?id=eq.' + enc(p.id), { photos_removed: true });
       }
       return res.status(200).json({ ok: true, cleaned: old.length });
@@ -251,12 +253,25 @@ module.exports = async (req, res) => {
     if (!sch || sch.has_social !== true) {
       return res.status(403).json({ ok: false, error: 'Social Media Posts is not switched on for this school. Please contact DigiSmart.' });
     }
-    const school = { name: sch.name || '', city: sch.city || '' };
+    const school = { name: sch.name || '', city: sch.city || '', phone: str(sch.phone, 20) };
     const needFull = () => level === 'full' ? null
       : res.status(403).json({ ok: false, error: 'Only the principal / admin can do this.' });
 
     if (action === 'info') {
       return res.status(200).json({ ok: true, level, settings: await getSettings(sid), school, logo_url: await schoolLogo(sid) });
+    }
+
+    if (action === 'video_url') {
+      if (level !== 'full') return res.status(403).json({ ok: false, error: 'Only the principal / admin can do this.' });
+      const path = sid + '/' + new Date().toISOString().slice(0, 7) + '/reel-' + crypto.randomUUID() + '.mp4';
+      const key = getServiceKey();
+      const r = await fetch(SUPABASE_URL + '/storage/v1/object/upload/sign/' + BUCKET + '/' + path, {
+        method: 'POST', headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: '{}'
+      });
+      const t = await r.text(); let d = null; try { d = JSON.parse(t); } catch (e) {}
+      const signed = d && (d.url || d.signedURL);
+      if (!r.ok || !signed) return res.status(500).json({ ok: false, error: 'Could not prepare the video upload: ' + t.slice(0, 160) });
+      return res.status(200).json({ ok: true, upload_url: SUPABASE_URL + '/storage/v1' + signed, public_url: publicUrl(path) });
     }
 
     if (action === 'photo') {
@@ -347,7 +362,7 @@ module.exports = async (req, res) => {
       if (action === 'remove') {
         // A teacher may take back an upload only until the principal has used it
         if (level !== 'full' && post.status !== 'photos') return res.status(403).json({ ok: false, error: 'Only the principal / admin can delete this.' });
-        for (const u of (post.photos || [])) { const k = pathFromUrl(u); if (k) await deletePhoto(k); }
+        for (const u of (post.photos || []).concat(post.extra_files || [])) { const k = pathFromUrl(u); if (k) await deletePhoto(k); }
         await sb('DELETE', one);
         return res.status(200).json({ ok: true });
       }
