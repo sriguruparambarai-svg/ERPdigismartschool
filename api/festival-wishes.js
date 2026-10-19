@@ -13,6 +13,8 @@
 //      person_get {}                      → { ok, person }   (null when none saved)
 //      person_remove {}                   → { ok }
 //   3. post     { data_url, title, caption_en, caption_ta, hashtags } → { ok, row }
+//   today    {}  → today's (or tomorrow's) festival from the calendar + its ready pictures
+//   GET (Vercel scheduler, nightly) → makes tomorrow's festival pictures ahead of time
 //      Saves the finished poster as an approved post, so it appears in "Ready to Post"
 //      (Facebook / Instagram / WhatsApp / Parent Gallery all work from there).
 //
@@ -119,6 +121,54 @@ const FESTIVALS = {
   ]
 };
 
+// ── Festival calendar (Tamil Nadu) ──
+// Fixed-date festivals repeat every year. Moving festivals are listed by date and must be
+// added for each new year (dates checked Oct 2026 from Drik Panchang / the TN holiday list;
+// Ramzan and Bakrid depend on the moon and may move by a day).
+const FIXED = { '01-01': 'new_year', '01-15': 'pongal', '01-26': 'republic', '04-14': 'tamil_new_year',
+  '08-15': 'independence', '09-05': 'teachers', '11-14': 'childrens', '12-25': 'christmas' };
+const MOVING = {
+  '2026-10-19': 'ayudha', '2026-10-20': 'ayudha', '2026-10-21': 'vijayadasami',
+  '2026-11-08': 'deepavali', '2026-11-24': 'karthigai',
+  '2027-03-09': 'ramzan', '2027-05-17': 'bakrid', '2027-08-25': 'krishna', '2027-09-04': 'vinayagar',
+  '2027-10-08': 'ayudha', '2027-10-09': 'vijayadasami', '2027-10-29': 'deepavali', '2027-12-12': 'karthigai'
+};
+// Which picture each festival uses (same as the list in js/festival-wishes.js)
+const FEST_ART = { ayudha: 'saraswathi', saraswathi: 'saraswathi', vijayadasami: 'vijayadasami', deepavali: 'deepavali',
+  childrens: 'childrens', karthigai: 'karthigai', christmas: 'christmas', new_year: 'new_year', pongal: 'pongal',
+  republic: 'republic', tamil_new_year: 'tamil_new_year', ramzan: 'ramzan', bakrid: 'bakrid', independence: 'independence',
+  krishna: 'krishna', teachers: 'teachers', vinayagar: 'vinayagar' };
+function istDate(addDays) {
+  return new Date(Date.now() + 5.5 * 3600000 + (addDays || 0) * 86400000).toISOString().slice(0, 10);
+}
+function festivalOnDay(d) { return MOVING[d] || FIXED[d.slice(5)] || null; }
+// The festival to show today: today's own festival first, else tomorrow's (posters go out the evening before)
+function currentFestival() {
+  const today = festivalOnDay(istDate(0));
+  if (today) return { key: today, date: istDate(0), when: 'today' };
+  const tom = festivalOnDay(istDate(1));
+  if (tom) return { key: tom, date: istDate(1), when: 'tomorrow' };
+  return null;
+}
+async function existingArt(pre, art, v) {
+  for (const ext of ['jpg', 'png']) {
+    const p = ART_FOLDER + '/' + pre + art + '-v' + v + '.' + ext;
+    if (await exists(p)) return publicUrl(p);
+  }
+  return '';
+}
+// Make one picture now if it is not saved yet (used by the nightly run)
+async function ensureArt(full, art, v) {
+  const pre = full ? 'bright-' : '';
+  const have = await existingArt(pre, art, v);
+  if (have) return { made: false, url: have };
+  const prompt = (full ? ART_STYLE_BRIGHT : ART_STYLE) + FESTIVALS[art][(v - 1) % FESTIVALS[art].length];
+  const out = await drawArt(prompt);
+  const p = ART_FOLDER + '/' + pre + art + '-v' + v + '.' + (out.jpeg ? 'jpg' : 'png');
+  await storeFile(out.buf, p, out.jpeg ? 'image/jpeg' : 'image/png');
+  return { made: true, url: publicUrl(p) };
+}
+
 function getServiceKey() {
   return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 }
@@ -218,6 +268,25 @@ async function drawArt(prompt) {
 }
 
 module.exports = async (req, res) => {
+  // ── Nightly (Vercel scheduler, ~7:30 pm India time): make tomorrow's festival pictures ahead,
+  //    so on the festival morning every school's posters are ready with no waiting.
+  //    Two "Full picture" versions + one "Framed". Shared by all schools, so made only once.
+  if (req.method === 'GET') {
+    const secret = process.env.CRON_SECRET || '';
+    const header = String(req.headers.authorization || '');
+    const fromQuery = req.query && String(req.query.key || '') === secret;
+    if (!secret || (header !== 'Bearer ' + secret && !fromQuery)) return res.status(401).json({ ok: false, error: 'Not allowed.' });
+    const out = { ok: true, ran_at: new Date().toISOString(), festivals: [] };
+    const keys = Array.from(new Set([festivalOnDay(istDate(1)), festivalOnDay(istDate(0))].filter(Boolean)));
+    for (const k of keys) {
+      const art = FEST_ART[k];
+      if (!art || !FESTIVALS[art]) continue;
+      const jobs = [[true, art, 1], [true, art, 2], [false, art, 1]];
+      const done = await Promise.all(jobs.map(j => ensureArt(j[0], j[1], j[2]).then(r => (r.made ? 'made' : 'ready')).catch(e => 'error: ' + e.message)));
+      out.festivals.push({ festival: k, picture: art, results: done });
+    }
+    return res.status(200).json(out);
+  }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   if (!getServiceKey()) return res.status(500).json({ ok: false, error: 'Server key not configured.' });
 
@@ -258,6 +327,21 @@ module.exports = async (req, res) => {
       const p = ART_FOLDER + '/' + pre + key + '-v' + v + '.' + (out.jpeg ? 'jpg' : 'png');
       await storeFile(out.buf, p, out.jpeg ? 'image/jpeg' : 'image/png');
       return res.status(200).json({ ok: true, url: publicUrl(p), variant: v, max: MAX_VARIANTS, made: true });
+    }
+
+    // ── Today's festival and its pictures that are already made (no waiting, no cost) ──
+    if (action === 'today') {
+      const f = currentFestival();
+      if (!f) return res.status(200).json({ ok: true, festival: null });
+      const art = FEST_ART[f.key];
+      const checks = [];
+      for (const design of ['full', 'framed']) {
+        for (let v = 1; v <= MAX_VARIANTS; v++) {
+          checks.push(existingArt(design === 'full' ? 'bright-' : '', art, v).then(url => url ? { design, variant: v, url } : null));
+        }
+      }
+      const ready = (await Promise.all(checks)).filter(Boolean);
+      return res.status(200).json({ ok: true, festival: f.key, date: f.date, when: f.when, ready });
     }
 
     // ── 2. The correspondent's photo, saved once for every festival ──

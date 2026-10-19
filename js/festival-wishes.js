@@ -485,7 +485,8 @@
     built = true;
     st.fest = guessFestival(new Date());
     box.innerHTML =
-      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start">'
+      '<div id="fw-ready" class="card hidden" style="margin-bottom:16px"></div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start">'
       + '<div class="card">'
       +   '<div class="card-title">🪔 Festival Wishes poster</div>'
       +   '<div class="help" style="margin:4px 0 12px">Pick the festival. The poster is made with your school logo and name, wishes in Tamil and English, and a festival picture. Check it, then download, share, or add it to "Ready to Post".</div>'
@@ -525,8 +526,8 @@
       +   '<canvas id="fw-canvas" style="width:100%;max-width:380px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);background:#3E0D0D"></canvas>'
       +   '<div class="help" id="fw-note" style="margin-top:8px"></div>'
       +   '<div class="actions" style="justify-content:center">'
-      +     '<button class="btn btn-gold btn-sm" id="fw-add">✅ Add to Ready to Post</button>'
-      +     '<button class="btn btn-secondary btn-sm" id="fw-share">📤 Share (phone)</button>'
+      +     '<button class="btn btn-gold btn-sm" id="fw-share">📤 Share to WhatsApp</button>'
+      +     '<button class="btn btn-primary btn-sm" id="fw-add">✅ Add to Ready to Post</button>'
       +     '<button class="btn btn-secondary btn-sm" id="fw-dl">⬇ Download</button>'
       +   '</div>'
       +   '<div class="help" style="margin-top:8px">"Ready to Post" lets you post to Facebook / Instagram, send to WhatsApp, or put it in the Parent Gallery.</div>'
@@ -597,6 +598,65 @@
         redraw();
       } catch (err) { toast('⚠️ ' + err.message, 'error'); }
     }
+  }
+
+  // ── Today's festival: ready designs to pick with one tap (pictures made the night before) ──
+  async function loadToday() {
+    let d;
+    try { d = await call('today'); } catch (e) { return; }
+    if (!d.festival || !FESTIVALS.find(f => f.key === d.festival)) return;
+    st.fest = d.festival; $('fw-fest').value = d.festival; setFestTexts();
+    const art = festOf(d.festival).art;
+    const ready = (d.ready || []).sort((a, b) => (a.design === b.design ? a.variant - b.variant : a.design === 'full' ? -1 : 1));
+    // start on a picture that is already made, so nothing has to wait
+    const firstOwn = ready.find(r => r.design === st.design);
+    try { if (firstOwn && !localStorage.getItem('fw_v_' + st.design + '_' + art)) localStorage.setItem('fw_v_' + st.design + '_' + art, String(firstOwn.variant)); } catch (e) {}
+    const box = $('fw-ready');
+    const when = d.when === 'tomorrow' ? 'Tomorrow is ' : 'Today is ';
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="card-title">🪔 ' + esc(when + festOf(d.festival).name) + ' — your posters are ready</div>'
+      + '<div class="help" style="margin:4px 0 10px">' + (ready.length
+          ? 'Tap a design, check it, then press <b>📤 Share to WhatsApp</b>. Your logo, school name and phone are already on it.'
+          : 'The festival pictures are being made — the first one takes about a minute. Your poster appears below.') + '</div>'
+      + '<div id="fw-ready-strip" style="display:flex;gap:10px;overflow-x:auto;padding-bottom:6px"></div>';
+    if (!ready.length) return;
+    await fontsReady();
+    const logo = await getLogo();
+    const strip = $('fw-ready-strip');
+    readyList = [];
+    for (const r of ready.slice(0, 6)) {
+      try {
+        const k = r.design + '-' + art + '-' + r.variant;
+        const img = artCache[k] || await loadImg(r.url);
+        artCache[k] = img;
+        const big = document.createElement('canvas');
+        drawPoster(big, Object.assign(currentState(logo), { design: r.design, art: img, size: 'post' }));
+        const sm = document.createElement('canvas'); sm.width = 216; sm.height = 270;
+        sm.getContext('2d').drawImage(big, 0, 0, 216, 270);
+        readyList.push({ r, img, art });
+        const i = readyList.length - 1;
+        const el = document.createElement('img');
+        el.src = sm.toDataURL('image/jpeg', 0.8);
+        el.alt = 'Ready design ' + (i + 1);
+        el.style.cssText = 'width:150px;flex:none;border-radius:8px;border:3px solid transparent;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15)';
+        el.onclick = () => pickReady(i);
+        el.id = 'fw-rd-' + i;
+        strip.appendChild(el);
+      } catch (e) { /* skip a picture that will not load */ }
+    }
+  }
+  let readyList = [];
+  function pickReady(i) {
+    const it = readyList[i]; if (!it) return;
+    document.querySelectorAll('#fw-ready-strip img').forEach((el, j) => { el.style.borderColor = j === i ? GOLD : 'transparent'; });
+    st.design = it.r.design; setChip('design', it.r.design);
+    st.pic = 'ai'; setChip('pic', 'ai');
+    $('fw-ai-row').classList.remove('hidden'); $('fw-own-row').classList.add('hidden');
+    st.art = it.img; st.variant = it.r.variant;
+    try { localStorage.setItem('fw_v_' + it.r.design + '_' + it.art, String(it.r.variant)); } catch (e) {}
+    $('fw-art-status').textContent = 'Picture ' + it.r.variant + ' of 4';
+    redraw();
+    if (window.innerWidth < 900) { const c = $('fw-canvas'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   }
 
   // ── festival picture (shared AI picture, made once for all schools) ──
@@ -752,9 +812,16 @@
     FESTIVALS,
     drawPoster,
     drawFull,
-    init(o) { cfg = Object.assign(cfg, o || {}); cfg.school = Object.assign({ name: '', city: '', phone: '' }, (o && o.school) || {}); logoImg = null; },
+    init(o) {
+      cfg = Object.assign(cfg, o || {}); cfg.school = Object.assign({ name: '', city: '', phone: '' }, (o && o.school) || {}); logoImg = null;
+      // Opened from the dashboard's "poster is ready" card (…/social-posts.html#festival)
+      if (location.hash === '#festival') setTimeout(() => {
+        const t = document.querySelector('.tab[data-tab="festival"]');
+        if (t && !t.classList.contains('hidden') && typeof switchTab === 'function') switchTab('festival');
+      }, 0);
+    },
     async open() {
-      if (!built) { build(); redraw(); if (st.pic === 'ai') await loadArt(); }
+      if (!built) { build(); redraw(); await loadToday(); if (st.pic === 'ai') await loadArt(); }
       redraw();
     }
   };

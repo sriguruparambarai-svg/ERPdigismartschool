@@ -11,6 +11,10 @@
     {
       "path": "/api/push",
       "schedule": "0 5,7 * * 1-6"
+    },
+    {
+      "path": "/api/festival-wishes",
+      "schedule": "0 14 * * *"
     }
   ],
   "rewrites": [
@@ -34,7 +38,7 @@
       "maxDuration": 60
     },
     "api/festival-wishes.js": {
-      "maxDuration": 180
+      "maxDuration": 300
     }
   }
 }
