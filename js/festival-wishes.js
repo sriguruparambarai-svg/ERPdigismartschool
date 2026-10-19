@@ -55,7 +55,7 @@
   let logoImg = null, built = false, busy = false, drawTimer = null, fontsLoaded = false;
   const artCache = {};
   const st = {
-    fest: 'ayudha', design: 'full', pic: 'ai', variant: 1, art: null, own: null,
+    fest: 'ayudha', design: 'ai', pic: 'ai', variant: 1, art: null, own: null,
     withPerson: false, person: null, personImg: null, personNew: '',
     size: 'post', ta: '', en: '', msg: '', from: 'Correspondent, Principal, Staff & Students', phone: true
   };
@@ -347,7 +347,68 @@
     return c;
   }
 
+  // ── AI POSTER design: the AI made the whole poster (scene, correspondent, school name, English
+  //    greeting, empty ribbon). Here we only add the real logo as a small seal, the Tamil wishes
+  //    in the ribbon, and the phone number. The poster is never cropped: if its shape differs,
+  //    the sides are filled with a soft blurred copy. ──
+  function drawAi(c, s) {
+    const W = 1080, H = s.size === 'status' ? 1920 : 1350;
+    c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    const sch = s.school || {};
+    if (!s.art) { drawLamp(x, 0, 0, W, H); return c; }
+    const img = s.art;
+    try { x.filter = 'blur(30px) brightness(0.95)'; coverDraw(x, img, -40, -40, W + 80, H + 80, 0.5); x.filter = 'none'; } catch (e) {}
+    const k = Math.min(W / img.width, H / img.height);
+    const iw = img.width * k, ih = img.height * k, ix = (W - iw) / 2, iy = (H - ih) / 2;
+    x.save(); x.shadowColor = 'rgba(0,0,0,0.35)'; x.shadowBlur = 30;
+    x.drawImage(img, ix, iy, iw, ih); x.restore();
+
+    // real logo: small gold-ringed seal in the top-left corner the AI left empty
+    if (s.logo) {
+      const r = Math.round(iw * 0.062), cx = ix + iw * 0.03 + r + 6, cy = iy + ih * 0.022 + r + 6;
+      x.save(); x.shadowColor = 'rgba(60,20,10,0.4)'; x.shadowBlur = 16; x.shadowOffsetY = 3;
+      x.fillStyle = '#fff'; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); x.restore();
+      x.save(); x.beginPath(); x.arc(cx, cy, r - 3, 0, Math.PI * 2); x.clip();
+      const lk = Math.min((r * 2 - 6) / s.logo.width, (r * 2 - 6) / s.logo.height);
+      x.drawImage(s.logo, cx - s.logo.width * lk / 2, cy - s.logo.height * lk / 2, s.logo.width * lk, s.logo.height * lk);
+      x.restore();
+      const g = x.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+      g.addColorStop(0, '#F6E39A'); g.addColorStop(0.5, '#C9A84C'); g.addColorStop(1, '#8C6A1F');
+      x.strokeStyle = g; x.lineWidth = Math.max(3, r * 0.09); x.beginPath(); x.arc(cx, cy, r + 1, 0, Math.PI * 2); x.stroke();
+    }
+
+    // Tamil wishes inside the ribbon (lower part of the poster): gold with a maroon edge, like foil lettering
+    if (s.ta) {
+      const tf = fit(x, s.ta, iw * 0.68, Math.round(iw * 0.05), '700', F_TA, 18);
+      const ty = iy + ih * 0.875;
+      x.save(); x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '700 ' + tf.s + 'px ' + F_TA;
+      x.lineJoin = 'round'; x.lineWidth = Math.max(4, tf.s * 0.14); x.strokeStyle = '#4A0E0E';
+      x.shadowColor = 'rgba(0,0,0,0.45)'; x.shadowBlur = 8; x.shadowOffsetY = 2;
+      x.strokeText(tf.text, W / 2, ty);
+      x.shadowColor = 'transparent';
+      const fg = x.createLinearGradient(0, ty - tf.s / 2, 0, ty + tf.s / 2);
+      fg.addColorStop(0, '#FFF1B8'); fg.addColorStop(0.55, '#E8C96A'); fg.addColorStop(1, '#B98E2E');
+      x.fillStyle = fg; x.fillText(tf.text, W / 2, ty);
+      x.restore();
+    }
+
+    // phone · town on the thin strip at the very bottom
+    const foot = [];
+    if (s.showPhone && sch.phone) foot.push('📞 ' + sch.phone);
+    if (sch.city) foot.push(sch.city);
+    if (foot.length) {
+      const ft = fit(x, foot.join('   ·   '), iw * 0.8, Math.round(iw * 0.026), '600', F_EN, 12);
+      x.save(); x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '600 ' + ft.s + 'px ' + F_EN;
+      x.fillStyle = '#FFFFFF'; x.shadowColor = 'rgba(0,0,0,0.7)'; x.shadowBlur = 6;
+      x.fillText(ft.text, W / 2, iy + ih - ih * 0.022);
+      x.restore();
+    }
+    return c;
+  }
+
   function drawPoster(c, s) {
+    if (s.design === 'ai') return drawAi(c, s);
     if (s.design === 'full') return drawFull(c, s);
     const W = 1080, H = s.size === 'status' ? 1920 : 1350;
     c.width = W; c.height = H;
@@ -493,7 +554,8 @@
       +   '<label class="form-label">Festival</label>'
       +   '<select id="fw-fest" class="form-control">' + FESTIVALS.map(f => '<option value="' + f.key + '">' + esc(f.name) + '</option>').join('') + '</select>'
       +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Design</b>'
-      +     chip('design', 'full', '✨ Full picture', true) + chip('design', 'framed', '🖼 Framed', false) + '</div>'
+      +     chip('design', 'ai', '🎨 AI poster (best)', true) + chip('design', 'full', '✨ Full picture', false) + chip('design', 'framed', '🖼 Framed', false)
+      +     '<div class="help" id="fw-ai-note" style="width:100%;margin-top:6px">The AI designs the whole poster — picture, school name, English wishes and the correspondent\'s photo blended in. Made for your school; the first one takes 1–2 minutes. Check the spelling before sharing.</div></div>'
       +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Picture</b>'
       +     chip('pic', 'ai', '🛕 Festival picture', true) + chip('pic', 'own', '📁 Our own picture', false) + chip('pic', 'none', '🪔 Lamp design', false)
       +     '<div id="fw-ai-row" style="width:100%;margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
@@ -535,6 +597,7 @@
 
     $('fw-fest').value = st.fest;
     $('fw-from').value = st.from;
+    setTimeout(showDesignBits, 0);
     setFestTexts();
     if (!cfg.school.phone) $('fw-phone-row').style.display = 'none';
 
@@ -574,10 +637,13 @@
     if (t.name === 'fw-who') {
       st.withPerson = t.value === 'yes'; setChip('who', t.value);
       $('fw-person-row').classList.toggle('hidden', !st.withPerson);
+      if (st.design === 'ai' && (!st.withPerson || st.person)) await loadArt();
       return redraw();
     }
     if (t.name === 'fw-design') {
       st.design = t.value; setChip('design', t.value);
+      if (st.design === 'ai') { st.pic = 'ai'; setChip('pic', 'ai'); $('fw-ai-row').classList.remove('hidden'); $('fw-own-row').classList.add('hidden'); }
+      showDesignBits();
       if (st.pic === 'ai') await loadArt();
       return redraw();
     }
@@ -644,17 +710,32 @@
         strip.appendChild(el);
       } catch (e) { /* skip a picture that will not load */ }
     }
+    if (readyList.length) pickReady(0);   // start on the first ready design — no waiting
   }
   let readyList = [];
+  // AI poster: the picture choices (own picture / lamp) do not apply, so they are hidden
+  function showDesignBits() {
+    const ai = st.design === 'ai';
+    document.querySelectorAll('#tab-festival label.chip[data-g="pic"]').forEach(l => { l.style.display = ai ? 'none' : ''; });
+    const n = $('fw-ai-note'); if (n) n.style.display = ai ? '' : 'none';
+    const b = $('fw-next'); if (b) b.textContent = ai ? '🔄 Another poster' : '🔄 Another picture';
+  }
   function pickReady(i) {
     const it = readyList[i]; if (!it) return;
+    if (it.r.design === 'ai') {
+      st.withPerson = !!it.r.person; setChip('who', st.withPerson ? 'yes' : 'no');
+      $('fw-person-row').classList.toggle('hidden', !st.withPerson);
+      const key = 'ai-' + st.fest + '-' + (st.withPerson ? 'p' : 'n') + '-' + st.en;
+      artCache[key + '-' + it.r.variant] = it.img;
+      try { localStorage.setItem('fw_v_' + key, String(it.r.variant)); } catch (e) {}
+    }
     document.querySelectorAll('#fw-ready-strip img').forEach((el, j) => { el.style.borderColor = j === i ? GOLD : 'transparent'; });
-    st.design = it.r.design; setChip('design', it.r.design);
+    st.design = it.r.design; setChip('design', it.r.design); showDesignBits();
     st.pic = 'ai'; setChip('pic', 'ai');
     $('fw-ai-row').classList.remove('hidden'); $('fw-own-row').classList.add('hidden');
     st.art = it.img; st.variant = it.r.variant;
     try { localStorage.setItem('fw_v_' + it.r.design + '_' + it.art, String(it.r.variant)); } catch (e) {}
-    $('fw-art-status').textContent = 'Picture ' + it.r.variant + ' of 4';
+    $('fw-art-status').textContent = (it.r.design === 'ai' ? 'Poster ' : 'Picture ') + it.r.variant + ' of 4';
     redraw();
     if (window.innerWidth < 900) { const c = $('fw-canvas'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   }
@@ -662,6 +743,7 @@
   // ── festival picture (shared AI picture, made once for all schools) ──
   function rememberedVariant(art) { try { return parseInt(localStorage.getItem('fw_v_' + st.design + '_' + art), 10) || 1; } catch (e) { return 1; } }
   async function loadArt(variant) {
+    if (st.design === 'ai') return loadPoster(variant);
     const art = festOf(st.fest).art;
     const v = variant || rememberedVariant(art);
     const design = st.design;
@@ -677,6 +759,30 @@
       if (festOf(st.fest).art === art && st.design === design) { st.art = img; st.variant = d.variant; }
       try { localStorage.setItem('fw_v_' + design + '_' + art, String(d.variant)); } catch (e) {}
       status.textContent = 'Picture ' + d.variant + ' of ' + d.max + (d.made ? ' · newly made' : '');
+    } catch (err) {
+      st.art = null;
+      status.textContent = '⚠️ ' + err.message;
+    }
+    busy = false; setButtons();
+  }
+  // the whole AI poster, made for this school (with the saved photo when "With correspondent" is on)
+  async function loadPoster(variant) {
+    const status = $('fw-art-status');
+    if (st.withPerson && st.personNew) await savePerson();
+    if (st.withPerson && !st.person) { status.textContent = 'Add and save the correspondent / principal photo below, then press 🔄.'; return; }
+    const key = 'ai-' + st.fest + '-' + (st.withPerson ? 'p' : 'n') + '-' + st.en;
+    const v = variant || (function () { try { return parseInt(localStorage.getItem('fw_v_' + key), 10) || 1; } catch (e) { return 1; } })();
+    const k = key + '-' + v;
+    if (artCache[k]) { st.art = artCache[k]; st.variant = v; status.textContent = 'Poster ' + v + ' of 4'; return; }
+    busy = true; setButtons();
+    status.textContent = '⏳ The AI is designing your poster… the first time takes 1–2 minutes. Please keep this page open.';
+    try {
+      const d = await call('compose', { festival: st.fest, variant: v, en: st.en, with_person: !!st.withPerson });
+      const img = await loadImg(d.url);
+      artCache[k] = img;
+      st.art = img; st.variant = d.variant;
+      try { localStorage.setItem('fw_v_' + key, String(d.variant)); } catch (e) {}
+      status.textContent = 'Poster ' + d.variant + ' of ' + d.max + (d.made ? ' · newly made' : '') + ' — check the spelling of the school name.';
     } catch (err) {
       st.art = null;
       status.textContent = '⚠️ ' + err.message;

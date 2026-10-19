@@ -14,6 +14,7 @@
 //      person_remove {}                   → { ok }
 //   3. post     { data_url, title, caption_en, caption_ta, hashtags } → { ok, row }
 //   today    {}  → today's (or tomorrow's) festival from the calendar + its ready pictures
+//   compose  { festival, variant, en, with_person } → this school's whole AI poster (see makePoster)
 //   GET (Vercel scheduler, nightly) → makes tomorrow's festival pictures ahead of time
 //      Saves the finished poster as an approved post, so it appears in "Ready to Post"
 //      (Facebook / Instagram / WhatsApp / Parent Gallery all work from there).
@@ -267,6 +268,125 @@ async function drawArt(prompt) {
   throw new Error(lastErr || 'The picture maker is not available right now.');
 }
 
+// ── "AI poster" design (Oct 2026): the AI makes the WHOLE poster in one go — festival scene,
+//    the correspondent painted into it (from the saved photo), the school name and the English
+//    greeting as designed lettering, and an empty ribbon at the bottom. The browser then adds
+//    only what the AI cannot be trusted with: Tamil wishes (in the ribbon), the real logo, the phone.
+//    Made per school (its own name and photo), so it costs more than the shared pictures:
+//    at most 4 versions per festival per school, saved and reused.
+const POSTER_VERSION = 'p1';
+const POSTER_QUALITY = process.env.FESTIVAL_POSTER_QUALITY || 'medium';
+const FEST_NAME = { ayudha: 'Ayudha Pooja & Vijayadasami', saraswathi: 'Saraswathi Pooja', vijayadasami: 'Vijayadasami',
+  deepavali: 'Deepavali', childrens: "Children's Day", karthigai: 'Karthigai Deepam', christmas: 'Christmas', new_year: 'New Year',
+  pongal: 'Pongal', republic: 'Republic Day', tamil_new_year: 'Tamil New Year', ramzan: 'Ramzan', bakrid: 'Bakrid',
+  independence: 'Independence Day', krishna: 'Krishna Jayanthi', teachers: "Teachers' Day", vinayagar: 'Vinayagar Chathurthi',
+  other: 'Festival' };
+const FEST_EN = { ayudha: 'Happy Ayudha Pooja & Vijayadasami', saraswathi: 'Happy Saraswathi Pooja', vijayadasami: 'Happy Vijayadasami',
+  deepavali: 'Happy Deepavali', childrens: "Happy Children's Day", karthigai: 'Happy Karthigai Deepam', christmas: 'Merry Christmas',
+  new_year: 'Happy New Year', pongal: 'Happy Pongal', republic: 'Happy Republic Day', tamil_new_year: 'Happy Tamil New Year',
+  ramzan: 'Eid Mubarak', bakrid: 'Happy Bakrid', independence: 'Happy Independence Day', krishna: 'Happy Krishna Jayanthi',
+  teachers: "Happy Teachers' Day", vinayagar: 'Happy Vinayagar Chathurthi' };
+// Only plain letters go into the AI's instructions
+function cleanText(v, max) { return String(v || '').replace(/[^A-Za-z0-9 .,&'!\-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max); }
+
+function posterPrompt(festKey, art, variant, schoolName, en, withPerson) {
+  const subjects = FESTIVALS[art] || FESTIVALS.general;
+  const scene = subjects[(variant - 1) % subjects.length];
+  return 'Design one complete, premium, professional Indian festival greeting poster for a school, for ' + (FEST_NAME[festKey] || 'the festival')
+    + ', as a single finished artwork like the best festival posts on Instagram and ShareChat made by top designers. '
+    + 'Tall vertical poster. Bright, vivid, cheerful colours, glowing warm daylight, rich detail, everything blended naturally with matching light and colour. '
+    + 'Main scene: ' + scene + ' '
+    + (withPerson
+      ? 'Include the man from the reference photo in the poster: keep his face, features, skin tone, hairstyle, moustache and glasses exactly the same as in the photo so he is clearly recognisable. '
+        + 'Show him as a dignified half-body portrait in the lower right part of the poster, smiling warmly with hands folded in vanakkam greeting, '
+        + 'wearing a crisp white traditional shirt with a gold-bordered angavastram on the shoulder, lit by the same warm light as the scene and blended naturally into it, not cut out. '
+        + 'He stands respectfully beside the scene and does not touch any deity. '
+      : '')
+    + 'At the top of the poster, write the school name "' + schoolName + '" exactly as given, letter for letter, in elegant large gold 3D serif lettering with a fine maroon outline, centred. '
+    + 'Keep the top-left corner (about one tenth of the width) plain and empty, for a logo to be added later. '
+    + 'Below the main scene write "' + en + '" in beautiful gold festive lettering, spelled exactly as given. '
+    + 'Across the bottom of the poster, an ornate maroon and gold decorative ribbon banner spanning almost the full width and about one sixth of the height, completely EMPTY inside with no text, '
+    + 'and below it a thin plain maroon strip, also empty. '
+    + 'No other text, letters, numbers or words anywhere. No watermark, no signature.';
+}
+async function imageCall(path, makeBody) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('AI pictures are not set up yet for ERP (OPENAI_API_KEY missing in Vercel).');
+  // Try with the best options first; drop any option this model does not know
+  let opts = { output_format: 'jpeg', output_compression: 88, input_fidelity: 'high' };
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const mb = makeBody(opts);
+    const r = await fetch('https://api.openai.com/v1/images/' + path, {
+      method: 'POST', headers: Object.assign({ Authorization: 'Bearer ' + apiKey }, mb.headers || {}), body: mb.body
+    });
+    const raw = await r.text();
+    let d = null; try { d = JSON.parse(raw); } catch (e) {}
+    if (r.ok && d && d.data && d.data[0] && d.data[0].b64_json) return { buf: Buffer.from(d.data[0].b64_json, 'base64'), jpeg: opts.output_format === 'jpeg' };
+    const msg = (d && d.error && d.error.message) || raw.slice(0, 200);
+    const bad = Object.keys(opts).find(k => msg.indexOf(k) !== -1);
+    if (bad) { opts = Object.assign({}, opts); delete opts[bad]; continue; }
+    if (/safety|moderation|rejected/i.test(msg)) throw new Error('The picture maker could not draw this one. Please press "Another picture".');
+    throw new Error('Picture maker error ' + r.status + ': ' + msg);
+  }
+  throw new Error('The picture maker is not available right now.');
+}
+async function makePoster(prompt, personBuf) {
+  if (!personBuf) {
+    return imageCall('generations', (o) => ({ headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ model: OPENAI_MODEL, prompt, n: 1, size: '1024x1536', quality: POSTER_QUALITY },
+        Object.fromEntries(Object.entries(o).filter(([k]) => k !== 'input_fidelity')))) }));
+  }
+  return imageCall('edits', (o) => {
+    const fd = new FormData();
+    fd.append('model', OPENAI_MODEL); fd.append('prompt', prompt); fd.append('n', '1');
+    fd.append('size', '1024x1536'); fd.append('quality', POSTER_QUALITY);
+    Object.entries(o).forEach(([k, v]) => fd.append(k, String(v)));
+    fd.append('image[]', new Blob([personBuf], { type: 'image/jpeg' }), 'person.jpg');
+    return { body: fd };
+  });
+}
+async function personInfo(sid) {
+  const base = sid + '/festival/person';
+  if (!(await exists(base + '.jpg'))) return null;
+  let info = {};
+  try { const r = await fetch(publicUrl(base + '.json') + '?t=' + Date.now()); if (r.ok) info = await r.json(); } catch (e) {}
+  return { url: publicUrl(base + '.jpg'), v: info.v || 1 };
+}
+// Where one school's AI poster is saved: changes to the name, wishes or photo give a new place
+function posterPath(sid, festKey, schoolName, en, personV, variant) {
+  const h = crypto.createHash('sha256').update([POSTER_VERSION, festKey, schoolName, en, personV || 0].join('|')).digest('hex').slice(0, 12);
+  return sid + '/festival/ai-' + festKey + '-' + h + '-v' + variant + '.jpg';
+}
+async function ensurePoster(sid, schoolName, festKey, enIn, withPerson, variant) {
+  const art = FEST_ART[festKey] || 'general';
+  const en = cleanText(enIn, 60) || FEST_EN[festKey] || 'Festival Greetings';
+  const name = cleanText(schoolName, 70) || 'Our School';
+  const person = withPerson ? await personInfo(sid) : null;
+  if (withPerson && !person) throw new Error('Please save the correspondent / principal photo first.');
+  const path = posterPath(sid, festKey, name, en, person ? person.v : 0, variant);
+  if (await exists(path)) return { url: publicUrl(path), made: false };
+  let personBuf = null;
+  if (person) {
+    const r = await fetch(person.url + '?t=' + Date.now());
+    if (!r.ok) throw new Error('Could not read the saved photo. Please save it again.');
+    personBuf = Buffer.from(await r.arrayBuffer());
+  }
+  const out = await makePoster(posterPrompt(festKey, art, variant, name, en, !!person), personBuf);
+  await storeFile(out.buf, path, out.jpeg ? 'image/jpeg' : 'image/png');
+  return { url: publicUrl(path), made: true };
+}
+async function readyPosters(sid, schoolName, festKey, withPerson) {
+  const en = FEST_EN[festKey] || 'Festival Greetings';
+  const name = cleanText(schoolName, 70) || 'Our School';
+  const person = withPerson ? await personInfo(sid) : null;
+  const list = [];
+  for (let v = 1; v <= MAX_VARIANTS; v++) {
+    const p = posterPath(sid, festKey, name, en, person ? person.v : 0, v);
+    if (await exists(p)) list.push({ design: 'ai', variant: v, url: publicUrl(p), person: !!person });
+  }
+  return list;
+}
+
 module.exports = async (req, res) => {
   // ── Nightly (Vercel scheduler, ~7:30 pm India time): make tomorrow's festival pictures ahead,
   //    so on the festival morning every school's posters are ready with no waiting.
@@ -284,6 +404,18 @@ module.exports = async (req, res) => {
       const jobs = [[true, art, 1], [true, art, 2], [false, art, 1]];
       const done = await Promise.all(jobs.map(j => ensureArt(j[0], j[1], j[2]).then(r => (r.made ? 'made' : 'ready')).catch(e => 'error: ' + e.message)));
       out.festivals.push({ festival: k, picture: art, results: done });
+    }
+    // Each school with Social Media Posts: its own AI poster for tomorrow (with the saved photo, if any)
+    const tomorrow = festivalOnDay(istDate(1));
+    if (tomorrow) {
+      try {
+        const schools = (await sb('GET', 'schools?has_social=is.true&select=school_id,name&limit=200')) || [];
+        out.posters = await Promise.all(schools.filter(sc => isSchool(sc.school_id)).map(async sc => {
+          const withP = !!(await personInfo(sc.school_id));
+          return ensurePoster(sc.school_id, sc.name, tomorrow, '', withP, 1)
+            .then(r => sc.school_id + ': ' + (r.made ? 'made' : 'ready')).catch(e => sc.school_id + ': error ' + e.message);
+        }));
+      } catch (e) { out.posters_error = e.message; }
     }
     return res.status(200).json(out);
   }
@@ -303,7 +435,7 @@ module.exports = async (req, res) => {
     const sid = String(session.sid || '');
     if (!isSchool(sid)) return res.status(401).json({ ok: false, error: 'Invalid session. Please log in again.' });
 
-    const sch = ((await sb('GET', 'schools?school_id=eq.' + enc(sid) + '&select=school_id,has_social&limit=1')) || [])[0];
+    const sch = ((await sb('GET', 'schools?school_id=eq.' + enc(sid) + '&select=school_id,name,has_social&limit=1')) || [])[0];
     if (!sch || sch.has_social !== true) {
       return res.status(403).json({ ok: false, error: 'Social Media Posts is not switched on for this school. Please contact DigiSmart.' });
     }
@@ -340,8 +472,19 @@ module.exports = async (req, res) => {
           checks.push(existingArt(design === 'full' ? 'bright-' : '', art, v).then(url => url ? { design, variant: v, url } : null));
         }
       }
-      const ready = (await Promise.all(checks)).filter(Boolean);
+      let ready = (await Promise.all(checks)).filter(Boolean);
+      // this school's own AI posters come first
+      try { ready = (await readyPosters(sid, sch.name, f.key, true)).concat(await readyPosters(sid, sch.name, f.key, false), ready); } catch (e) {}
       return res.status(200).json({ ok: true, festival: f.key, date: f.date, when: f.when, ready });
+    }
+
+    // ── The AI poster for this school ──
+    if (action === 'compose') {
+      const fk = String(body.festival || '');
+      if (!FEST_NAME[fk]) return res.status(400).json({ ok: false, error: 'Unknown festival.' });
+      const v = Math.min(MAX_VARIANTS, Math.max(1, parseInt(body.variant, 10) || 1));
+      const r = await ensurePoster(sid, sch.name, fk, body.en, body.with_person === true, v);
+      return res.status(200).json({ ok: true, url: r.url, made: r.made, variant: v, max: MAX_VARIANTS });
     }
 
     // ── 2. The correspondent's photo, saved once for every festival ──
