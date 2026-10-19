@@ -3,7 +3,7 @@
 // optionally with the correspondent's photo. The poster itself is drawn in the browser
 // (js/festival-wishes.js) — no server cost. This door only does three things:
 //
-//   1. art      { festival, variant }  → { ok, url }
+//   1. art      { festival, variant, design? }  → { ok, url }   design 'full' = full-poster picture
 //      The AI festival picture (Goddess Saraswathi, Pongal pot, Deepavali lamps …).
 //      Made ONCE by OpenAI and saved in the public 'social-posts' bucket under
 //      festival-art/ — every school shares the same pictures, so each one is paid for
@@ -35,6 +35,18 @@ const ART_STYLE = 'A beautiful, auspicious Indian festival artwork for a school 
   + 'in the style of a fine traditional Indian painting with rich warm colours, soft glowing light and delicate gold accents. '
   + 'Tall vertical composition with the main subject centred and fully inside the frame, gentle soft background. '
   + 'Graceful, respectful and suitable for children and families. '
+  + 'No text, no letters, no numbers, no words, no signature, no watermark, no border, no frame. Picture: ';
+
+// "Full picture" design: the picture fills the whole poster, like greetings seen in Reels.
+// The school logo, name and wishes are laid on top in the browser, so the picture keeps
+// calm space at the top and bottom for them. (Saved separately from the framed pictures.)
+const ART_STYLE_FULL = 'A stunning, richly detailed festival greeting artwork that fills the whole frame edge to edge, '
+  + 'like a premium festival wishes post on Instagram: cinematic warm glowing light, deep rich colours, fine detail, '
+  + 'soft bokeh sparkles, flowers and brass lamps around, an auspicious celebratory mood, beautiful and respectful. '
+  + 'Tall vertical composition. The main subject is large and centred in the middle of the frame. '
+  + 'The top sixth of the picture is a calm, softly glowing, uncluttered background. '
+  + 'The bottom third gently fades into a darker, uncluttered area of soft glow, with no important details there, '
+  + 'because greeting text will be added on top later. '
   + 'No text, no letters, no numbers, no words, no signature, no watermark, no border, no frame. Picture: ';
 
 // Each festival has 1–2 subjects; versions take turns between them.
@@ -224,13 +236,15 @@ module.exports = async (req, res) => {
       const subjects = FESTIVALS[key];
       if (!subjects) return res.status(400).json({ ok: false, error: 'Unknown festival.' });
       const v = Math.min(MAX_VARIANTS, Math.max(1, parseInt(body.variant, 10) || 1));
+      const full = body.design === 'full';
+      const pre = full ? 'full-' : '';
       for (const ext of ['jpg', 'png']) {
-        const p = ART_FOLDER + '/' + key + '-v' + v + '.' + ext;
+        const p = ART_FOLDER + '/' + pre + key + '-v' + v + '.' + ext;
         if (await exists(p)) return res.status(200).json({ ok: true, url: publicUrl(p), variant: v, max: MAX_VARIANTS, made: false });
       }
-      const prompt = ART_STYLE + subjects[(v - 1) % subjects.length];
+      const prompt = (full ? ART_STYLE_FULL : ART_STYLE) + subjects[(v - 1) % subjects.length];
       const out = await drawArt(prompt);
-      const p = ART_FOLDER + '/' + key + '-v' + v + '.' + (out.jpeg ? 'jpg' : 'png');
+      const p = ART_FOLDER + '/' + pre + key + '-v' + v + '.' + (out.jpeg ? 'jpg' : 'png');
       await storeFile(out.buf, p, out.jpeg ? 'image/jpeg' : 'image/png');
       return res.status(200).json({ ok: true, url: publicUrl(p), variant: v, max: MAX_VARIANTS, made: true });
     }

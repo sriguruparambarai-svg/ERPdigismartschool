@@ -55,7 +55,7 @@
   let logoImg = null, built = false, busy = false, drawTimer = null, fontsLoaded = false;
   const artCache = {};
   const st = {
-    fest: 'ayudha', pic: 'ai', variant: 1, art: null, own: null,
+    fest: 'ayudha', design: 'full', pic: 'ai', variant: 1, art: null, own: null,
     withPerson: false, person: null, personImg: null, personNew: '',
     size: 'post', ta: '', en: '', msg: '', from: 'Correspondent, Principal, Staff & Students', phone: true
   };
@@ -161,7 +161,7 @@
   function drawLines(x, lines, cx, top, lineH, color, weight, size, family, shadow) {
     x.save();
     x.font = weight + ' ' + size + 'px ' + family; x.textAlign = 'center'; x.textBaseline = 'top'; x.fillStyle = color;
-    if (shadow) { x.shadowColor = 'rgba(0,0,0,0.45)'; x.shadowBlur = 8; x.shadowOffsetY = 2; }
+    if (shadow) { x.shadowColor = typeof shadow === 'number' ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.45)'; x.shadowBlur = typeof shadow === 'number' ? shadow : 8; x.shadowOffsetY = 2; }
     lines.forEach((l, i) => x.fillText(l, cx, top + i * lineH));
     x.restore();
   }
@@ -221,7 +221,109 @@
   // ── THE POSTER ──
   // s: { size:'post'|'status', art: Image|null, withPerson, personImg, personName, personRole,
   //      ta, en, msg, from, showPhone, school:{name,city,phone}, logo: Image|null }
+
+  // ── FULL PICTURE design (like greetings in Reels): the picture fills the poster,
+  //    logo + school name on top, wishes at the bottom over a soft dark fade ──
+  function drawFull(c, s) {
+    const W = 1080, H = s.size === 'status' ? 1920 : 1350;
+    c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    const sch = s.school || {};
+    const tall = H > 1500;
+
+    if (s.art) coverDraw(x, s.art, 0, 0, W, H, 0.4);
+    else drawLamp(x, 0, 0, W, H);
+
+    // soft dark fade at the top for the school name
+    let g = x.createLinearGradient(0, 0, 0, H * 0.24);
+    g.addColorStop(0, 'rgba(15,3,3,0.72)'); g.addColorStop(1, 'rgba(15,3,3,0)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H * 0.24);
+
+    // logo (left) + school name and town (right of it)
+    const lr = tall ? 74 : 62, m = tall ? 56 : 44;
+    const lcx = m + lr, lcy = m + lr;
+    x.save(); x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 18;
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(lcx, lcy, lr, 0, Math.PI * 2); x.fill(); x.restore();
+    x.strokeStyle = GOLD; x.lineWidth = 5; x.beginPath(); x.arc(lcx, lcy, lr + 3, 0, Math.PI * 2); x.stroke();
+    if (s.logo) {
+      x.save(); x.beginPath(); x.arc(lcx, lcy, lr - 4, 0, Math.PI * 2); x.clip();
+      const k = Math.min((lr * 2 - 12) / s.logo.width, (lr * 2 - 12) / s.logo.height);
+      x.drawImage(s.logo, lcx - s.logo.width * k / 2, lcy - s.logo.height * k / 2, s.logo.width * k, s.logo.height * k);
+      x.restore();
+    } else {
+      x.fillStyle = MAROON; x.font = '700 ' + Math.round(lr * 0.7) + 'px ' + F_EN; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(initials(sch.name), lcx, lcy + 2);
+    }
+    const nx = lcx + lr + 28, nw = W - nx - m;
+    const nm = wrapFit(x, sch.name || 'Our School', nw, tall ? 52 : 46, '700', F_HEAD, 2, 26);
+    const ct = sch.city ? fit(x, sch.city, nw, tall ? 30 : 26, '600', F_EN, 16) : null;
+    const nh = nm.lines.length * nm.s * 1.12 + (ct ? ct.s + 8 : 0);
+    let ny = lcy - nh / 2;
+    x.save(); x.textAlign = 'left'; x.textBaseline = 'top';
+    x.shadowColor = 'rgba(0,0,0,0.7)'; x.shadowBlur = 12; x.shadowOffsetY = 2;
+    x.font = '700 ' + nm.s + 'px ' + F_HEAD; x.fillStyle = '#FFFFFF';
+    nm.lines.forEach((l, i) => x.fillText(l, nx, ny + i * nm.s * 1.12));
+    if (ct) { x.font = '600 ' + ct.s + 'px ' + F_EN; x.fillStyle = GOLD_LIGHT; x.fillText(ct.text, nx, ny + nm.lines.length * nm.s * 1.12 + 6); }
+    x.restore();
+
+    // wishes, measured from the bottom up
+    const tw = W - 120;
+    const ta = wrapFit(x, s.ta, tw, tall ? 76 : 66, '700', F_TA, 2, 30);
+    const en = s.en ? fit(x, s.en, tw, tall ? 62 : 54, '700', F_HEAD, 26) : null;
+    const msg = wrapFit(x, s.msg, tw - 40, tall ? 34 : 29, '500', F_EN, 2, 18);
+    const from = s.from ? fit(x, '— ' + s.from + ' —', tw, tall ? 30 : 26, '600', F_EN, 16) : null;
+    const foot = [];
+    if (s.showPhone && sch.phone) foot.push('📞 ' + sch.phone);
+    if (sch.city) foot.push(sch.city);
+    const ft = foot.length ? fit(x, foot.join('   ·   '), tw, tall ? 28 : 24, '600', F_EN, 14) : null;
+    const gap = tall ? 20 : 12;
+    const blocks = [];
+    if (ta.lines.length) blocks.push({ h: ta.lines.length * ta.s * 1.32, draw: (t) => drawLines(x, ta.lines, W / 2, t, ta.s * 1.32, GOLD_LIGHT, '700', ta.s, F_TA, 16) });
+    if (ta.lines.length && en) blocks.push({ h: 10, draw: (t) => {
+      x.save(); x.strokeStyle = GOLD; x.lineWidth = 2; x.beginPath(); x.moveTo(W / 2 - 150, t + 5); x.lineTo(W / 2 + 150, t + 5); x.stroke();
+      x.translate(W / 2, t + 5); x.rotate(Math.PI / 4); x.fillStyle = GOLD; x.fillRect(-6, -6, 12, 12); x.restore(); } });
+    if (en) blocks.push({ h: en.s * 1.2, draw: (t) => drawLines(x, [en.text], W / 2, t, 0, '#FFFFFF', '700', en.s, F_HEAD, 14) });
+    if (msg.lines.length) blocks.push({ h: msg.lines.length * msg.s * 1.4, draw: (t) => drawLines(x, msg.lines, W / 2, t, msg.s * 1.4, SANDAL, '500', msg.s, F_EN, 10) });
+    if (from) blocks.push({ h: from.s * 1.3, draw: (t) => drawLines(x, [from.text], W / 2, t, 0, GOLD_LIGHT, '600', from.s, F_EN, 10) });
+    if (ft) blocks.push({ h: ft.s * 1.3, draw: (t) => drawLines(x, [ft.text], W / 2, t + 4, 0, '#FFFFFF', '600', ft.s, F_EN, 10) });
+    const textH = blocks.reduce((a, b) => a + b.h, 0) + Math.max(0, blocks.length - 1) * gap;
+    const textTop = H - (tall ? 70 : 46) - textH;
+
+    // person (optional): round photo at the right, just above the wishes — keeps the festival picture's centre clear
+    const person = s.withPerson && s.personImg;
+    const pr = person ? (tall ? 140 : 100) : 0;
+    let nameLine = null;
+    if (person) {
+      const t = [s.personName, s.personRole].filter(Boolean).join(', ');
+      if (t) nameLine = fit(x, t, W * 0.6, tall ? 36 : 30, '700', F_EN, 18);
+    }
+    const personH = person ? pr * 2 + 22 + (nameLine ? nameLine.s * 1.3 : 0) + gap : 0;
+
+    // soft dark fade behind the wishes (and person)
+    const fadeTop = Math.max(H * 0.35, textTop - personH - (tall ? 200 : 150));
+    g = x.createLinearGradient(0, fadeTop, 0, H);
+    g.addColorStop(0, 'rgba(25,5,5,0)'); g.addColorStop(0.35, 'rgba(25,5,5,0.62)'); g.addColorStop(1, 'rgba(25,5,5,0.93)');
+    x.fillStyle = g; x.fillRect(0, fadeTop, W, H - fadeTop);
+
+    if (person) {
+      const pcx = W - m - pr - 14, pcy = textTop - personH + pr + 6;
+      x.save(); x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 24;
+      x.fillStyle = '#fff'; x.beginPath(); x.arc(pcx, pcy, pr + 7, 0, Math.PI * 2); x.fill(); x.restore();
+      x.save(); x.beginPath(); x.arc(pcx, pcy, pr, 0, Math.PI * 2); x.clip();
+      coverDraw(x, s.personImg, pcx - pr, pcy - pr, pr * 2, pr * 2, 0.25);
+      x.restore();
+      x.strokeStyle = GOLD; x.lineWidth = 6; x.beginPath(); x.arc(pcx, pcy, pr + 10, 0, Math.PI * 2); x.stroke();
+      if (nameLine) { x.save(); x.textAlign = 'right'; x.textBaseline = 'top'; x.shadowColor = 'rgba(0,0,0,0.8)'; x.shadowBlur = 12;
+        x.font = '700 ' + nameLine.s + 'px ' + F_EN; x.fillStyle = '#FFFFFF'; x.fillText(nameLine.text, W - m, pcy + pr + 18); x.restore(); }
+    }
+
+    let t = textTop;
+    blocks.forEach(b => { b.draw(t); t += b.h + gap; });
+    return c;
+  }
+
   function drawPoster(c, s) {
+    if (s.design === 'full') return drawFull(c, s);
     const W = 1080, H = s.size === 'status' ? 1920 : 1350;
     c.width = W; c.height = H;
     const x = c.getContext('2d');
@@ -364,6 +466,8 @@
       +   '<div class="help" style="margin:4px 0 12px">Pick the festival. The poster is made with your school logo and name, wishes in Tamil and English, and a festival picture. Check it, then download, share, or add it to "Ready to Post".</div>'
       +   '<label class="form-label">Festival</label>'
       +   '<select id="fw-fest" class="form-control">' + FESTIVALS.map(f => '<option value="' + f.key + '">' + esc(f.name) + '</option>').join('') + '</select>'
+      +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Design</b>'
+      +     chip('design', 'full', '✨ Full picture', true) + chip('design', 'framed', '🖼 Framed', false) + '</div>'
       +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Picture</b>'
       +     chip('pic', 'ai', '🛕 Festival picture', true) + chip('pic', 'own', '📁 Our own picture', false) + chip('pic', 'none', '🪔 Lamp design', false)
       +     '<div id="fw-ai-row" style="width:100%;margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
@@ -446,6 +550,11 @@
       $('fw-person-row').classList.toggle('hidden', !st.withPerson);
       return redraw();
     }
+    if (t.name === 'fw-design') {
+      st.design = t.value; setChip('design', t.value);
+      if (st.pic === 'ai') await loadArt();
+      return redraw();
+    }
     if (t.name === 'fw-size') { st.size = t.value; setChip('size', t.value); return redraw(); }
     if (t.id === 'fw-fest') { st.fest = t.value; setFestTexts(); if (st.pic === 'ai') await loadArt(); return redraw(); }
     if (t.id === 'fw-phone') { readTexts(); return redraw(); }
@@ -466,21 +575,22 @@
   }
 
   // ── festival picture (shared AI picture, made once for all schools) ──
-  function rememberedVariant(art) { try { return parseInt(localStorage.getItem('fw_v_' + art), 10) || 1; } catch (e) { return 1; } }
+  function rememberedVariant(art) { try { return parseInt(localStorage.getItem('fw_v_' + st.design + '_' + art), 10) || 1; } catch (e) { return 1; } }
   async function loadArt(variant) {
     const art = festOf(st.fest).art;
     const v = variant || rememberedVariant(art);
-    const k = art + '-' + v;
+    const design = st.design;
+    const k = design + '-' + art + '-' + v;
     const status = $('fw-art-status');
     if (artCache[k]) { st.art = artCache[k]; st.variant = v; status.textContent = 'Picture ' + v + ' of 4'; return; }
     busy = true; setButtons();
     status.textContent = '⏳ Getting the festival picture… the first time it is made it takes about a minute.';
     try {
-      const d = await call('art', { festival: art, variant: v });
+      const d = await call('art', { festival: art, variant: v, design });
       const img = await loadImg(d.url);
       artCache[k] = img;
-      if (festOf(st.fest).art === art) { st.art = img; st.variant = d.variant; }
-      try { localStorage.setItem('fw_v_' + art, String(d.variant)); } catch (e) {}
+      if (festOf(st.fest).art === art && st.design === design) { st.art = img; st.variant = d.variant; }
+      try { localStorage.setItem('fw_v_' + design + '_' + art, String(d.variant)); } catch (e) {}
       status.textContent = 'Picture ' + d.variant + ' of ' + d.max + (d.made ? ' · newly made' : '');
     } catch (err) {
       st.art = null;
@@ -530,7 +640,7 @@
   // ── drawing the preview ──
   function currentState(logo) {
     return {
-      size: st.size,
+      design: st.design, size: st.size,
       art: st.pic === 'ai' ? st.art : st.pic === 'own' ? st.own : null,
       withPerson: st.withPerson, personImg: st.personImg,
       personName: $('fw-pname') ? $('fw-pname').value.trim() : '', personRole: $('fw-prole') ? $('fw-prole').value.trim() : '',
@@ -616,6 +726,7 @@
   window.FW = {
     FESTIVALS,
     drawPoster,
+    drawFull,
     init(o) { cfg = Object.assign(cfg, o || {}); cfg.school = Object.assign({ name: '', city: '', phone: '' }, (o && o.school) || {}); logoImg = null; },
     async open() {
       if (!built) { build(); redraw(); if (st.pic === 'ai') await loadArt(); }
