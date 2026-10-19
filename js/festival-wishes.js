@@ -1,0 +1,625 @@
+// DigiSmart ERP — Festival Wishes (a tab inside Social Media Posts)
+// Makes a festival greeting poster in the browser (no server cost):
+//   festival picture (AI-made and shared by all schools, or the school's own picture)
+//   + school logo + school name + wishes in Tamil and English
+//   + optional correspondent / principal photo with name.
+// Sizes: Post (1080×1350, Instagram/Facebook) and WhatsApp Status (1080×1920).
+// Server door: /api/festival-wishes (AI picture, saved correspondent photo, add to Ready to Post).
+//
+// Used by pages/social-posts.html:
+//   FW.init({ logoUrl, school })   after the page's "info" call
+//   FW.open()                      when the 🪔 Festival Wishes tab is opened
+//   FW.drawPoster(canvas, state)   the drawing itself (also usable on its own)
+
+(function () {
+  const API = '/api/festival-wishes';
+  const MAROON = '#6B1A1A', MAROON_DARK = '#3E0D0D', GOLD = '#C9A84C', GOLD_LIGHT = '#E8C96A', SANDAL = '#F5E6C8';
+  const F_EN = '"Poppins", "Segoe UI", "Noto Sans", Arial, sans-serif';
+  const F_HEAD = '"Playfair Display", Georgia, "Times New Roman", serif';
+  const F_TA = '"Noto Serif Tamil", "Noto Sans Tamil", "Latha", "Vijaya", serif';
+
+  // key · picture (art) · Tamil wish · English wish · short message
+  const FESTIVALS = [
+    { key: 'ayudha', art: 'saraswathi', name: 'Ayudha Pooja & Vijayadasami', ta: 'ஆயுத பூஜை & விஜயதசமி நல்வாழ்த்துக்கள்', en: 'Happy Ayudha Pooja & Vijayadasami', msg: 'May Goddess Saraswathi bless every child with wisdom, knowledge and success.' },
+    { key: 'saraswathi', art: 'saraswathi', name: 'Saraswathi Pooja', ta: 'சரஸ்வதி பூஜை நல்வாழ்த்துக்கள்', en: 'Happy Saraswathi Pooja', msg: 'May Goddess Saraswathi bless every child with wisdom, knowledge and success.' },
+    { key: 'vijayadasami', art: 'vijayadasami', name: 'Vijayadasami', ta: 'விஜயதசமி நல்வாழ்த்துக்கள்', en: 'Happy Vijayadasami', msg: 'May this auspicious day give every child a bright beginning in learning.' },
+    { key: 'deepavali', art: 'deepavali', name: 'Deepavali', ta: 'இனிய தீபாவளி நல்வாழ்த்துக்கள்', en: 'Happy Deepavali', msg: 'May the festival of lights fill your home with joy, peace and prosperity.' },
+    { key: 'childrens', art: 'childrens', name: "Children's Day", ta: 'குழந்தைகள் தின நல்வாழ்த்துக்கள்', en: "Happy Children's Day", msg: 'Every child is a star. Keep shining!' },
+    { key: 'karthigai', art: 'karthigai', name: 'Karthigai Deepam', ta: 'திருக்கார்த்திகை தீப நல்வாழ்த்துக்கள்', en: 'Happy Karthigai Deepam', msg: 'May the light of the lamps brighten every home.' },
+    { key: 'christmas', art: 'christmas', name: 'Christmas', ta: 'கிறிஸ்துமஸ் நல்வாழ்த்துக்கள்', en: 'Merry Christmas', msg: 'Wishing you joy, peace and love this Christmas.' },
+    { key: 'new_year', art: 'new_year', name: 'New Year', ta: 'இனிய புத்தாண்டு நல்வாழ்த்துக்கள்', en: 'Happy New Year', msg: 'Wishing every family a happy, healthy and successful new year.' },
+    { key: 'pongal', art: 'pongal', name: 'Pongal', ta: 'இனிய பொங்கல் நல்வாழ்த்துக்கள்', en: 'Happy Pongal', msg: 'May this harvest festival bring sweetness and prosperity to every home.' },
+    { key: 'republic', art: 'republic', name: 'Republic Day', ta: 'குடியரசு தின நல்வாழ்த்துக்கள்', en: 'Happy Republic Day', msg: 'Proud to be Indian. Jai Hind!' },
+    { key: 'tamil_new_year', art: 'tamil_new_year', name: 'Tamil New Year', ta: 'இனிய தமிழ்ப் புத்தாண்டு நல்வாழ்த்துக்கள்', en: 'Happy Tamil New Year', msg: 'May the new year bring happiness and success to every family.' },
+    { key: 'ramzan', art: 'ramzan', name: 'Ramzan', ta: 'ரம்ஜான் நல்வாழ்த்துக்கள்', en: 'Eid Mubarak', msg: 'Wishing everyone peace, happiness and blessings.' },
+    { key: 'bakrid', art: 'bakrid', name: 'Bakrid', ta: 'பக்ரீத் நல்வாழ்த்துக்கள்', en: 'Happy Bakrid', msg: 'Wishing everyone peace, happiness and blessings.' },
+    { key: 'independence', art: 'independence', name: 'Independence Day', ta: 'சுதந்திர தின நல்வாழ்த்துக்கள்', en: 'Happy Independence Day', msg: 'Proud to be Indian. Jai Hind!' },
+    { key: 'krishna', art: 'krishna', name: 'Krishna Jayanthi', ta: 'கிருஷ்ண ஜெயந்தி நல்வாழ்த்துக்கள்', en: 'Happy Krishna Jayanthi', msg: 'May Little Krishna fill every home with joy.' },
+    { key: 'teachers', art: 'teachers', name: "Teachers' Day", ta: 'ஆசிரியர் தின நல்வாழ்த்துக்கள்', en: "Happy Teachers' Day", msg: "Thank you, dear teachers, for shaping our children's future." },
+    { key: 'vinayagar', art: 'vinayagar', name: 'Vinayagar Chathurthi', ta: 'விநாயகர் சதுர்த்தி நல்வாழ்த்துக்கள்', en: 'Happy Vinayagar Chathurthi', msg: 'May Lord Vinayagar remove all obstacles and bless every child.' },
+    { key: 'other', art: 'general', name: 'Other (type your own wishes)', ta: '', en: '', msg: '' }
+  ];
+  // A starting guess from today's date — festival dates move every year, so the school can always change it
+  function guessFestival(d) {
+    const m = d.getMonth() + 1, day = d.getDate(), n = m * 100 + day;
+    const ranges = [[101, 105, 'new_year'], [106, 120, 'pongal'], [121, 131, 'republic'], [401, 420, 'tamil_new_year'],
+      [801, 815, 'independence'], [816, 831, 'krishna'], [901, 905, 'teachers'], [906, 925, 'vinayagar'],
+      [926, 1025, 'ayudha'], [1026, 1112, 'deepavali'], [1113, 1116, 'childrens'], [1117, 1210, 'karthigai'],
+      [1211, 1229, 'christmas'], [1230, 1231, 'new_year']];
+    for (const r of ranges) if (n >= r[0] && n <= r[1]) return r[2];
+    return 'ayudha';
+  }
+  function festOf(key) { return FESTIVALS.find(f => f.key === key) || FESTIVALS[0]; }
+
+  let cfg = { logoUrl: '', school: { name: '', city: '', phone: '' } };
+  let logoImg = null, built = false, busy = false, drawTimer = null, fontsLoaded = false;
+  const artCache = {};
+  const st = {
+    fest: 'ayudha', pic: 'ai', variant: 1, art: null, own: null,
+    withPerson: false, person: null, personImg: null, personNew: '',
+    size: 'post', ta: '', en: '', msg: '', from: 'Correspondent, Principal, Staff & Students', phone: true
+  };
+
+  // ── small helpers ──
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function toast(m, t) { if (typeof showToast === 'function') showToast(m, t || 'success'); else alert(m); }
+  function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+  function who() { return (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : 'Office'; }
+  async function call(action, extra) {
+    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ action, token: token(), by: who() }, extra || {})) });
+    let d; try { d = await r.json(); } catch (e) { throw new Error('The server sent back something unreadable (' + r.status + '). If this is new, check that api/festival-wishes.js was uploaded.'); }
+    if (!d.ok) throw new Error(d.error || 'Something went wrong.');
+    return d;
+  }
+  function loadImg(src) {
+    return new Promise((ok, bad) => {
+      const i = new Image(); i.crossOrigin = 'anonymous';
+      i.onload = () => ok(i); i.onerror = () => bad(new Error('Could not load a picture.'));
+      i.src = src;
+    });
+  }
+  function fileToImg(file, maxSide) {
+    return new Promise((ok, bad) => {
+      const r = new FileReader();
+      r.onerror = () => bad(new Error('Could not read that file.'));
+      r.onload = async () => {
+        try {
+          const img = await loadImg(r.result);
+          const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          const url = c.toDataURL('image/jpeg', 0.86);
+          ok({ img: await loadImg(url), url });
+        } catch (e) { bad(new Error('That file is not a photo.')); }
+      };
+      r.readAsDataURL(file);
+    });
+  }
+  function addFonts() {
+    if (document.getElementById('fw-fonts')) return;
+    const l = document.createElement('link');
+    l.id = 'fw-fonts'; l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Noto+Serif+Tamil:wght@600;700&family=Playfair+Display:wght@700&display=swap';
+    document.head.appendChild(l);
+  }
+  async function fontsReady() {
+    if (fontsLoaded) return;
+    addFonts();
+    try {
+      await Promise.all([
+        document.fonts.load('700 60px "Noto Serif Tamil"', 'தமிழ் நல்வாழ்த்துக்கள்'),
+        document.fonts.load('600 30px "Noto Serif Tamil"', 'தமிழ்'),
+        document.fonts.load('700 54px "Playfair Display"', 'Happy'),
+        document.fonts.load('600 30px Poppins'), document.fonts.load('700 30px Poppins'), document.fonts.load('500 30px Poppins')
+      ]);
+      fontsLoaded = true;
+    } catch (e) { /* draw with fallback fonts */ }
+  }
+  async function getLogo() {
+    if (!cfg.logoUrl) return null;
+    if (!logoImg) { try { logoImg = await loadImg(cfg.logoUrl); } catch (e) { logoImg = null; } }
+    return logoImg;
+  }
+  function initials(name) {
+    const w = String(name || 'School').replace(/[^A-Za-z\s]/g, ' ').trim().split(/\s+/);
+    return w.slice(0, 2).map(x => x[0] || '').join('').toUpperCase() || 'S';
+  }
+
+  // ── drawing helpers ──
+  function fit(x, text, maxW, size, weight, family, minSize) {
+    text = String(text || ''); let s = size;
+    for (; s > (minSize || 14); s -= 2) { x.font = weight + ' ' + s + 'px ' + family; if (x.measureText(text).width <= maxW) return { s, text }; }
+    x.font = weight + ' ' + s + 'px ' + family;
+    while (text.length > 3 && x.measureText(text + '…').width > maxW) text = text.slice(0, -1);
+    return { s, text: text + '…' };
+  }
+  // Wrap into at most maxLines lines, shrinking the font until it fits
+  function wrapFit(x, text, maxW, size, weight, family, maxLines, minSize) {
+    text = String(text || '').trim();
+    if (!text) return { s: size, lines: [] };
+    const words = text.split(/\s+/);
+    for (let s = size; s >= (minSize || 18); s -= 2) {
+      x.font = weight + ' ' + s + 'px ' + family;
+      const lines = []; let cur = '';
+      let ok = true;
+      for (const w of words) {
+        const t = cur ? cur + ' ' + w : w;
+        if (x.measureText(t).width <= maxW) { cur = t; continue; }
+        if (!cur) { ok = false; break; }           // one word wider than the line
+        lines.push(cur); cur = w;
+        if (lines.length >= maxLines) { ok = false; break; }
+      }
+      if (ok && cur) lines.push(cur);
+      if (ok && lines.length <= maxLines) return { s, lines };
+    }
+    const f = fit(x, text, maxW, minSize || 18, weight, family, 12);
+    return { s: f.s, lines: [f.text] };
+  }
+  function drawLines(x, lines, cx, top, lineH, color, weight, size, family, shadow) {
+    x.save();
+    x.font = weight + ' ' + size + 'px ' + family; x.textAlign = 'center'; x.textBaseline = 'top'; x.fillStyle = color;
+    if (shadow) { x.shadowColor = 'rgba(0,0,0,0.45)'; x.shadowBlur = 8; x.shadowOffsetY = 2; }
+    lines.forEach((l, i) => x.fillText(l, cx, top + i * lineH));
+    x.restore();
+  }
+  function coverDraw(x, img, X, Y, W, H, focusY) {
+    const s = Math.max(W / img.width, H / img.height);
+    const w = img.width * s, h = img.height * s;
+    x.drawImage(img, X + (W - w) / 2, Y + (H - h) * (focusY == null ? 0.5 : focusY), w, h);
+  }
+  // A temple-style arch: straight sides, round top
+  function archPath(x, X, Y, W, H) {
+    const r = W / 2;
+    x.beginPath();
+    x.moveTo(X, Y + H);
+    x.lineTo(X, Y + r);
+    x.arc(X + r, Y + r, r, Math.PI, 0);
+    x.lineTo(X + W, Y + H);
+    x.closePath();
+  }
+  function mandala(x, cx, cy, r, alpha) {
+    x.save(); x.globalAlpha = alpha; x.strokeStyle = GOLD; x.fillStyle = GOLD; x.lineWidth = 2;
+    [1, 0.78, 0.56].forEach(k => { x.beginPath(); x.arc(cx, cy, r * k, 0, Math.PI * 2); x.stroke(); });
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8;
+      x.beginPath();
+      x.ellipse(cx + Math.cos(a) * r * 0.78, cy + Math.sin(a) * r * 0.78, r * 0.16, r * 0.06, a, 0, Math.PI * 2);
+      x.stroke();
+      x.beginPath(); x.arc(cx + Math.cos(a) * r * 1.06, cy + Math.sin(a) * r * 1.06, r * 0.025, 0, Math.PI * 2); x.fill();
+    }
+    x.restore();
+  }
+  // When there is no festival picture: a glowing brass lamp on a sandal background
+  function drawLamp(x, X, Y, W, H) {
+    const g = x.createRadialGradient(X + W / 2, Y + H * 0.55, 10, X + W / 2, Y + H * 0.55, Math.max(W, H) * 0.7);
+    g.addColorStop(0, '#FFF3D6'); g.addColorStop(0.5, SANDAL); g.addColorStop(1, '#D9B47A');
+    x.fillStyle = g; x.fillRect(X, Y, W, H);
+    mandala(x, X + W / 2, Y + H * 0.55, Math.min(W, H) * 0.38, 0.35);
+    const cx = X + W / 2, by = Y + H * 0.66, bw = Math.min(W, H) * 0.42;
+    const glow = x.createRadialGradient(cx, by - bw * 0.42, 4, cx, by - bw * 0.42, bw * 0.7);
+    glow.addColorStop(0, 'rgba(255,214,102,0.85)'); glow.addColorStop(1, 'rgba(255,214,102,0)');
+    x.fillStyle = glow; x.beginPath(); x.arc(cx, by - bw * 0.42, bw * 0.7, 0, Math.PI * 2); x.fill();
+    const fg = x.createLinearGradient(cx, by - bw * 0.75, cx, by - bw * 0.1);
+    fg.addColorStop(0, '#FFE680'); fg.addColorStop(0.6, '#FF9F1C'); fg.addColorStop(1, '#E85D04');
+    x.fillStyle = fg; x.beginPath();
+    x.moveTo(cx, by - bw * 0.78);
+    x.bezierCurveTo(cx + bw * 0.16, by - bw * 0.48, cx + bw * 0.12, by - bw * 0.16, cx, by - bw * 0.1);
+    x.bezierCurveTo(cx - bw * 0.12, by - bw * 0.16, cx - bw * 0.16, by - bw * 0.48, cx, by - bw * 0.78);
+    x.fill();
+    const lg = x.createLinearGradient(cx - bw / 2, by, cx + bw / 2, by);
+    lg.addColorStop(0, '#8C4A12'); lg.addColorStop(0.5, '#C9852E'); lg.addColorStop(1, '#8C4A12');
+    x.fillStyle = lg; x.beginPath();
+    x.moveTo(cx - bw / 2, by - bw * 0.1);
+    x.quadraticCurveTo(cx, by + bw * 0.42, cx + bw / 2, by - bw * 0.1);
+    x.quadraticCurveTo(cx, by - bw * 0.02, cx - bw / 2, by - bw * 0.1);
+    x.fill();
+  }
+
+  // ── THE POSTER ──
+  // s: { size:'post'|'status', art: Image|null, withPerson, personImg, personName, personRole,
+  //      ta, en, msg, from, showPhone, school:{name,city,phone}, logo: Image|null }
+  function drawPoster(c, s) {
+    const W = 1080, H = s.size === 'status' ? 1920 : 1350;
+    c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    const sch = s.school || {};
+
+    // background: deep maroon glow, corner kolam patterns, double gold border
+    const bg = x.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H * 0.45, H * 0.85);
+    bg.addColorStop(0, '#8E2C24'); bg.addColorStop(0.55, '#5E1616'); bg.addColorStop(1, '#2C0707');
+    x.fillStyle = bg; x.fillRect(0, 0, W, H);
+    mandala(x, 0, 0, 230, 0.18); mandala(x, W, 0, 230, 0.18); mandala(x, 0, H, 230, 0.18); mandala(x, W, H, 230, 0.18);
+    x.strokeStyle = GOLD; x.lineWidth = 5; x.strokeRect(22, 22, W - 44, H - 44);
+    x.lineWidth = 1.5; x.strokeRect(36, 36, W - 72, H - 72);
+    [[36, 36], [W - 36, 36], [36, H - 36], [W - 36, H - 36]].forEach(p => {
+      x.save(); x.translate(p[0], p[1]); x.rotate(Math.PI / 4); x.fillStyle = GOLD; x.fillRect(-9, -9, 18, 18); x.restore();
+    });
+
+    // header: logo + school name + town
+    const tall = H > 1500;
+    const lr = tall ? 82 : 66, lcy = tall ? 150 : 118;
+    x.save(); x.shadowColor = 'rgba(0,0,0,0.4)'; x.shadowBlur = 16;
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(W / 2, lcy, lr, 0, Math.PI * 2); x.fill(); x.restore();
+    x.strokeStyle = GOLD; x.lineWidth = 5; x.beginPath(); x.arc(W / 2, lcy, lr + 3, 0, Math.PI * 2); x.stroke();
+    if (s.logo) {
+      x.save(); x.beginPath(); x.arc(W / 2, lcy, lr - 4, 0, Math.PI * 2); x.clip();
+      const k = Math.min((lr * 2 - 12) / s.logo.width, (lr * 2 - 12) / s.logo.height);
+      x.drawImage(s.logo, W / 2 - s.logo.width * k / 2, lcy - s.logo.height * k / 2, s.logo.width * k, s.logo.height * k);
+      x.restore();
+    } else {
+      x.fillStyle = MAROON; x.font = '700 ' + Math.round(lr * 0.7) + 'px ' + F_EN; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(initials(sch.name), W / 2, lcy + 2);
+    }
+    let y = lcy + lr + (tall ? 30 : 22);
+    const nm = wrapFit(x, sch.name || 'Our School', W - 170, tall ? 56 : 48, '700', F_HEAD, 2, 30);
+    drawLines(x, nm.lines, W / 2, y, nm.s * 1.15, GOLD_LIGHT, '700', nm.s, F_HEAD, true);
+    y += nm.lines.length * nm.s * 1.15;
+    if (sch.city) {
+      const ct = fit(x, sch.city, W - 200, tall ? 30 : 26, '500', F_EN, 16);
+      drawLines(x, [ct.text], W / 2, y + 4, 0, SANDAL, '500', ct.s, F_EN, false);
+      y += ct.s + 8;
+    }
+    const archTop = y + (tall ? 64 : 54);          // room for the little ornament on top of the arch
+
+    // footer band: phone · town
+    const foot = [];
+    if (s.showPhone && sch.phone) foot.push('📞 ' + sch.phone);
+    if (sch.city) foot.push(sch.city);
+    const footH = foot.length ? (tall ? 76 : 62) : 0;
+    const footY = H - 36 - footH;
+    if (footH) {
+      const fg = x.createLinearGradient(0, footY, W, footY);
+      fg.addColorStop(0, '#A9832F'); fg.addColorStop(0.5, GOLD_LIGHT); fg.addColorStop(1, '#A9832F');
+      x.fillStyle = fg; x.fillRect(36, footY, W - 72, footH);
+      const ft = fit(x, foot.join('   ·   '), W - 160, tall ? 32 : 28, '600', F_EN, 16);
+      x.fillStyle = MAROON_DARK; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '600 ' + ft.s + 'px ' + F_EN;
+      x.fillText(ft.text, W / 2, footY + footH / 2 + 1);
+    }
+
+    // wishes, measured from the bottom up
+    const tw = W - 150;
+    const person = s.withPerson && s.personImg;
+    const compact = person && !tall;
+    const ta = wrapFit(x, s.ta, tw, tall ? 70 : 60, '700', F_TA, compact ? 1 : 2, 30);
+    const en = s.en ? fit(x, s.en, tw, tall ? 60 : 50, '700', F_HEAD, 26) : null;
+    const msg = wrapFit(x, s.msg, tw - 40, tall ? 34 : 29, '500', F_EN, compact ? 1 : 2, 18);
+    const from = s.from ? fit(x, '— ' + s.from + ' —', tw, tall ? 30 : 26, '500', F_EN, 16) : null;
+    const gap = tall ? 22 : 14;
+    const blocks = [];
+    if (ta.lines.length) blocks.push({ h: ta.lines.length * ta.s * 1.32, draw: (t) => drawLines(x, ta.lines, W / 2, t, ta.s * 1.32, GOLD_LIGHT, '700', ta.s, F_TA, true) });
+    if (en) blocks.push({ h: en.s * 1.2, draw: (t) => drawLines(x, [en.text], W / 2, t, 0, '#FFFFFF', '700', en.s, F_HEAD, true) });
+    if (msg.lines.length) blocks.push({ h: msg.lines.length * msg.s * 1.4, draw: (t) => drawLines(x, msg.lines, W / 2, t, msg.s * 1.4, SANDAL, '500', msg.s, F_EN, false) });
+    if (from) blocks.push({ h: from.s * 1.3, draw: (t) => drawLines(x, [from.text], W / 2, t, 0, GOLD, '500', from.s, F_EN, false) });
+    const textH = blocks.reduce((a, b) => a + b.h, 0) + Math.max(0, blocks.length - 1) * gap;
+    const textTop = (footH ? footY : H - 36) - (tall ? 40 : 26) - textH;
+
+    // person block under the arch: round photo overlapping the arch bottom, then the name
+    const pr = person ? (tall ? 150 : 104) : 0;
+    let nameLine = null;
+    if (person) {
+      const t = [s.personName, s.personRole].filter(Boolean).join(', ');
+      if (t) nameLine = fit(x, t, tw, tall ? 38 : 32, '700', F_EN, 18);
+    }
+    const personBelow = person ? pr + 12 + (nameLine ? nameLine.s * 1.3 : 0) : 0;
+    const archBottom = textTop - (tall ? 40 : 26) - personBelow;
+
+    // the arch with the festival picture
+    let archH = archBottom - archTop;
+    let archW = Math.min(tall ? 820 : 720, W - 200);
+    if (archH < archW * 0.9) archW = Math.max(460, Math.round(archH / 0.9));
+    archH = Math.max(260, archH);
+    const archX = (W - archW) / 2;
+    x.save(); x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 30; x.shadowOffsetY = 8;
+    archPath(x, archX, archTop, archW, archH); x.fillStyle = '#2C0707'; x.fill(); x.restore();
+    x.save(); archPath(x, archX, archTop, archW, archH); x.clip();
+    if (s.art) coverDraw(x, s.art, archX, archTop, archW, archH, 0.35);
+    else drawLamp(x, archX, archTop, archW, archH);
+    x.restore();
+    x.strokeStyle = GOLD; x.lineWidth = 9; archPath(x, archX, archTop, archW, archH); x.stroke();
+    x.strokeStyle = 'rgba(232,201,106,0.7)'; x.lineWidth = 2; archPath(x, archX - 14, archTop - 14, archW + 28, archH + 14); x.stroke();
+    // little kalasam on top of the arch
+    x.fillStyle = GOLD; x.beginPath(); x.arc(W / 2, archTop - 18, 9, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.moveTo(W / 2, archTop - 44); x.lineTo(W / 2 + 7, archTop - 27); x.lineTo(W / 2 - 7, archTop - 27); x.closePath(); x.fill();
+
+    if (person) {
+      const pcx = W / 2, pcy = archTop + archH;
+      x.save(); x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 20;
+      x.fillStyle = '#fff'; x.beginPath(); x.arc(pcx, pcy, pr + 8, 0, Math.PI * 2); x.fill(); x.restore();
+      x.save(); x.beginPath(); x.arc(pcx, pcy, pr, 0, Math.PI * 2); x.clip();
+      coverDraw(x, s.personImg, pcx - pr, pcy - pr, pr * 2, pr * 2, 0.25);
+      x.restore();
+      x.strokeStyle = GOLD; x.lineWidth = 6; x.beginPath(); x.arc(pcx, pcy, pr + 11, 0, Math.PI * 2); x.stroke();
+      if (nameLine) drawLines(x, [nameLine.text], W / 2, pcy + pr + 18, 0, '#FFFFFF', '700', nameLine.s, F_EN, true);
+    }
+
+    // wishes
+    let t = textTop;
+    blocks.forEach(b => { b.draw(t); t += b.h + gap; });
+    return c;
+  }
+
+  // Keep the poster under the upload limit
+  function toJpeg(c) {
+    let q = 0.92, d = c.toDataURL('image/jpeg', q);
+    while (d.length * 0.75 > 860 * 1024 && q > 0.5) { q -= 0.07; d = c.toDataURL('image/jpeg', q); }
+    return d;
+  }
+
+  // ── THE TAB ──
+  function chip(group, value, label, on) {
+    return '<label class="chip' + (on ? ' on' : '') + '" data-g="' + group + '" data-v="' + value + '"><input type="radio" name="fw-' + group + '" value="' + value + '"' + (on ? ' checked' : '') + '>' + label + '</label>';
+  }
+  function build() {
+    const box = $('tab-festival');
+    if (!box || built) return;
+    built = true;
+    st.fest = guessFestival(new Date());
+    box.innerHTML =
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start">'
+      + '<div class="card">'
+      +   '<div class="card-title">🪔 Festival Wishes poster</div>'
+      +   '<div class="help" style="margin:4px 0 12px">Pick the festival. The poster is made with your school logo and name, wishes in Tamil and English, and a festival picture. Check it, then download, share, or add it to "Ready to Post".</div>'
+      +   '<label class="form-label">Festival</label>'
+      +   '<select id="fw-fest" class="form-control">' + FESTIVALS.map(f => '<option value="' + f.key + '">' + esc(f.name) + '</option>').join('') + '</select>'
+      +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Picture</b>'
+      +     chip('pic', 'ai', '🛕 Festival picture', true) + chip('pic', 'own', '📁 Our own picture', false) + chip('pic', 'none', '🪔 Lamp design', false)
+      +     '<div id="fw-ai-row" style="width:100%;margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+      +       '<button class="btn btn-secondary btn-sm" id="fw-next">🔄 Another picture</button><span class="help" id="fw-art-status"></span></div>'
+      +     '<div id="fw-own-row" class="hidden" style="width:100%;margin-top:6px"><input type="file" id="fw-own-file" accept="image/*" class="form-control" style="max-width:300px">'
+      +       '<div class="help" style="margin-top:4px">Use only a picture the school is allowed to use (your own photo or one you bought).</div></div>'
+      +   '</div>'
+      +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Photo of</b>'
+      +     chip('who', 'no', 'Picture only', true) + chip('who', 'yes', '👤 With correspondent / principal photo', false)
+      +     '<div id="fw-person-row" class="hidden" style="width:100%;margin-top:8px">'
+      +       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><img id="fw-person-thumb" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);display:none">'
+      +       '<input type="file" id="fw-person-file" accept="image/*" class="form-control" style="max-width:260px"></div>'
+      +       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">'
+      +         '<input id="fw-pname" class="form-control" maxlength="60" placeholder="Name, e.g. Mr. R. Kumar">'
+      +         '<input id="fw-prole" class="form-control" maxlength="60" placeholder="e.g. Correspondent"></div>'
+      +       '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-secondary btn-sm" id="fw-psave">💾 Save photo & name for next festivals</button>'
+      +       '<button class="btn btn-secondary btn-sm" id="fw-pdel">🗑 Remove saved photo</button></div>'
+      +       '<div class="help" style="margin-top:4px">A clear face photo looks best. Saved once, it is ready for every festival.</div>'
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="lbl">Tamil wishes</div><input id="fw-ta" class="form-control" maxlength="80">'
+      +   '<div class="lbl">English wishes</div><input id="fw-en" class="form-control" maxlength="60">'
+      +   '<div class="lbl">Short message</div><input id="fw-msg" class="form-control" maxlength="120">'
+      +   '<div class="lbl">From</div><input id="fw-from" class="form-control" maxlength="70">'
+      +   '<label class="tick" id="fw-phone-row"><input type="checkbox" id="fw-phone" checked> Show school phone number at the bottom</label>'
+      +   '<div class="style-row"><b style="font-size:12px;margin-right:4px">Size</b>'
+      +     chip('size', 'post', '📷 Post (Instagram / Facebook)', true) + chip('size', 'status', '📱 WhatsApp Status', false) + '</div>'
+      + '</div>'
+      + '<div class="card" style="text-align:center">'
+      +   '<canvas id="fw-canvas" style="width:100%;max-width:380px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);background:#3E0D0D"></canvas>'
+      +   '<div class="help" id="fw-note" style="margin-top:8px"></div>'
+      +   '<div class="actions" style="justify-content:center">'
+      +     '<button class="btn btn-gold btn-sm" id="fw-add">✅ Add to Ready to Post</button>'
+      +     '<button class="btn btn-secondary btn-sm" id="fw-share">📤 Share (phone)</button>'
+      +     '<button class="btn btn-secondary btn-sm" id="fw-dl">⬇ Download</button>'
+      +   '</div>'
+      +   '<div class="help" style="margin-top:8px">"Ready to Post" lets you post to Facebook / Instagram, send to WhatsApp, or put it in the Parent Gallery.</div>'
+      + '</div></div>';
+
+    $('fw-fest').value = st.fest;
+    $('fw-from').value = st.from;
+    setFestTexts();
+    if (!cfg.school.phone) $('fw-phone-row').style.display = 'none';
+
+    box.addEventListener('change', onChange);
+    box.addEventListener('input', (e) => { if (/^fw-(ta|en|msg|from|pname|prole)$/.test(e.target.id)) { readTexts(); redraw(); } });
+    $('fw-next').onclick = () => nextArt();
+    $('fw-psave').onclick = () => savePerson();
+    $('fw-pdel').onclick = () => removePerson();
+    $('fw-add').onclick = () => addToReady();
+    $('fw-share').onclick = () => share();
+    $('fw-dl').onclick = () => download();
+    loadPerson();
+  }
+  function setFestTexts() {
+    const f = festOf(st.fest);
+    $('fw-ta').value = f.ta; $('fw-en').value = f.en; $('fw-msg').value = f.msg;
+    readTexts();
+  }
+  function readTexts() {
+    st.ta = $('fw-ta').value.trim(); st.en = $('fw-en').value.trim(); st.msg = $('fw-msg').value.trim();
+    st.from = $('fw-from').value.trim(); st.phone = $('fw-phone').checked;
+  }
+  function setChip(group, v) {
+    document.querySelectorAll('#tab-festival label.chip[data-g="' + group + '"]').forEach(l => {
+      const on = l.dataset.v === v; l.classList.toggle('on', on); l.querySelector('input').checked = on;
+    });
+  }
+  async function onChange(e) {
+    const t = e.target;
+    if (t.name === 'fw-pic') {
+      st.pic = t.value; setChip('pic', t.value);
+      $('fw-ai-row').classList.toggle('hidden', t.value !== 'ai');
+      $('fw-own-row').classList.toggle('hidden', t.value !== 'own');
+      if (t.value === 'ai') await loadArt();
+      return redraw();
+    }
+    if (t.name === 'fw-who') {
+      st.withPerson = t.value === 'yes'; setChip('who', t.value);
+      $('fw-person-row').classList.toggle('hidden', !st.withPerson);
+      return redraw();
+    }
+    if (t.name === 'fw-size') { st.size = t.value; setChip('size', t.value); return redraw(); }
+    if (t.id === 'fw-fest') { st.fest = t.value; setFestTexts(); if (st.pic === 'ai') await loadArt(); return redraw(); }
+    if (t.id === 'fw-phone') { readTexts(); return redraw(); }
+    if (t.id === 'fw-own-file') {
+      const f = t.files && t.files[0]; if (!f) return;
+      try { st.own = (await fileToImg(f, 1600)).img; redraw(); } catch (err) { toast('⚠️ ' + err.message, 'error'); }
+      return;
+    }
+    if (t.id === 'fw-person-file') {
+      const f = t.files && t.files[0]; if (!f) return;
+      try {
+        const r = await fileToImg(f, 800);
+        st.personImg = r.img; st.personNew = r.url;
+        $('fw-person-thumb').src = r.url; $('fw-person-thumb').style.display = '';
+        redraw();
+      } catch (err) { toast('⚠️ ' + err.message, 'error'); }
+    }
+  }
+
+  // ── festival picture (shared AI picture, made once for all schools) ──
+  function rememberedVariant(art) { try { return parseInt(localStorage.getItem('fw_v_' + art), 10) || 1; } catch (e) { return 1; } }
+  async function loadArt(variant) {
+    const art = festOf(st.fest).art;
+    const v = variant || rememberedVariant(art);
+    const k = art + '-' + v;
+    const status = $('fw-art-status');
+    if (artCache[k]) { st.art = artCache[k]; st.variant = v; status.textContent = 'Picture ' + v + ' of 4'; return; }
+    busy = true; setButtons();
+    status.textContent = '⏳ Getting the festival picture… the first time it is made it takes about a minute.';
+    try {
+      const d = await call('art', { festival: art, variant: v });
+      const img = await loadImg(d.url);
+      artCache[k] = img;
+      if (festOf(st.fest).art === art) { st.art = img; st.variant = d.variant; }
+      try { localStorage.setItem('fw_v_' + art, String(d.variant)); } catch (e) {}
+      status.textContent = 'Picture ' + d.variant + ' of ' + d.max + (d.made ? ' · newly made' : '');
+    } catch (err) {
+      st.art = null;
+      status.textContent = '⚠️ ' + err.message;
+    }
+    busy = false; setButtons();
+  }
+  async function nextArt() {
+    if (busy) return;
+    await loadArt((st.variant % 4) + 1);
+    redraw();
+  }
+
+  // ── saved correspondent photo ──
+  async function loadPerson() {
+    try {
+      const d = await call('person_get');
+      if (!d.person) return;
+      st.person = d.person;
+      $('fw-pname').value = d.person.name || ''; $('fw-prole').value = d.person.role || '';
+      $('fw-person-thumb').src = d.person.url; $('fw-person-thumb').style.display = '';
+      st.personImg = await loadImg(d.person.url);
+      redraw();
+    } catch (e) { /* no saved photo yet */ }
+  }
+  async function savePerson() {
+    if (!st.personNew && !st.person) { toast('⚠️ Please choose a photo first.', 'error'); return; }
+    try {
+      if (typeof showLoading === 'function') showLoading('Saving photo…');
+      const d = await call('person', { data_url: st.personNew || '', name: $('fw-pname').value.trim(), role: $('fw-prole').value.trim() });
+      st.person = d.person; st.personNew = '';
+      toast('Saved. It will be ready for every festival.');
+    } catch (e) { toast('⚠️ ' + e.message, 'error'); }
+    if (typeof hideLoading === 'function') hideLoading();
+  }
+  async function removePerson() {
+    if (!st.person) { st.personImg = null; st.personNew = ''; $('fw-person-thumb').style.display = 'none'; redraw(); return; }
+    if (!window.confirm('Remove the saved photo?')) return;
+    try {
+      await call('person_remove');
+      st.person = null; st.personImg = null; st.personNew = '';
+      $('fw-person-thumb').style.display = 'none'; $('fw-pname').value = ''; $('fw-prole').value = '';
+      toast('Removed.'); redraw();
+    } catch (e) { toast('⚠️ ' + e.message, 'error'); }
+  }
+
+  // ── drawing the preview ──
+  function currentState(logo) {
+    return {
+      size: st.size,
+      art: st.pic === 'ai' ? st.art : st.pic === 'own' ? st.own : null,
+      withPerson: st.withPerson, personImg: st.personImg,
+      personName: $('fw-pname') ? $('fw-pname').value.trim() : '', personRole: $('fw-prole') ? $('fw-prole').value.trim() : '',
+      ta: st.ta, en: st.en, msg: st.msg, from: st.from, showPhone: st.phone,
+      school: cfg.school, logo
+    };
+  }
+  function redraw() {
+    clearTimeout(drawTimer);
+    drawTimer = setTimeout(async () => {
+      await fontsReady();
+      const logo = await getLogo();
+      const c = $('fw-canvas'); if (!c) return;
+      drawPoster(c, currentState(logo));
+      const notes = [];
+      if (!cfg.logoUrl) notes.push('⚠️ No school logo found — add it in I-Card → Settings.');
+      if (st.withPerson && !st.personImg) notes.push('Add the correspondent / principal photo to show it.');
+      if (st.pic === 'own' && !st.own) notes.push('Choose your picture above.');
+      $('fw-note').textContent = notes.join(' ');
+    }, 120);
+  }
+  function setButtons() {
+    ['fw-add', 'fw-share', 'fw-dl', 'fw-next'].forEach(id => { const b = $(id); if (b) b.disabled = busy; });
+  }
+  function fileName() {
+    const n = String(cfg.school.name || 'school').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+    return n + '-' + st.fest + (st.size === 'status' ? '-status' : '') + '.jpg';
+  }
+  async function finalPoster() {
+    await fontsReady();
+    const c = document.createElement('canvas');
+    drawPoster(c, currentState(await getLogo()));
+    try { return toJpeg(c); }
+    catch (e) { throw new Error('Could not make the picture (one of the pictures did not allow it). Please choose the picture again.'); }
+  }
+  async function download() {
+    try {
+      const d = await finalPoster();
+      const a = document.createElement('a'); a.href = d; a.download = fileName(); document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { toast('⚠️ ' + e.message, 'error'); }
+  }
+  async function share() {
+    try {
+      const d = await finalPoster();
+      const blob = await (await fetch(d)).blob();
+      const file = new File([blob], fileName(), { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], text: [st.ta, st.en].filter(Boolean).join('\n') });
+      } else {
+        await download();
+        toast('Downloaded. Sharing works on a phone — on a computer, send the downloaded picture.');
+      }
+    } catch (e) { if (e && e.name !== 'AbortError') toast('⚠️ ' + e.message, 'error'); }
+  }
+  function tagOf(s) { const t = String(s || '').replace(/[^A-Za-z0-9]/g, ''); return t ? '#' + t : ''; }
+  async function addToReady() {
+    if (busy) return;
+    if (!st.ta && !st.en) { toast('⚠️ Please type the wishes first.', 'error'); return; }
+    busy = true; setButtons();
+    try {
+      if (typeof showLoading === 'function') showLoading('Saving the poster…');
+      const d = await finalPoster();
+      const f = festOf(st.fest);
+      const school = cfg.school.name || '';
+      const en = [st.en ? st.en + '! 🪔' : '', st.msg, '— ' + (st.from || 'All of us') + (school ? ', ' + school : '')].filter(Boolean).join('\n');
+      await call('post', {
+        data_url: d,
+        title: (f.key === 'other' ? (st.en || 'Festival') : f.name) + ' wishes',
+        caption_en: en, caption_ta: st.ta,
+        hashtags: [tagOf(st.en), tagOf(school), tagOf(cfg.school.city)].filter(Boolean).join(' ')
+      });
+      if (typeof hideLoading === 'function') hideLoading();
+      toast('✓ Added to "Ready to Post".');
+      if (typeof loadPosts === 'function') await loadPosts();
+      if (typeof switchTab === 'function') switchTab('ready');
+    } catch (e) {
+      if (typeof hideLoading === 'function') hideLoading();
+      toast('⚠️ ' + e.message, 'error');
+    }
+    busy = false; setButtons();
+  }
+
+  window.FW = {
+    FESTIVALS,
+    drawPoster,
+    init(o) { cfg = Object.assign(cfg, o || {}); cfg.school = Object.assign({ name: '', city: '', phone: '' }, (o && o.school) || {}); logoImg = null; },
+    async open() {
+      if (!built) { build(); redraw(); if (st.pic === 'ai') await loadArt(); }
+      redraw();
+    }
+  };
+})();

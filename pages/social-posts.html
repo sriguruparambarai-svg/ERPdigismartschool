@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js"></script>
 <script src="../js/social-designer.js"></script>
+<script src="../js/festival-wishes.js"></script>
 <style>
 .btn-wa{background:#1E8E3E;color:#fff;border:0}.btn-wa:hover{background:#17752F}
 .style-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;background:#FDF8F0;border:1px solid var(--border);border-radius:10px}
@@ -81,6 +82,7 @@ textarea.form-control{font-family:inherit}
       <div id="app" class="hidden">
         <div class="tab-bar">
           <div class="tab active" data-tab="new" onclick="switchTab('new')" id="tab-new-label">➕ New Post</div>
+          <div class="tab full-only" data-tab="festival" onclick="switchTab('festival')">🪔 Festival Wishes</div>
           <div class="tab upload-only" data-tab="mine" onclick="switchTab('mine')">🗂 My Uploads</div>
           <div class="tab full-only" data-tab="photos" onclick="switchTab('photos')">📥 Photos from Teachers <span class="cnt" id="cnt-photos">0</span></div>
           <div class="tab full-only" data-tab="wait" onclick="switchTab('wait')">⏳ Check & Approve <span class="cnt" id="cnt-wait">0</span></div>
@@ -134,6 +136,9 @@ textarea.form-control{font-family:inherit}
             <button class="btn btn-gold mt-3" id="n-go" onclick="makePost()">✨ Make the post</button>
           </div>
         </div>
+
+        <!-- ══ FESTIVAL WISHES (principal) — built by js/festival-wishes.js ══ -->
+        <div id="tab-festival" class="hidden"></div>
 
         <!-- ══ PHOTOS FROM TEACHERS (principal) ══ -->
         <div id="tab-photos" class="hidden">
@@ -275,8 +280,9 @@ async function call(action, extra) {
 
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['new','mine','photos','wait','ready','done','settings'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== name));
+  ['new','festival','mine','photos','wait','ready','done','settings'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== name));
   if (name === 'settings') loadStudents();
+  if (name === 'festival' && window.FW) FW.open();
 }
 
 function view(url) { document.getElementById('viewer-img').src = url; document.getElementById('viewer').style.display = 'flex'; }
@@ -584,7 +590,7 @@ function readyCard(p) {
     + (p.fb_post_id ? '<div class="help" style="margin-top:8px">✓ Already on Facebook — Post now will send only to Instagram.</div>' : '')
     + (p.own_video ? videoRow(p) : styleRow(p))
     + (logoUrl && !p.own_video ? '<label class="tick" id="lgrow-' + esc(p.id) + '" style="margin-top:10px;font-weight:500' + (styleOf(p.id) === 'photos' ? '' : ';display:none') + '"><input type="checkbox" id="lg-' + esc(p.id) + '"'
-        + (settings.logo_corner !== 'off' ? ' checked' : '') + ' onchange="outCache[\'' + esc(p.id) + '\']=null"> 🏫 Add school logo to the photos</label>' : '')
+        + (settings.logo_corner !== 'off' && p.class_name !== 'Festival Wishes' ? ' checked' : '') + ' onchange="outCache[\'' + esc(p.id) + '\']=null"> 🏫 Add school logo to the photos</label>' : '')
     + (canFull && meta.connected ? '<div class="actions" style="align-items:center;padding:10px;background:#E6F1FB;border-radius:10px">'
         + '<button class="btn btn-primary btn-sm" onclick="publishPost(\'' + esc(p.id) + '\')">🚀 Post now</button>'
         + (p.fb_post_id ? '' : '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="fb-' + esc(p.id) + '" checked> Facebook</label>')
@@ -1261,6 +1267,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     settings = info.settings;
     logoUrl = info.logo_url || '';
     if (window.SD) SD.init({ logoUrl, school: info.school || {} });
+    if (window.FW) FW.init({ logoUrl, school: info.school || {} });
   } catch (e) {
     const box = document.getElementById('not-on');
     box.classList.remove('hidden');
