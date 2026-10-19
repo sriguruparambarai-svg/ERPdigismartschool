@@ -55,7 +55,7 @@
   let logoImg = null, built = false, busy = false, drawTimer = null, fontsLoaded = false;
   const artCache = {};
   const st = {
-    fest: 'ayudha', design: 'ai', pic: 'ai', variant: 1, art: null, own: null,
+    fest: 'ayudha', design: 'ai', pose: 'auto', pic: 'ai', variant: 1, art: null, own: null,
     withPerson: false, person: null, personImg: null, personNew: '',
     size: 'post', ta: '', en: '', msg: '', from: 'Correspondent, Principal, Staff & Students', phone: true
   };
@@ -609,6 +609,11 @@
       +     '<div id="fw-person-row" class="hidden" style="width:100%;margin-top:8px">'
       +       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><img id="fw-person-thumb" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);display:none">'
       +       '<input type="file" id="fw-person-file" accept="image/*" class="form-control" style="max-width:260px"></div>'
+      +       '<div id="fw-pose-row" style="margin-top:10px"><b style="font-size:12px;margin-right:4px">Pose</b>'
+      +         chip('pose', 'auto', '✨ Auto (suits the festival)', true) + chip('pose', 'vanakkam', '🙏 Vanakkam', false)
+      +         chip('pose', 'smile', '😊 Smiling', false) + chip('pose', 'heart', '🤍 Hand on heart', false)
+      +         chip('pose', 'formal', '👔 Formal', false) + chip('pose', 'majestic', '👑 Majestic', false) + chip('pose', 'folded', '💪 Arms folded', false)
+      +         '<div class="help" style="margin-top:4px">Used in the 🎨 AI poster. Auto: vanakkam for most festivals, majestic for Independence / Republic Day, formal for Teachers\' Day and New Year, hand on heart for Christmas, Ramzan and Bakrid.</div></div>'
       +       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">'
       +         '<input id="fw-pname" class="form-control" maxlength="60" placeholder="Name, e.g. Mr. R. Kumar">'
       +         '<input id="fw-prole" class="form-control" maxlength="60" placeholder="e.g. Correspondent"></div>'
@@ -686,6 +691,11 @@
       if (st.design === 'ai') { st.pic = 'ai'; setChip('pic', 'ai'); $('fw-ai-row').classList.remove('hidden'); $('fw-own-row').classList.add('hidden'); }
       showDesignBits();
       if (st.pic === 'ai') await loadArt();
+      return redraw();
+    }
+    if (t.name === 'fw-pose') {
+      st.pose = t.value; setChip('pose', t.value);
+      if (st.design === 'ai' && st.withPerson) await loadArt();
       return redraw();
     }
     if (t.name === 'fw-size') { st.size = t.value; setChip('size', t.value); return redraw(); }
@@ -766,7 +776,8 @@
     if (it.r.design === 'ai') {
       st.withPerson = !!it.r.person; setChip('who', st.withPerson ? 'yes' : 'no');
       $('fw-person-row').classList.toggle('hidden', !st.withPerson);
-      const key = 'ai-' + st.fest + '-' + (st.withPerson ? 'p' : 'n') + '-' + st.en;
+      if (st.withPerson) { st.pose = 'auto'; setChip('pose', 'auto'); }
+      const key = 'ai-' + st.fest + '-' + (st.withPerson ? 'p-' + st.pose : 'n') + '-' + st.en;
       artCache[key + '-' + it.r.variant] = it.img;
       try { localStorage.setItem('fw_v_' + key, String(it.r.variant)); } catch (e) {}
     }
@@ -811,7 +822,7 @@
     const status = $('fw-art-status');
     if (st.withPerson && st.personNew) await savePerson();
     if (st.withPerson && !st.person) { status.textContent = 'Add and save the correspondent / principal photo below, then press 🔄.'; return; }
-    const key = 'ai-' + st.fest + '-' + (st.withPerson ? 'p' : 'n') + '-' + st.en;
+    const key = 'ai-' + st.fest + '-' + (st.withPerson ? 'p-' + st.pose : 'n') + '-' + st.en;
     const v = variant || (function () { try { return parseInt(localStorage.getItem('fw_v_' + key), 10) || 1; } catch (e) { return 1; } })();
     const k = key + '-' + v;
     if (artCache[k]) { st.art = artCache[k]; st.variant = v; status.textContent = 'Poster ' + v + ' of 4'; return; }
@@ -819,7 +830,7 @@
     st.art = null; st.designing = true; redraw();
     status.textContent = '⏳ The AI is designing your poster… the first time takes 1–2 minutes. Please keep this page open.';
     try {
-      const d = await call('compose', { festival: st.fest, variant: v, en: st.en, with_person: !!st.withPerson });
+      const d = await call('compose', { festival: st.fest, variant: v, en: st.en, with_person: !!st.withPerson, pose: st.pose });
       const img = await loadImg(d.url);
       artCache[k] = img;
       st.art = img; st.variant = d.variant;

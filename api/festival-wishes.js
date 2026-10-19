@@ -14,7 +14,8 @@
 //      person_remove {}                   → { ok }
 //   3. post     { data_url, title, caption_en, caption_ta, hashtags } → { ok, row }
 //   today    {}  → today's (or tomorrow's) festival from the calendar + its ready pictures
-//   compose  { festival, variant, en, with_person } → this school's whole AI poster (see makePoster)
+//   compose  { festival, variant, en, with_person, pose } → this school's whole AI poster (see makePoster)
+//            pose: auto | vanakkam | smile | heart | formal | majestic | folded
 //   GET (Vercel scheduler, nightly) → makes tomorrow's festival pictures ahead of time
 //      Saves the finished poster as an approved post, so it appears in "Ready to Post"
 //      (Facebook / Instagram / WhatsApp / Parent Gallery all work from there).
@@ -289,7 +290,20 @@ const FEST_EN = { ayudha: 'Happy Ayudha Pooja & Vijayadasami', saraswathi: 'Happ
 // Only plain letters go into the AI's instructions
 function cleanText(v, max) { return String(v || '').replace(/[^A-Za-z0-9 .,&'!\-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max); }
 
-function posterPrompt(festKey, art, variant, schoolName, en, withPerson) {
+// How the correspondent / principal is shown. "auto" picks one that suits the festival.
+const POSES = {
+  vanakkam: 'smiling warmly with both hands folded in a respectful vanakkam greeting, wearing a crisp white traditional shirt with a gold-bordered angavastram on the shoulder',
+  smile: 'with a warm, friendly, natural smile, relaxed and welcoming, wearing a neat crisp white shirt with a gold-bordered angavastram on the shoulder',
+  heart: 'with a gentle smile and his right hand placed on his heart in a sincere greeting, wearing a neat light-coloured formal shirt',
+  formal: 'smiling confidently, wearing a smart formal shirt with a dark well-fitted blazer, polished and professional',
+  majestic: 'standing tall and majestic with a proud, dignified, confident expression, chin slightly raised, shoulders back, like a respected leader, wearing an elegant white silk shirt with a rich gold-bordered angavastram, a soft glow of light behind him',
+  folded: 'standing confidently with his arms folded across his chest, a proud and friendly smile, like a successful school leader, wearing a smart formal shirt with a dark well-fitted blazer'
+};
+const AUTO_POSE = { independence: 'majestic', republic: 'majestic', teachers: 'formal', childrens: 'smile', new_year: 'formal',
+  christmas: 'heart', ramzan: 'heart', bakrid: 'heart' };   // everything else: vanakkam
+function resolvePose(festKey, pose) { return POSES[pose] ? pose : (AUTO_POSE[festKey] || 'vanakkam'); }
+
+function posterPrompt(festKey, art, variant, schoolName, en, withPerson, pose) {
   const subjects = FESTIVALS[art] || FESTIVALS.general;
   const scene = subjects[(variant - 1) % subjects.length];
   return 'Design one complete, premium, professional Indian festival greeting poster for a school, for ' + (FEST_NAME[festKey] || 'the festival')
@@ -298,8 +312,8 @@ function posterPrompt(festKey, art, variant, schoolName, en, withPerson) {
     + 'Main scene: ' + scene + ' '
     + (withPerson
       ? 'Include the man from the reference photo in the poster: keep his face, features, skin tone, hairstyle, moustache and glasses exactly the same as in the photo so he is clearly recognisable. '
-        + 'Show him as a dignified half-body portrait in the lower right part of the poster, smiling warmly with hands folded in vanakkam greeting, '
-        + 'wearing a crisp white traditional shirt with a gold-bordered angavastram on the shoulder, lit by the same warm light as the scene and blended naturally into it, not cut out. '
+        + 'Show him as a dignified half-body portrait in the lower right part of the poster, ' + POSES[resolvePose(festKey, pose)] + ', '
+        + 'lit by the same warm light as the scene and blended naturally into it, not cut out. '
         + 'He stands respectfully beside the scene and does not touch any deity. '
       : '')
     + 'Keep a square in the top-left corner of the poster, about one seventh of the width wide and tall, completely empty: only soft background there, no letters, no objects, because a logo will be placed there later. '
@@ -353,17 +367,20 @@ async function personInfo(sid) {
   return { url: publicUrl(base + '.jpg'), v: info.v || 1 };
 }
 // Where one school's AI poster is saved: changes to the name, wishes or photo give a new place
-function posterPath(sid, festKey, schoolName, en, personV, variant) {
-  const h = crypto.createHash('sha256').update([POSTER_VERSION, festKey, schoolName, en, personV || 0].join('|')).digest('hex').slice(0, 12);
+function posterPath(sid, festKey, schoolName, en, personV, variant, pose) {
+  const parts = [POSTER_VERSION, festKey, schoolName, en, personV || 0];
+  if (personV && pose && pose !== 'vanakkam') parts.push(pose);   // vanakkam posters keep their old place
+  const h = crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 12);
   return sid + '/festival/ai-' + festKey + '-' + h + '-v' + variant + '.jpg';
 }
-async function ensurePoster(sid, schoolName, festKey, enIn, withPerson, variant) {
+async function ensurePoster(sid, schoolName, festKey, enIn, withPerson, variant, poseIn) {
   const art = FEST_ART[festKey] || 'general';
   const en = cleanText(enIn, 60) || FEST_EN[festKey] || 'Festival Greetings';
   const name = cleanText(schoolName, 70) || 'Our School';
   const person = withPerson ? await personInfo(sid) : null;
   if (withPerson && !person) throw new Error('Please save the correspondent / principal photo first.');
-  const path = posterPath(sid, festKey, name, en, person ? person.v : 0, variant);
+  const pose = resolvePose(festKey, poseIn);
+  const path = posterPath(sid, festKey, name, en, person ? person.v : 0, variant, pose);
   if (await exists(path)) return { url: publicUrl(path), made: false };
   let personBuf = null;
   if (person) {
@@ -371,7 +388,7 @@ async function ensurePoster(sid, schoolName, festKey, enIn, withPerson, variant)
     if (!r.ok) throw new Error('Could not read the saved photo. Please save it again.');
     personBuf = Buffer.from(await r.arrayBuffer());
   }
-  const out = await makePoster(posterPrompt(festKey, art, variant, name, en, !!person), personBuf);
+  const out = await makePoster(posterPrompt(festKey, art, variant, name, en, !!person, pose), personBuf);
   await storeFile(out.buf, path, out.jpeg ? 'image/jpeg' : 'image/png');
   return { url: publicUrl(path), made: true };
 }
@@ -381,7 +398,7 @@ async function readyPosters(sid, schoolName, festKey, withPerson) {
   const person = withPerson ? await personInfo(sid) : null;
   const list = [];
   for (let v = 1; v <= MAX_VARIANTS; v++) {
-    const p = posterPath(sid, festKey, name, en, person ? person.v : 0, v);
+    const p = posterPath(sid, festKey, name, en, person ? person.v : 0, v, resolvePose(festKey, 'auto'));
     if (await exists(p)) list.push({ design: 'ai', variant: v, url: publicUrl(p), person: !!person });
   }
   return list;
@@ -483,7 +500,7 @@ module.exports = async (req, res) => {
       const fk = String(body.festival || '');
       if (!FEST_NAME[fk]) return res.status(400).json({ ok: false, error: 'Unknown festival.' });
       const v = Math.min(MAX_VARIANTS, Math.max(1, parseInt(body.variant, 10) || 1));
-      const r = await ensurePoster(sid, sch.name, fk, body.en, body.with_person === true, v);
+      const r = await ensurePoster(sid, sch.name, fk, body.en, body.with_person === true, v, String(body.pose || 'auto'));
       return res.status(200).json({ ok: true, url: r.url, made: r.made, variant: v, max: MAX_VARIANTS });
     }
 
