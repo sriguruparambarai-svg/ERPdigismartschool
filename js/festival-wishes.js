@@ -356,7 +356,14 @@
     c.width = W; c.height = H;
     const x = c.getContext('2d');
     const sch = s.school || {};
-    if (!s.art) { drawLamp(x, 0, 0, W, H); return c; }
+    if (!s.art) {
+      drawLamp(x, 0, 0, W, H);
+      x.save(); x.fillStyle = 'rgba(62,13,13,0.82)'; rr(x, W / 2 - 330, H * 0.82, 660, 120, 60); x.fill();
+      x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#F5E6C8'; x.font = '600 34px ' + F_EN;
+      x.fillText(s.designing ? '⏳ The AI is designing your poster…' : 'Your poster will appear here', W / 2, H * 0.82 + 60);
+      x.restore();
+      return c;
+    }
     const img = s.art;
     try { x.filter = 'blur(30px) brightness(0.95)'; coverDraw(x, img, -40, -40, W + 80, H + 80, 0.5); x.filter = 'none'; } catch (e) {}
     const k = Math.min(W / img.width, H / img.height);
@@ -380,16 +387,19 @@
 
     // Tamil wishes inside the ribbon (lower part of the poster): gold with a maroon edge, like foil lettering
     if (s.ta) {
-      const tf = fit(x, s.ta, iw * 0.68, Math.round(iw * 0.05), '700', F_TA, 18);
-      const ty = iy + ih * 0.875;
+      const tf = wrapFit(x, s.ta, iw * 0.66, Math.round(iw * 0.052), '700', F_TA, 2, Math.round(iw * 0.03));
+      const lh = tf.s * 1.25, ty0 = iy + ih * 0.872 - (tf.lines.length - 1) * lh / 2;
       x.save(); x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '700 ' + tf.s + 'px ' + F_TA;
-      x.lineJoin = 'round'; x.lineWidth = Math.max(4, tf.s * 0.14); x.strokeStyle = '#4A0E0E';
-      x.shadowColor = 'rgba(0,0,0,0.45)'; x.shadowBlur = 8; x.shadowOffsetY = 2;
-      x.strokeText(tf.text, W / 2, ty);
-      x.shadowColor = 'transparent';
-      const fg = x.createLinearGradient(0, ty - tf.s / 2, 0, ty + tf.s / 2);
-      fg.addColorStop(0, '#FFF1B8'); fg.addColorStop(0.55, '#E8C96A'); fg.addColorStop(1, '#B98E2E');
-      x.fillStyle = fg; x.fillText(tf.text, W / 2, ty);
+      x.lineJoin = 'round'; x.lineWidth = Math.max(4, tf.s * 0.16); x.strokeStyle = '#4A0E0E';
+      tf.lines.forEach((l, i) => {
+        const ty = ty0 + i * lh;
+        x.shadowColor = 'rgba(0,0,0,0.45)'; x.shadowBlur = 8; x.shadowOffsetY = 2;
+        x.strokeText(l, W / 2, ty);
+        x.shadowColor = 'transparent';
+        const fg = x.createLinearGradient(0, ty - tf.s / 2, 0, ty + tf.s / 2);
+        fg.addColorStop(0, '#FFF1B8'); fg.addColorStop(0.55, '#E8C96A'); fg.addColorStop(1, '#B98E2E');
+        x.fillStyle = fg; x.fillText(l, W / 2, ty);
+      });
       x.restore();
     }
 
@@ -775,6 +785,7 @@
     const k = key + '-' + v;
     if (artCache[k]) { st.art = artCache[k]; st.variant = v; status.textContent = 'Poster ' + v + ' of 4'; return; }
     busy = true; setButtons();
+    st.art = null; st.designing = true; redraw();
     status.textContent = '⏳ The AI is designing your poster… the first time takes 1–2 minutes. Please keep this page open.';
     try {
       const d = await call('compose', { festival: st.fest, variant: v, en: st.en, with_person: !!st.withPerson });
@@ -787,7 +798,9 @@
       st.art = null;
       status.textContent = '⚠️ ' + err.message;
     }
+    st.designing = false;
     busy = false; setButtons();
+    redraw();
   }
   async function nextArt() {
     if (busy) return;
@@ -831,7 +844,7 @@
   // ── drawing the preview ──
   function currentState(logo) {
     return {
-      design: st.design, size: st.size,
+      design: st.design, designing: !!st.designing, size: st.size,
       art: st.pic === 'ai' ? st.art : st.pic === 'own' ? st.own : null,
       withPerson: st.withPerson, personImg: st.personImg,
       personName: $('fw-pname') ? $('fw-pname').value.trim() : '', personRole: $('fw-prole') ? $('fw-prole').value.trim() : '',
