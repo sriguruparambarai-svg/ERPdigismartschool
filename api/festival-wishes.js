@@ -302,8 +302,8 @@ function posterPrompt(festKey, art, variant, schoolName, en, withPerson) {
         + 'wearing a crisp white traditional shirt with a gold-bordered angavastram on the shoulder, lit by the same warm light as the scene and blended naturally into it, not cut out. '
         + 'He stands respectfully beside the scene and does not touch any deity. '
       : '')
-    + 'At the top of the poster, write the school name "' + schoolName + '" exactly as given, letter for letter, in elegant large gold 3D serif lettering with a fine maroon outline, centred. '
-    + 'Keep the top-left corner (about one tenth of the width) plain and empty, for a logo to be added later. '
+    + 'Keep a square in the top-left corner of the poster, about one seventh of the width wide and tall, completely empty: only soft background there, no letters, no objects, because a logo will be placed there later. '
+    + 'At the top of the poster, to the RIGHT of that empty corner, write the school name "' + schoolName + '" exactly as given, letter for letter, in elegant large gold 3D serif lettering with a fine maroon outline; the first letter must start well clear of the empty corner. '
     + 'Below the main scene write "' + en + '" in beautiful gold festive lettering, spelled exactly as given. '
     + 'Across the bottom of the poster, an ornate maroon and gold decorative ribbon banner spanning almost the full width and about one sixth of the height, completely EMPTY inside with no text, '
     + 'and below it a thin plain maroon strip, also empty. '

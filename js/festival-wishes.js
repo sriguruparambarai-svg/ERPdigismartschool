@@ -351,6 +351,43 @@
   //    greeting, empty ribbon). Here we only add the real logo as a small seal, the Tamil wishes
   //    in the ribbon, and the phone number. The poster is never cropped: if its shape differs,
   //    the sides are filled with a soft blurred copy. ──
+  // The school logo with its plain white (or near-white) background removed, so it sits on the
+  // poster by itself. Only white that touches the picture's edge is removed — white inside the
+  // logo design stays. Falls back to the logo as it is if the browser will not allow it.
+  let logoCut = null, logoCutFrom = null;
+  function cutLogo(img) {
+    if (!img) return null;
+    if (logoCut && logoCutFrom === img) return logoCut;
+    try {
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height), p = d.data, W = c.width, H = c.height;
+      const light = (i) => p[i + 3] < 20 || (p[i] > 228 && p[i + 1] > 228 && p[i + 2] > 228);
+      const seen = new Uint8Array(W * H), stack = [];
+      for (let xx = 0; xx < W; xx++) { stack.push(xx, (H - 1) * W + xx); }
+      for (let yy = 0; yy < H; yy++) { stack.push(yy * W, yy * W + W - 1); }
+      while (stack.length) {
+        const k = stack.pop();
+        if (seen[k]) continue; seen[k] = 1;
+        if (!light(k * 4)) continue;
+        p[k * 4 + 3] = 0;
+        const xx = k % W, yy = (k - xx) / W;
+        if (xx > 0) stack.push(k - 1); if (xx < W - 1) stack.push(k + 1);
+        if (yy > 0) stack.push(k - W); if (yy < H - 1) stack.push(k + W);
+      }
+      // soften the cut edge: half-clear light pixels next to a cleared one
+      for (let k = 0; k < W * H; k++) {
+        if (p[k * 4 + 3] === 0) continue;
+        const xx = k % W;
+        const nb = [k - 1, k + 1, k - W, k + W].some(n => n >= 0 && n < W * H && Math.abs((n % W) - xx) <= 1 && p[n * 4 + 3] === 0);
+        if (nb && p[k * 4] > 200 && p[k * 4 + 1] > 200 && p[k * 4 + 2] > 200) p[k * 4 + 3] = 110;
+      }
+      x.putImageData(d, 0, 0);
+      logoCut = c; logoCutFrom = img;
+      return c;
+    } catch (e) { return img; }
+  }
+
   function drawAi(c, s) {
     const W = 1080, H = s.size === 'status' ? 1920 : 1350;
     c.width = W; c.height = H;
@@ -371,18 +408,12 @@
     x.save(); x.shadowColor = 'rgba(0,0,0,0.35)'; x.shadowBlur = 30;
     x.drawImage(img, ix, iy, iw, ih); x.restore();
 
-    // real logo: small gold-ringed seal in the top-left corner the AI left empty
+    // real logo in the top-left corner, on its own — no circle, no shade behind it
     if (s.logo) {
-      const r = Math.round(iw * 0.062), cx = ix + iw * 0.03 + r + 6, cy = iy + ih * 0.022 + r + 6;
-      x.save(); x.shadowColor = 'rgba(60,20,10,0.4)'; x.shadowBlur = 16; x.shadowOffsetY = 3;
-      x.fillStyle = '#fff'; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); x.restore();
-      x.save(); x.beginPath(); x.arc(cx, cy, r - 3, 0, Math.PI * 2); x.clip();
-      const lk = Math.min((r * 2 - 6) / s.logo.width, (r * 2 - 6) / s.logo.height);
-      x.drawImage(s.logo, cx - s.logo.width * lk / 2, cy - s.logo.height * lk / 2, s.logo.width * lk, s.logo.height * lk);
-      x.restore();
-      const g = x.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-      g.addColorStop(0, '#F6E39A'); g.addColorStop(0.5, '#C9A84C'); g.addColorStop(1, '#8C6A1F');
-      x.strokeStyle = g; x.lineWidth = Math.max(3, r * 0.09); x.beginPath(); x.arc(cx, cy, r + 1, 0, Math.PI * 2); x.stroke();
+      const lg = cutLogo(s.logo);
+      const box = Math.round(iw * 0.13);
+      const lk = Math.min(box / lg.width, box / lg.height);
+      x.drawImage(lg, ix + iw * 0.03, iy + ih * 0.018, lg.width * lk, lg.height * lk);
     }
 
     // Tamil wishes inside the ribbon (lower part of the poster): gold with a maroon edge, like foil lettering
