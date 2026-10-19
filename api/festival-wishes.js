@@ -49,6 +49,17 @@ const ART_STYLE_FULL = 'A stunning, richly detailed festival greeting artwork th
   + 'because greeting text will be added on top later. '
   + 'No text, no letters, no numbers, no words, no signature, no watermark, no border, no frame. Picture: ';
 
+// Brighter version (Oct 2026): the first full pictures came out dark and moody.
+// Bright daylight, vivid festive colours, light cream space at the bottom for the wishes band.
+const ART_STYLE_BRIGHT = 'A bright, vivid, cheerful Indian festival greeting artwork that fills the whole frame edge to edge, '
+  + 'like a premium colourful festival wishes post on Instagram: clear bright daylight, sunny warm glow, '
+  + 'vibrant saffron, gold, white, pink and green colours, fresh marigold and jasmine garlands, pink lotus flowers, '
+  + 'shining brass lamps, a joyful auspicious mood, beautiful and respectful, high detail. Never dark, gloomy or night-time. '
+  + 'Tall vertical composition. The main subject is large and placed in the upper and middle part of the frame. '
+  + 'The bottom quarter of the picture is a soft, light, cream-coloured and uncluttered area with no important details, '
+  + 'because a greeting band will be added on top later. '
+  + 'No text, no letters, no numbers, no words, no signature, no watermark, no border, no frame. Picture: ';
+
 // Each festival has 1–2 subjects; versions take turns between them.
 const FESTIVALS = {
   saraswathi: [
@@ -237,12 +248,12 @@ module.exports = async (req, res) => {
       if (!subjects) return res.status(400).json({ ok: false, error: 'Unknown festival.' });
       const v = Math.min(MAX_VARIANTS, Math.max(1, parseInt(body.variant, 10) || 1));
       const full = body.design === 'full';
-      const pre = full ? 'full-' : '';
+      const pre = full ? 'bright-' : '';
       for (const ext of ['jpg', 'png']) {
         const p = ART_FOLDER + '/' + pre + key + '-v' + v + '.' + ext;
         if (await exists(p)) return res.status(200).json({ ok: true, url: publicUrl(p), variant: v, max: MAX_VARIANTS, made: false });
       }
-      const prompt = (full ? ART_STYLE_FULL : ART_STYLE) + subjects[(v - 1) % subjects.length];
+      const prompt = (full ? ART_STYLE_BRIGHT : ART_STYLE) + subjects[(v - 1) % subjects.length];
       const out = await drawArt(prompt);
       const p = ART_FOLDER + '/' + pre + key + '-v' + v + '.' + (out.jpeg ? 'jpg' : 'png');
       await storeFile(out.buf, p, out.jpeg ? 'image/jpeg' : 'image/png');

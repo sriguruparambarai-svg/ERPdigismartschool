@@ -165,6 +165,10 @@
     lines.forEach((l, i) => x.fillText(l, cx, top + i * lineH));
     x.restore();
   }
+  function rr(x, X, Y, W, H, R) {
+    x.beginPath();
+    if (x.roundRect) x.roundRect(X, Y, W, H, R); else x.rect(X, Y, W, H);
+  }
   function coverDraw(x, img, X, Y, W, H, focusY) {
     const s = Math.max(W / img.width, H / img.height);
     const w = img.width * s, h = img.height * s;
@@ -222,99 +226,120 @@
   // s: { size:'post'|'status', art: Image|null, withPerson, personImg, personName, personRole,
   //      ta, en, msg, from, showPhone, school:{name,city,phone}, logo: Image|null }
 
-  // ── FULL PICTURE design (like greetings in Reels): the picture fills the poster,
-  //    logo + school name on top, wishes at the bottom over a soft dark fade ──
+  // ── FULL PICTURE design (like bright greeting posts): the picture fills the poster,
+  //    logo + school name on a light card at the top, wishes on a cream band at the bottom,
+  //    phone and town on a maroon strip — no dark shading over the picture ──
   function drawFull(c, s) {
     const W = 1080, H = s.size === 'status' ? 1920 : 1350;
     c.width = W; c.height = H;
     const x = c.getContext('2d');
     const sch = s.school || {};
     const tall = H > 1500;
+    const CREAM = '#FFF8EC', BROWN = '#5A3A22', GOLD_DARK = '#9A7424';
 
-    if (s.art) coverDraw(x, s.art, 0, 0, W, H, 0.4);
+    if (s.art) coverDraw(x, s.art, 0, 0, W, H, 0.3);
     else drawLamp(x, 0, 0, W, H);
 
-    // soft dark fade at the top for the school name
-    let g = x.createLinearGradient(0, 0, 0, H * 0.24);
-    g.addColorStop(0, 'rgba(15,3,3,0.72)'); g.addColorStop(1, 'rgba(15,3,3,0)');
-    x.fillStyle = g; x.fillRect(0, 0, W, H * 0.24);
-
-    // logo (left) + school name and town (right of it)
-    const lr = tall ? 74 : 62, m = tall ? 56 : 44;
-    const lcx = m + lr, lcy = m + lr;
-    x.save(); x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 18;
-    x.fillStyle = '#fff'; x.beginPath(); x.arc(lcx, lcy, lr, 0, Math.PI * 2); x.fill(); x.restore();
-    x.strokeStyle = GOLD; x.lineWidth = 5; x.beginPath(); x.arc(lcx, lcy, lr + 3, 0, Math.PI * 2); x.stroke();
+    // ── top: light card with logo + school name + town ──
+    const lr = tall ? 62 : 52, m = tall ? 40 : 30, pad = 14;
+    const nx0 = m + pad + lr * 2 + 20;
+    const maxNameW = W - nx0 - m - 30;
+    const nm = wrapFit(x, sch.name || 'Our School', maxNameW, tall ? 50 : 44, '700', F_HEAD, 2, 24);
+    const ct = sch.city ? fit(x, sch.city, maxNameW, tall ? 28 : 24, '600', F_EN, 14) : null;
+    x.font = '700 ' + nm.s + 'px ' + F_HEAD;
+    let textW = Math.max.apply(null, nm.lines.map(l => x.measureText(l).width));
+    if (ct) { x.font = '600 ' + ct.s + 'px ' + F_EN; textW = Math.max(textW, x.measureText(ct.text).width); }
+    const cardH = lr * 2 + pad * 2, cardW = nx0 - m + textW + 34;
+    x.save(); x.shadowColor = 'rgba(60,20,10,0.25)'; x.shadowBlur = 22; x.shadowOffsetY = 6;
+    x.fillStyle = 'rgba(255,255,255,0.93)'; rr(x, m, m, cardW, cardH, cardH / 2); x.fill(); x.restore();
+    x.strokeStyle = GOLD; x.lineWidth = 2.5; rr(x, m, m, cardW, cardH, cardH / 2); x.stroke();
+    const lcx = m + pad + lr, lcy = m + pad + lr;
     if (s.logo) {
-      x.save(); x.beginPath(); x.arc(lcx, lcy, lr - 4, 0, Math.PI * 2); x.clip();
-      const k = Math.min((lr * 2 - 12) / s.logo.width, (lr * 2 - 12) / s.logo.height);
+      x.save(); x.beginPath(); x.arc(lcx, lcy, lr, 0, Math.PI * 2); x.clip();
+      const k = Math.min(lr * 2 / s.logo.width, lr * 2 / s.logo.height);
       x.drawImage(s.logo, lcx - s.logo.width * k / 2, lcy - s.logo.height * k / 2, s.logo.width * k, s.logo.height * k);
       x.restore();
     } else {
-      x.fillStyle = MAROON; x.font = '700 ' + Math.round(lr * 0.7) + 'px ' + F_EN; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillStyle = MAROON; x.beginPath(); x.arc(lcx, lcy, lr, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#fff'; x.font = '700 ' + Math.round(lr * 0.7) + 'px ' + F_EN; x.textAlign = 'center'; x.textBaseline = 'middle';
       x.fillText(initials(sch.name), lcx, lcy + 2);
     }
-    const nx = lcx + lr + 28, nw = W - nx - m;
-    const nm = wrapFit(x, sch.name || 'Our School', nw, tall ? 52 : 46, '700', F_HEAD, 2, 26);
-    const ct = sch.city ? fit(x, sch.city, nw, tall ? 30 : 26, '600', F_EN, 16) : null;
-    const nh = nm.lines.length * nm.s * 1.12 + (ct ? ct.s + 8 : 0);
-    let ny = lcy - nh / 2;
+    const nh = nm.lines.length * nm.s * 1.1 + (ct ? ct.s + 6 : 0);
+    const ny = lcy - nh / 2;
     x.save(); x.textAlign = 'left'; x.textBaseline = 'top';
-    x.shadowColor = 'rgba(0,0,0,0.7)'; x.shadowBlur = 12; x.shadowOffsetY = 2;
-    x.font = '700 ' + nm.s + 'px ' + F_HEAD; x.fillStyle = '#FFFFFF';
-    nm.lines.forEach((l, i) => x.fillText(l, nx, ny + i * nm.s * 1.12));
-    if (ct) { x.font = '600 ' + ct.s + 'px ' + F_EN; x.fillStyle = GOLD_LIGHT; x.fillText(ct.text, nx, ny + nm.lines.length * nm.s * 1.12 + 6); }
+    x.font = '700 ' + nm.s + 'px ' + F_HEAD; x.fillStyle = MAROON;
+    nm.lines.forEach((l, i) => x.fillText(l, nx0, ny + i * nm.s * 1.1));
+    if (ct) { x.font = '600 ' + ct.s + 'px ' + F_EN; x.fillStyle = GOLD_DARK; x.fillText(ct.text, nx0, ny + nm.lines.length * nm.s * 1.1 + 4); }
     x.restore();
 
-    // wishes, measured from the bottom up
-    const tw = W - 120;
-    const ta = wrapFit(x, s.ta, tw, tall ? 76 : 66, '700', F_TA, 2, 30);
-    const en = s.en ? fit(x, s.en, tw, tall ? 62 : 54, '700', F_HEAD, 26) : null;
-    const msg = wrapFit(x, s.msg, tw - 40, tall ? 34 : 29, '500', F_EN, 2, 18);
-    const from = s.from ? fit(x, '— ' + s.from + ' —', tw, tall ? 30 : 26, '600', F_EN, 16) : null;
+    // ── bottom: maroon strip with phone · town ──
     const foot = [];
     if (s.showPhone && sch.phone) foot.push('📞 ' + sch.phone);
-    if (sch.city) foot.push(sch.city);
-    const ft = foot.length ? fit(x, foot.join('   ·   '), tw, tall ? 28 : 24, '600', F_EN, 14) : null;
-    const gap = tall ? 20 : 12;
-    const blocks = [];
-    if (ta.lines.length) blocks.push({ h: ta.lines.length * ta.s * 1.32, draw: (t) => drawLines(x, ta.lines, W / 2, t, ta.s * 1.32, GOLD_LIGHT, '700', ta.s, F_TA, 16) });
-    if (ta.lines.length && en) blocks.push({ h: 10, draw: (t) => {
-      x.save(); x.strokeStyle = GOLD; x.lineWidth = 2; x.beginPath(); x.moveTo(W / 2 - 150, t + 5); x.lineTo(W / 2 + 150, t + 5); x.stroke();
-      x.translate(W / 2, t + 5); x.rotate(Math.PI / 4); x.fillStyle = GOLD; x.fillRect(-6, -6, 12, 12); x.restore(); } });
-    if (en) blocks.push({ h: en.s * 1.2, draw: (t) => drawLines(x, [en.text], W / 2, t, 0, '#FFFFFF', '700', en.s, F_HEAD, 14) });
-    if (msg.lines.length) blocks.push({ h: msg.lines.length * msg.s * 1.4, draw: (t) => drawLines(x, msg.lines, W / 2, t, msg.s * 1.4, SANDAL, '500', msg.s, F_EN, 10) });
-    if (from) blocks.push({ h: from.s * 1.3, draw: (t) => drawLines(x, [from.text], W / 2, t, 0, GOLD_LIGHT, '600', from.s, F_EN, 10) });
-    if (ft) blocks.push({ h: ft.s * 1.3, draw: (t) => drawLines(x, [ft.text], W / 2, t + 4, 0, '#FFFFFF', '600', ft.s, F_EN, 10) });
-    const textH = blocks.reduce((a, b) => a + b.h, 0) + Math.max(0, blocks.length - 1) * gap;
-    const textTop = H - (tall ? 70 : 46) - textH;
-
-    // person (optional): round photo at the right, just above the wishes — keeps the festival picture's centre clear
-    const person = s.withPerson && s.personImg;
-    const pr = person ? (tall ? 140 : 100) : 0;
-    let nameLine = null;
-    if (person) {
-      const t = [s.personName, s.personRole].filter(Boolean).join(', ');
-      if (t) nameLine = fit(x, t, W * 0.6, tall ? 36 : 30, '700', F_EN, 18);
+    if (sch.city) foot.push('📍 ' + sch.city);
+    const stripH = foot.length ? (tall ? 84 : 70) : 0;
+    const stripY = H - stripH;
+    if (stripH) {
+      x.fillStyle = MAROON; x.fillRect(0, stripY, W, stripH);
+      x.fillStyle = GOLD; x.fillRect(0, stripY, W, 4);
+      const ft = fit(x, foot.join('     '), W - 80, tall ? 32 : 28, '600', F_EN, 16);
+      x.fillStyle = '#FFFFFF'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '600 ' + ft.s + 'px ' + F_EN;
+      x.fillText(ft.text, W / 2, stripY + stripH / 2 + 2);
     }
-    const personH = person ? pr * 2 + 22 + (nameLine ? nameLine.s * 1.3 : 0) + gap : 0;
 
-    // soft dark fade behind the wishes (and person)
-    const fadeTop = Math.max(H * 0.35, textTop - personH - (tall ? 200 : 150));
-    g = x.createLinearGradient(0, fadeTop, 0, H);
-    g.addColorStop(0, 'rgba(25,5,5,0)'); g.addColorStop(0.35, 'rgba(25,5,5,0.62)'); g.addColorStop(1, 'rgba(25,5,5,0.93)');
-    x.fillStyle = g; x.fillRect(0, fadeTop, W, H - fadeTop);
+    // ── wishes, measured from the bottom up ──
+    const tw = W - 110;
+    const ta = wrapFit(x, s.ta, tw, tall ? 72 : 62, '700', F_TA, 2, 30);
+    const en = s.en ? fit(x, s.en, tw, tall ? 58 : 50, '700', F_HEAD, 24) : null;
+    const msg = wrapFit(x, s.msg, tw - 40, tall ? 32 : 27, '500', F_EN, 2, 16);
+    const from = s.from ? fit(x, '— ' + s.from + ' —', tw, tall ? 29 : 25, '600', F_EN, 14) : null;
+    const gap = tall ? 16 : 10;
+    const blocks = [];
+    if (ta.lines.length) blocks.push({ h: ta.lines.length * ta.s * 1.3, draw: (t) => drawLines(x, ta.lines, W / 2, t, ta.s * 1.3, MAROON, '700', ta.s, F_TA, false) });
+    if (ta.lines.length && en) blocks.push({ h: 10, draw: (t) => {
+      x.save(); x.strokeStyle = GOLD; x.lineWidth = 2; x.beginPath(); x.moveTo(W / 2 - 160, t + 5); x.lineTo(W / 2 + 160, t + 5); x.stroke();
+      x.translate(W / 2, t + 5); x.rotate(Math.PI / 4); x.fillStyle = GOLD; x.fillRect(-6, -6, 12, 12); x.restore(); } });
+    if (en) blocks.push({ h: en.s * 1.18, draw: (t) => drawLines(x, [en.text], W / 2, t, 0, MAROON_DARK, '700', en.s, F_HEAD, false) });
+    if (msg.lines.length) blocks.push({ h: msg.lines.length * msg.s * 1.38, draw: (t) => drawLines(x, msg.lines, W / 2, t, msg.s * 1.38, BROWN, '500', msg.s, F_EN, false) });
+    if (from) blocks.push({ h: from.s * 1.3, draw: (t) => drawLines(x, [from.text], W / 2, t, 0, GOLD_DARK, '600', from.s, F_EN, false) });
+    const textH = blocks.reduce((a, b) => a + b.h, 0) + Math.max(0, blocks.length - 1) * gap;
+    const textTop = (stripH ? stripY : H) - (tall ? 40 : 26) - textH;
 
+    // cream band with a gentle wave on top and a gold edge
+    const bandTop = textTop - (tall ? 70 : 56);
+    const wave = tall ? 34 : 28;
+    const bandPath = () => {
+      x.beginPath();
+      x.moveTo(0, bandTop + wave);
+      x.bezierCurveTo(W * 0.25, bandTop - wave, W * 0.75, bandTop + wave * 2, W, bandTop);
+      x.lineTo(W, stripH ? stripY : H); x.lineTo(0, stripH ? stripY : H); x.closePath();
+    };
+    x.save(); x.shadowColor = 'rgba(60,20,10,0.22)'; x.shadowBlur = 24; x.shadowOffsetY = -4;
+    bandPath(); x.fillStyle = CREAM; x.fill(); x.restore();
+    x.save(); bandPath(); x.clip(); mandala(x, 0, H, 260, 0.12); mandala(x, W, H, 260, 0.12); x.restore();
+    x.strokeStyle = GOLD; x.lineWidth = 4;
+    x.beginPath(); x.moveTo(0, bandTop + wave); x.bezierCurveTo(W * 0.25, bandTop - wave, W * 0.75, bandTop + wave * 2, W, bandTop); x.stroke();
+
+    // person (optional): round photo at the right, resting on the band — keeps the picture's centre clear
+    const person = s.withPerson && s.personImg;
     if (person) {
-      const pcx = W - m - pr - 14, pcy = textTop - personH + pr + 6;
-      x.save(); x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 24;
+      const pr = tall ? 130 : 96;
+      const pcx = W - m - pr - 10, pcy = bandTop - pr * 0.55;
+      x.save(); x.shadowColor = 'rgba(60,20,10,0.35)'; x.shadowBlur = 20;
       x.fillStyle = '#fff'; x.beginPath(); x.arc(pcx, pcy, pr + 7, 0, Math.PI * 2); x.fill(); x.restore();
       x.save(); x.beginPath(); x.arc(pcx, pcy, pr, 0, Math.PI * 2); x.clip();
       coverDraw(x, s.personImg, pcx - pr, pcy - pr, pr * 2, pr * 2, 0.25);
       x.restore();
       x.strokeStyle = GOLD; x.lineWidth = 6; x.beginPath(); x.arc(pcx, pcy, pr + 10, 0, Math.PI * 2); x.stroke();
-      if (nameLine) { x.save(); x.textAlign = 'right'; x.textBaseline = 'top'; x.shadowColor = 'rgba(0,0,0,0.8)'; x.shadowBlur = 12;
-        x.font = '700 ' + nameLine.s + 'px ' + F_EN; x.fillStyle = '#FFFFFF'; x.fillText(nameLine.text, W - m, pcy + pr + 18); x.restore(); }
+      const t = [s.personName, s.personRole].filter(Boolean).join(', ');
+      if (t) {
+        const nl = fit(x, t, W * 0.6, tall ? 30 : 26, '700', F_EN, 14);
+        x.font = '700 ' + nl.s + 'px ' + F_EN;
+        const w = x.measureText(nl.text).width + 34, h = nl.s + 18;
+        const bx = Math.min(W - m - w, pcx - w / 2), by = pcy - pr - 14 - h;
+        x.fillStyle = MAROON; rr(x, bx, by, w, h, h / 2); x.fill();
+        x.strokeStyle = GOLD; x.lineWidth = 2; rr(x, bx, by, w, h, h / 2); x.stroke();
+        x.fillStyle = '#FFFFFF'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(nl.text, bx + w / 2, by + h / 2 + 1);
+      }
     }
 
     let t = textTop;
