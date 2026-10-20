@@ -11,6 +11,8 @@
 //   → { ok: true, academic_year, classes, grid, periods, working_days, ai_class, updated_at }
 //     grid: { Monday: { "0": { "Class 1": { subject, teacher, ai?, common? } } } }
 //     periods: [{ label, start, end, isBreak }]   (index = the grid's period number)
+//   { school_id, which:'staff' }   (Oct 2026) → the copy last SENT to staff (Send to staff button),
+//     same shape plus staff_sent_at; grid null when never sent. Used by TeachBot's staff app.
 
 const crypto = require('crypto');
 
@@ -52,6 +54,18 @@ module.exports = async (req, res) => {
   const enc = encodeURIComponent;
 
   try {
+    if (body.which === 'staff') {
+      const [rows, st] = await Promise.all([
+        sb('tt_master?school_id=eq.' + enc(schoolId) + (year ? '&academic_year=eq.' + enc(year) : '') +
+           '&staff_sent_at=not.is.null&select=academic_year,staff_classes,staff_grid,staff_sent_at&order=staff_sent_at.desc&limit=1'),
+        sb('tt_settings?school_id=eq.' + enc(schoolId) + '&select=periods,working_days,ai_class&limit=1')
+      ]);
+      const r = rows[0], s0 = st[0] || {};
+      return res.status(200).json({ ok: true, academic_year: r ? r.academic_year : '', classes: (r && r.staff_classes) || [],
+        grid: r ? (r.staff_grid || {}) : null, staff_sent_at: r ? r.staff_sent_at : null,
+        periods: s0.periods || [], working_days: s0.working_days || [], ai_class: !!s0.ai_class,
+        note: r ? '' : 'The timetable has not been sent to staff yet.' });
+    }
     const mq = 'tt_master?school_id=eq.' + enc(schoolId) + (year ? '&academic_year=eq.' + enc(year) : '') +
                '&select=academic_year,classes,grid,updated_at&order=updated_at.desc&limit=1';
     const [mrows, srows] = await Promise.all([

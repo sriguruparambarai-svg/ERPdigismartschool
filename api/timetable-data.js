@@ -19,6 +19,11 @@
 // POST { token, action: 'send_to_classes', academic_year }
 //   → { ok: true, sent: [class names], skipped: [class names with no periods] }
 //   Copies the SAVED master into each class's own timetable (all its sections).
+// POST { token, action: 'send_to_staff', academic_year }   (Oct 2026)
+//   → { ok: true, staff_sent_at }
+//   Copies the SAVED master into staff_grid / staff_classes. TeachBot's staff app shows
+//   teachers ONLY this sent copy, so the master can be edited and saved freely and
+//   teachers see the change only after this button. Needs step-staff-timetable.sql.
 
 const crypto = require('crypto');
 
@@ -218,6 +223,19 @@ module.exports = async (req, res) => {
         academic_year: year, classes, grid, updated_at: new Date().toISOString()
       });
       return res.status(200).json({ ok: true, master: saved });
+    }
+
+    // ── 3b. Send the saved master to the staff app (TeachBot) ──
+    if (action === 'send_to_staff') {
+      if (!year) return res.status(400).json({ ok: false, error: 'Academic year missing.' });
+      const mrows = (await sb('GET', MASTER_TABLE + '?school_id=eq.' + enc(schoolId) +
+        '&academic_year=eq.' + enc(year) + '&select=classes,grid&limit=1')) || [];
+      const master = mrows[0];
+      if (!master) return res.status(400).json({ ok: false, error: 'No saved master timetable for ' + year + '. Please press Save Master first.' });
+      const sentAt = new Date().toISOString();
+      await sb('PATCH', MASTER_TABLE + '?school_id=eq.' + enc(schoolId) + '&academic_year=eq.' + enc(year),
+        { staff_grid: master.grid || {}, staff_classes: master.classes || [], staff_sent_at: sentAt });
+      return res.status(200).json({ ok: true, staff_sent_at: sentAt });
     }
 
     // ── 4. Send the saved master to the class timetables ──

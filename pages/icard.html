@@ -422,6 +422,8 @@
             <span class="mt-unsaved hidden" id="mt-unsaved">● Unsaved changes</span>
             <button class="btn btn-gold" onclick="mtSave()">💾 Save Master</button>
             <button class="btn btn-secondary" onclick="mtSendToClasses()">📤 Send to class timetables</button>
+            <button class="btn btn-secondary" onclick="mtSendToStaff()" title="Teachers see their timetable in the staff app only after this button. Edit and save freely before that.">👥 Send to staff</button>
+            <span id="mt-staff-sent" style="font-size:12px;color:#7a6a5a"></span>
             <button class="btn btn-primary" onclick="window.print()">🖨 Print</button>
           </div>
         </div>
@@ -1504,6 +1506,7 @@ async function loadMaster(year) {
   mtClasses = (m && Array.isArray(m.classes) && m.classes.length) ? m.classes.slice() : MT_DEFAULT_CLASSES.slice();
   mtGrid = (m && m.grid && typeof m.grid === 'object' && !Array.isArray(m.grid)) ? m.grid : {};
   mtLoadedYear = year;
+  mtShowStaffSent(m && m.staff_sent_at);
   mtSetDirty(false);
   if (!mtDay || mtDays().indexOf(mtDay) === -1) mtDay = mtDays()[0];
   renderMaster();
@@ -1792,6 +1795,32 @@ async function mtSave() {
 window.addEventListener('beforeunload', function (e) {
   if (mtDirty) { e.preventDefault(); e.returnValue = ''; }
 });
+
+// ── Send to staff (Oct 2026) ──
+// Teachers see their timetable in TeachBot's staff app ONLY from the copy sent here,
+// so the master can be edited and saved without teachers seeing half-done changes.
+function mtShowStaffSent(at) {
+  const el = document.getElementById('mt-staff-sent');
+  if (!el) return;
+  el.textContent = at ? 'Staff last got it: ' + new Date(at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'Not sent to staff yet';
+}
+async function mtSendToStaff() {
+  if (!mtLoadedYear) { showToast('Master timetable has not loaded yet.', 'error'); return; }
+  if (mtDirty) {
+    if (!confirm('You have unsaved changes. Save the master first, then send to staff?')) return;
+    await mtSave();
+    if (mtDirty) return;
+  }
+  if (!confirm('Send the saved ' + mtLoadedYear + ' master timetable to staff?\n\nEvery teacher will see the new timetable in the staff app, with a "Your timetable was updated" note.')) return;
+  const res = await timetableApi('send_to_staff', { academic_year: mtLoadedYear });
+  if (!res.ok) {
+    const m = String(res.error || 'unknown error');
+    showToast('Could not send to staff: ' + (/staff_grid|staff_sent_at|column/i.test(m) ? 'the database is not updated yet — please run step-staff-timetable.sql in Supabase.' : m), 'error');
+    return;
+  }
+  mtShowStaffSent(res.staff_sent_at);
+  showToast('Sent to staff. Teachers will see the new timetable in their app.', 'success');
+}
 
 // ── Send to class timetables ──
 // Copies the SAVED master into each class's own timetable (every section of
