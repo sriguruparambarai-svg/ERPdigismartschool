@@ -74,6 +74,14 @@
         <div style="background:#C9A84C;color:#3E0D0D;font-weight:700;font-size:13px;padding:8px 14px;border-radius:20px;white-space:nowrap">Open & Share →</div>
       </a>
 
+      <!-- ══ This week's Daily Posters ready (only when some are waiting and Social Media Posts is on) ══ -->
+      <a id="dp-week-card" href="social-posts.html#daily" style="display:none;text-decoration:none;margin:0 0 16px;padding:14px 18px;border-radius:14px;background:linear-gradient(90deg,#1F3B2C,#2E5540);color:#F5E6C8;align-items:center;gap:14px;box-shadow:0 4px 14px rgba(31,59,44,.25)">
+        <div style="font-size:30px">📅</div>
+        <div style="flex:1"><div style="font-weight:700;font-size:15px;color:#E8C96A" id="dp-week-title">This week's posters are ready</div>
+        <div style="font-size:12px;opacity:.85;margin-top:2px">Read the words once, then add them to Ready to Post</div></div>
+        <div style="background:#C9A84C;color:#3E0D0D;font-weight:700;font-size:13px;padding:8px 14px;border-radius:20px;white-space:nowrap">Open →</div>
+      </a>
+
       <!-- ══ Staff Home (shown only to staff logins, not the owner) ══ -->
       <div id="staff-home" style="display:none">
         <div class="card" style="max-width:640px">
@@ -413,6 +421,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const schoolName = sessionStorage.getItem('school_name') || 'DigiSmart ERP';
   document.getElementById('school-name-display').textContent = schoolName;
   loadFestivalCard();   // 🪔 festival poster card (owner / principal with Social Media Posts)
+  loadDailyPostersCard();   // 📅 this week's posters waiting (same people)
 
   // Staff logins stop here — task page only, no school figures loaded at all.
   if (IS_STAFF_DASH) {
@@ -446,6 +455,20 @@ async function loadFestivalCard() {
     document.getElementById('fw-today-title').textContent =
       (d.when === 'tomorrow' ? 'Tomorrow is ' : 'Today is ') + (names[d.festival] || 'a festival') + ' — your wishes poster is ready';
     document.getElementById('fw-today-card').style.display = 'flex';
+  } catch (e) { /* no card */ }
+}
+
+// 📅 Shows "this week's posters are ready" while any of the week's Daily Posters wait to be added.
+// The server only answers schools with Social Media Posts on, for full-access logins; anything else shows nothing.
+async function loadDailyPostersCard() {
+  try {
+    const r = await fetch('/api/daily-posters', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'week_get', token: sessionStorage.getItem('digismart_session_token') || '' }) });
+    const d = await r.json();
+    const left = d.ok && d.week ? (d.week.items || []).filter(i => i.status === 'ready').length : 0;
+    if (!left) return;
+    document.getElementById('dp-week-title').textContent = 'This week\'s posters are ready — ' + left + ' waiting for you';
+    document.getElementById('dp-week-card').style.display = 'flex';
   } catch (e) { /* no card */ }
 }
 

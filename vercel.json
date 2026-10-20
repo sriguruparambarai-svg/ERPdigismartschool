@@ -15,6 +15,14 @@
     {
       "path": "/api/festival-wishes",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/daily-posters",
+      "schedule": "30 0 * * 1"
+    },
+    {
+      "path": "/api/daily-posters",
+      "schedule": "30 1 * * 1"
     }
   ],
   "rewrites": [

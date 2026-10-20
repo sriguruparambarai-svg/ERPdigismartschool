@@ -25,6 +25,11 @@
 //   week_prepare {}                                   → { ok, week }  make this week's 3 posters now (themes in turn)
 //   week_update  { id, text?, variant?, status? }     → { ok, item }  save edits / another picture / added / skipped
 // Stored as a small file: <school>/daily/week-<Monday's date>.json
+//
+// Step 4 (Monday auto-prepare):
+//   GET (Vercel scheduler, Monday 6:00 and 7:00 am India time) → makes the week's 3 posters for every
+//   school that has Social Media Posts on AND ticked "Make 3 posters for us every Monday".
+//   Schools already done this week are skipped, so the 7 am run only finishes what 6 am could not.
 // Env: ANTHROPIC_API_KEY (message writing) · OPENAI_API_KEY (pictures)
 //
 // Same rules as Social Media Posts: has_social must be on, and only the owner / full-access
@@ -376,6 +381,36 @@ async function prepareWeek(sid, schoolName) {
 }
 
 module.exports = async (req, res) => {
+  // ── Step 4: Monday morning, make every school's posters ──
+  if (req.method === 'GET') {
+    const secret = process.env.CRON_SECRET || '';
+    const header = String(req.headers.authorization || '');
+    const fromQuery = req.query && String(req.query.key || '') === secret;
+    if (!secret || (header !== 'Bearer ' + secret && !fromQuery)) return res.status(401).json({ ok: false, error: 'Not allowed.' });
+    const started = Date.now();
+    const out = { ok: true, ran_at: new Date().toISOString(), week: weekKey(), schools: [] };
+    try {
+      const schools = ((await sb('GET', 'schools?has_social=is.true&select=school_id,name&limit=300')) || []).filter(s => isSchool(s.school_id));
+      const todo = [];
+      for (const s of schools) {
+        const set = await readSettings(s.school_id);
+        if (!set.enabled) continue;
+        const have = await readJson(weekPath(s.school_id), null);
+        if (have && (have.items || []).length) { out.schools.push(s.school_id + ': already done'); continue; }
+        todo.push(s);
+      }
+      // 4 schools at a time; stop starting new ones near the time limit (the 7 am run picks them up)
+      for (let i = 0; i < todo.length; i += 4) {
+        if (Date.now() - started > 120000) { out.schools.push((todo.length - i) + ' school(s) left for the next run'); break; }
+        const batch = todo.slice(i, i + 4);
+        const done = await Promise.all(batch.map(s => prepareWeek(s.school_id, str(s.name, 80) || 'our school')
+          .then(w => s.school_id + ': made ' + w.items.length + (w.items.some(x => x.error) ? ' (some pictures missing)' : ''))
+          .catch(e => s.school_id + ': error ' + e.message)));
+        out.schools = out.schools.concat(done);
+      }
+    } catch (e) { out.error = e.message; }
+    return res.status(200).json(out);
+  }
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   if (!getServiceKey()) return res.status(500).json({ ok: false, error: 'Server key not configured.' });
 
