@@ -464,6 +464,7 @@ async function writeMessage(schoolName, theme, language, history) {
       + 'Rules: correct every grammar, spelling and புணர்ச்சி (sandhi) mistake; turn any clipped or word-by-word-translated line into a complete, natural, flowing sentence in clear written Tamil; '
       + 'title_ta 3–7 words, body_ta exactly 2 lines of 5–9 words, punch_ta 2–5 words and must make sense alone; '
       + 'end_ta must read like a பொன்மொழி — memorable, balanced, with a turn or contrast; '
+      + 'read every line once more as a parent would: no line may carry an unintended or negative meaning (for example "வீட்டை விட்டு ஓடியது" reads as running away from home) — rephrase any such line; '
       + 'quote_ta stays in natural spoken Tamil (or stays "" if empty); caption_ta natural Tamil. Avoid English words unless no common Tamil word exists. '
       + 'Reply with JSON only, same keys:\n' + JSON.stringify(draft), 1200).catch(() => null);
     if (fixed) keys.forEach(k => { if (fixed[k] !== undefined && (Array.isArray(fixed[k]) ? fixed[k].length : String(fixed[k] || '').trim() || k === 'quote_ta')) t[k] = fixed[k]; });

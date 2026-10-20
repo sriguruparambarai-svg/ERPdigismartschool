@@ -615,7 +615,14 @@
     let k = 1, plan;
     for (; k >= 0.55; k -= 0.05) {
       plan = []; let y = top, stg = 1;
-      const add = (it) => { it.s = stg; plan.push(it); };
+      let wide = false;   // a single long word wider than the column (e.g. நினைவிருக்கிறதா?) — shrink until it fits
+      const add = (it) => {
+        it.s = stg; plan.push(it);
+        const w = (font, s) => { x.font = font; return x.measureText(s).width; };
+        if (it[0] === 'text' && w(it[2], it[3]) > maxW + 4) wide = true;
+        if (it[0] === 'punch' && w(it[1], it[2]) + 34 > maxW + 4) wide = true;
+        if (it[0] === 'quote' && it[2].some(l => w(it[1], l) + 64 > maxW + 20)) wide = true;
+      };
       const R = (n) => Math.round(n * k);
       if (series) { const f = (en ? 'italic 600 ' : '600 ') + R(36) + 'px ' + (en ? F_EN : F_TA);
         lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { add(['text', P.series, f, l, y]); y += R(48); });
@@ -639,7 +646,7 @@
         lineSet(x, eng, ef, maxW).forEach(l => { add(['text', P.eng, ef, l, y]); y += R(46); }); }
       if (from) { y += R(18); const ff = '600 ' + R(28) + 'px ' + F_EN;
         lineSet(x, from, ff, maxW).forEach(l => { add(['text', P.from, ff, l, y]); y += R(38); }); }
-      if (y <= bottom) break;
+      if (y <= bottom && !wide) break;
     }
     const drawItem = (p) => {
       if (p[0] === 'rule') {
