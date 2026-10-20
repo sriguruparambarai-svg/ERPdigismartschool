@@ -409,44 +409,71 @@ async function writeMessage(schoolName, theme, language, history) {
   if (!apiKey) throw new Error('AI writing is not set up (ANTHROPIC_API_KEY missing in Vercel).');
   const recent = (history.items || []).slice(0, 30).map(it => '- ' + it.title).join('\n') || '(none yet)';
   const L = language === 'en' ? 'en' : 'ta', lang = L === 'en' ? 'English' : 'Tamil';
-  const want = '"title_' + L + '": the HOOK — a short, striking ' + lang + ' opening line or question that stops a parent scrolling (2–5 words), '
-    + '"body_' + L + '": EXACTLY 2 very short ' + lang + ' lines that tell the little story or moment (each under 6 words), '
-    + '"punch_' + L + '": ONE short ' + lang + ' punch line (2–4 words) that hits the heart — it will be highlighted, and it MUST make full sense even when read alone, without the lines before it, '
-    + '"quote_' + L + '": a short ' + lang + ' quote a child or parent would say in this moment (under 6 words, in their own voice), or "" if it does not fit, '
-    + '"end_' + L + '": ONE warm ' + lang + ' closing line (under 7 words) that gives the meaning'
-    + (language === 'both' ? ', "line_en": ONE short English line (under 10 words) that sums it up' : '');
+  const want = '"title_' + L + '": the HOOK — a striking ' + lang + ' opening line or question that stops a parent scrolling (3–7 words), '
+    + '"body_' + L + '": EXACTLY 2 ' + lang + ' lines that tell the moment — each a complete, flowing sentence (5–9 words each), the second line leading into the punch line, '
+    + '"punch_' + L + '": the PUNCH LINE (2–5 words) — a short, complete statement that makes full sense alone, it will be highlighted, '
+    + '"quote_' + L + '": what a child or parent would say in that moment, in their own spoken voice (under 7 words), or "" if it does not fit, '
+    + '"end_' + L + '": the CLOSING SAYING — ONE memorable, quotable line (6–12 words), like a wise saying a parent would want to share or remember'
+    + (language === 'both' ? ', "line_en": ONE short, clear, natural English line (under 10 words) that says the closing saying\'s meaning simply' : '');
+  const tamilRules = L === 'ta'
+    ? '- TAMIL STYLE: write the hook, the lines, the punch line and the closing saying in clear, beautiful, simple WRITTEN Tamil (எழுத்துத் தமிழ்), the way a good Tamil poster, book or newspaper writes — '
+      + 'correct grammar, correct spelling and correct புணர்ச்சி (sandhi), complete sentences that flow, gentle rhythm, and எதுகை / மோனை where it comes naturally. '
+      + 'Do NOT write broken, clipped or telegraphic Tamil, and do NOT translate from English word by word. Avoid English words unless no common Tamil word exists. '
+      + 'Only the quote bubble is in spoken Tamil (பேச்சுத் தமிழ்), exactly as a child or parent really talks.\n'
+      + '- The CLOSING SAYING is the heart of the poster: it must read like a பொன்மொழி — a complete, balanced thought with a turn or contrast in it, not a plain statement of fact.\n'
+      + '- Examples of the STYLE only (do not reuse these words or ideas):\n'
+      + '  hook "அந்த மஞ்சள் பை நினைவிருக்கிறதா?" · lines "அம்மா தைத்துத் தந்த துணிப்பையில் புத்தகங்கள்." / "அதனுடன் ஒரு டிபன் பாக்ஸும், நிறைய கனவுகளும்." · punch "எளிமையே பெருமை!" · '
+      + 'saying "சிறிய பையில் சுமந்தது புத்தகம் அல்ல; நம் எதிர்காலம்."\n'
+      + '  hook "தேர்வுக்கு முந்தைய இரவு…" · lines "புத்தகத்தை மூடிவிட்டு நிம்மதியாகத் தூங்கட்டும்." / "ஓய்வெடுத்த மனமே தெளிவாக எழுதும்." · punch "தூக்கமும் படிப்புதான்!" · quote "அம்மா, நாளைக்கு எல்லாம் ஞாபகம் இருக்குமா?" · '
+      + 'saying "விழித்திருந்து படிப்பதைவிட, விழிப்புடன் படிப்பதே வெற்றி."\n'
+    : '- ENGLISH STYLE: warm, simple, natural English sentences that flow; the closing line reads like a memorable saying with a turn or contrast in it.\n';
   const prompt = 'You write daily social media posters for an Indian school in Tamil Nadu, "' + schoolName + '". '
     + 'Parents follow the school page. The posters are warm, emotional and positive, like the best Tamil school posts that parents love to share. '
-    + 'Each poster tells ONE small, real-feeling moment as a story — a hook, a few short lines, a punch line, maybe a child\'s words, and a meaningful ending — not a list of advice.\n\n'
+    + 'Each poster tells ONE small, real-feeling moment as a story — a hook, two flowing lines, a punch line, maybe a child\'s words, and a closing saying worth remembering — not a list of advice.\n\n'
     + 'Today\'s theme: ' + THEMES[theme].name + ' — ' + THEMES[theme].brief + '.\n\n'
     + 'Rules:\n'
     + '- Write something NEW and original. Do not copy lines from any other page, film, song or poem.\n'
-    + '- Tamil must be natural spoken-style Tamil that a Tamil Nadu parent uses, correctly spelled, not a word-for-word translation. A few common English words (Teacher, School, Notebook, Exam) are fine inside Tamil, as people speak.\n'
-    + '- Simple words. No difficult literary Tamil. No hashtags, emojis, phone numbers, fees or dates on the poster.\n'
-    + '- FEWER WORDS = BIGGER LETTERS. Keep the whole poster (hook + lines + punch + quote + ending) under 28 words in total, like the best poster pages do.\n'
+    + tamilRules
+    + '- Simple, everyday words a parent understands at once. No hashtags, emojis, phone numbers, fees or dates on the poster.\n'
+    + '- Keep the whole poster (hook + lines + punch + quote + saying) under 40 words in total, so the letters stay big.\n'
     + '- Never name or criticise another school. Nothing about religion, caste or politics.\n'
     + '- Do not repeat these recent headings:\n' + recent + '\n\n'
     + 'Reply with JSON only, no other text, with: ' + want
     + ', plus "caption_en": a 2–3 sentence English caption for Facebook/Instagram, "caption_ta": the same caption in natural Tamil, '
     + '"hashtags": 4–6 hashtags separated by spaces, and "title": a short English label for this poster (under 8 words).';
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: TEXT_MODEL, max_tokens: 1200, messages: [{ role: 'user', content: prompt }] })
-  });
-  const raw = await r.text();
-  if (!r.ok) throw new Error('AI could not write the message right now (' + r.status + '). Please try again.');
-  let reply = '';
-  try { reply = (JSON.parse(raw).content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim(); } catch (e) {}
-  let t = null;
-  try { const a = reply.indexOf('{'), b = reply.lastIndexOf('}'); t = JSON.parse(reply.slice(a, b + 1)); } catch (e) {}
+  const ask = async (content, maxTokens) => {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: TEXT_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
+    });
+    const raw = await r.text();
+    if (!r.ok) throw new Error('AI could not write the message right now (' + r.status + '). Please try again.');
+    let reply = '';
+    try { reply = (JSON.parse(raw).content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim(); } catch (e) {}
+    try { const a = reply.indexOf('{'), b = reply.lastIndexOf('}'); return JSON.parse(reply.slice(a, b + 1)); } catch (e) { return null; }
+  };
+  let t = await ask(prompt, 1400);
   if (!t) throw new Error('AI wrote something unreadable. Please press "New message".');
+  // Second look by a Tamil editor: fix grammar, spelling and flow, make the ending a real saying (Oct 2026 — the first drafts read clipped)
+  if (L === 'ta') {
+    const keys = ['title_ta', 'body_ta', 'punch_ta', 'quote_ta', 'end_ta', 'caption_ta'];
+    const draft = {}; keys.forEach(k => { draft[k] = t[k]; });
+    const fixed = await ask('You are a senior Tamil editor and poet who writes posters for a respected Tamil Nadu school. '
+      + 'Polish this Tamil poster text. Keep the same story, meaning and JSON keys. '
+      + 'Rules: correct every grammar, spelling and புணர்ச்சி (sandhi) mistake; turn any clipped or word-by-word-translated line into a complete, natural, flowing sentence in clear written Tamil; '
+      + 'title_ta 3–7 words, body_ta exactly 2 lines of 5–9 words, punch_ta 2–5 words and must make sense alone; '
+      + 'end_ta must read like a பொன்மொழி — memorable, balanced, with a turn or contrast; '
+      + 'quote_ta stays in natural spoken Tamil (or stays "" if empty); caption_ta natural Tamil. Avoid English words unless no common Tamil word exists. '
+      + 'Reply with JSON only, same keys:\n' + JSON.stringify(draft), 1200).catch(() => null);
+    if (fixed) keys.forEach(k => { if (fixed[k] !== undefined && (Array.isArray(fixed[k]) ? fixed[k].length : String(fixed[k] || '').trim() || k === 'quote_ta')) t[k] = fixed[k]; });
+  }
   const lines = (v, n, m) => (Array.isArray(v) ? v : String(v || '').split('\n')).map(x => str(x, m)).filter(Boolean).slice(0, n);
   return {
-    title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 2, 90), line_en: str(t.line_en, 120),
+    title_ta: str(t.title_ta, 90), body_ta: lines(t.body_ta, 2, 110), line_en: str(t.line_en, 120),
     title_en: str(t.title_en, 80), body_en: lines(t.body_en, 2, 120),
-    punch_ta: str(t.punch_ta, 60), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 90),
-    punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 90),
+    punch_ta: str(t.punch_ta, 70), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 130),
+    punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 130),
     series_ta: SERIES[theme].ta, series_en: SERIES[theme].en,
     caption_en: str(t.caption_en, 1200), caption_ta: str(t.caption_ta, 1600),
     hashtags: str(t.hashtags, 300), title: str(t.title, 80) || THEMES[theme].name
@@ -606,10 +633,10 @@ module.exports = async (req, res) => {
       if (body.text && typeof body.text === 'object') {
         const t = body.text, lines = (v, n, m) => (Array.isArray(v) ? v : []).map(x => str(x, m)).filter(Boolean).slice(0, n);
         it.text = Object.assign({}, it.text, {
-          title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 5, 90), line_en: str(t.line_en, 120),
+          title_ta: str(t.title_ta, 90), body_ta: lines(t.body_ta, 5, 110), line_en: str(t.line_en, 120),
           title_en: str(t.title_en, 80), body_en: lines(t.body_en, 5, 120),
-          punch_ta: str(t.punch_ta, 60), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 90),
-          punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 90),
+          punch_ta: str(t.punch_ta, 70), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 130),
+          punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 130),
           caption_en: str(t.caption_en, 1200), caption_ta: str(t.caption_ta, 1600), hashtags: str(t.hashtags, 300), title: str(t.title, 80)
         });
       }
