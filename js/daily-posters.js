@@ -25,7 +25,8 @@
   let built = false, logoImg = null;
   const st = {
     settings: { enabled: false, style: 'placed', language: 'both', gender: 'sir', per_week: 3, from_line: '' },
-    person: null, personImg: null, personNew: ''
+    person: null, personImg: null, personNew: '',
+    portrait: null, portraitUrl: ''   // the big cut-out portrait (placed style), ready to draw
   };
   // Step 2: the poster being made
   const mk = { theme: 'auto', made: null, text: null, variant: 1, bg: null, busy: false, itemId: '' };
@@ -116,7 +117,11 @@
       +   '<div class="style-row">'
       +     chip('style', 'placed', '🖼 Their photo placed on the poster', s.style === 'placed')
       +     chip('style', 'painted', '🎨 AI paints them into the picture', s.style === 'painted')
-      +     '<div class="help" id="dp-style-note" style="width:100%;margin-top:6px"></div></div>'
+      +     '<div class="help" id="dp-style-note" style="width:100%;margin-top:6px"></div>'
+      +     '<div id="dp-portrait-row" style="width:100%;margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +       '<img id="dp-portrait-thumb" alt="" style="height:84px;border-radius:8px;background:#1F3B2C;display:none">'
+      +       '<button class="btn btn-secondary btn-sm" id="dp-portrait-go">✨ Make the big portrait</button>'
+      +       '<span class="help" id="dp-portrait-note" style="flex:1;min-width:180px"></span></div></div>'
 
       +   '<div class="lbl" style="margin-top:16px">3. Poster language</div>'
       +   '<div class="style-row">'
@@ -147,6 +152,7 @@
     $('dp-psave').onclick = savePerson;
     $('dp-pdel').onclick = removePerson;
     $('dp-save').onclick = saveSettings;
+    $('dp-portrait-go').onclick = () => makePortrait();
     $('dp-wk-again').onclick = () => prepareWeek(true);
     wireMaker(box);
     styleNote();
@@ -156,7 +162,9 @@
     const n = $('dp-style-note'); if (!n) return;
     n.innerHTML = st.settings.style === 'painted'
       ? 'Looks natural, like the agency posters. <b>Costs more</b> — a fresh AI picture is made for your school for every poster.'
-      : 'Their real photo is placed neatly on a ready background. <b>Much cheaper</b>, looks a little less natural.';
+      : 'AI turns the photo into a big, neat portrait <b>once</b>; it stands large on every poster. <b>Much cheaper</b> than painting each poster.';
+    const row = $('dp-portrait-row'); if (row) row.style.display = st.settings.style === 'placed' ? 'flex' : 'none';
+    portraitNote();
   }
 
   async function onChange(e) {
@@ -194,7 +202,9 @@
     try {
       if (typeof showLoading === 'function') showLoading('Saving photo…');
       const d = await post(FW_API, 'person', { data_url: st.personNew || '', name: $('dp-pname').value.trim(), role: $('dp-prole').value.trim() });
+      const newPhoto = !!st.personNew;
       st.person = d.person; st.personNew = '';
+      if (newPhoto) await setPortrait('');   // a new photo needs a new portrait
       toast('Saved. Used for Daily Posters and Festival Wishes.');
     } catch (e) { toast('⚠️ ' + e.message, 'error'); }
     if (typeof hideLoading === 'function') hideLoading();
@@ -206,6 +216,7 @@
       await post(FW_API, 'person_remove');
       st.person = null; st.personImg = null; st.personNew = '';
       $('dp-thumb').style.display = 'none'; $('dp-pname').value = ''; $('dp-prole').value = '';
+      await setPortrait('');
       toast('Removed.'); redraw();
     } catch (e) { toast('⚠️ ' + e.message, 'error'); }
   }
@@ -245,61 +256,71 @@
     const w = img.width * s, h = img.height * s;
     x.drawImage(img, X + (W - w) / 2, Y + (H - h) * 0.25, w, h);
   }
+  // ── the big cut-out portrait (placed style) ──
+  function portraitNote() {
+    const n = $('dp-portrait-note'), btn = $('dp-portrait-go'); if (!n || !btn) return;
+    if (!st.person) { n.textContent = 'Save the photo above first.'; btn.disabled = true; return; }
+    btn.disabled = false;
+    btn.textContent = st.portraitUrl ? '🔄 Make another portrait' : '✨ Make the big portrait';
+    n.textContent = st.portraitUrl ? 'Ready — used on every poster. Not happy? Make another (up to 3 per photo).'
+      : 'One AI picture, made once from the photo (about 1 minute). It is also made automatically with the first weekly posters.';
+  }
+  // If the AI could not give a see-through background, soften the edges so it still blends in
+  function prepareCut(img) {
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+    let clear = false;
+    try { clear = x.getImageData(4, 4, 1, 1).data[3] < 20 && x.getImageData(img.width - 5, 4, 1, 1).data[3] < 20; } catch (e) {}
+    if (clear) return c;
+    x.globalCompositeOperation = 'destination-in';
+    x.save(); x.translate(img.width / 2, img.height * 0.62); x.scale(1, img.height / img.width * 1.15);
+    const g = x.createRadialGradient(0, 0, 0, 0, 0, img.width * 0.56);
+    g.addColorStop(0.55, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.fillRect(-img.width, -img.height, img.width * 2, img.height * 2); x.restore();
+    return c;
+  }
+  async function setPortrait(url) {
+    st.portraitUrl = url || ''; st.portrait = null;
+    if (url) { try { st.portrait = prepareCut(await loadImg(url + '?t=' + Date.now())); } catch (e) { st.portrait = null; } }
+    const t = $('dp-portrait-thumb'); if (t) { t.src = url || ''; t.style.display = url ? '' : 'none'; }
+    portraitNote();
+  }
+  async function loadPortrait() {
+    try { const d = await post(API, 'portrait_get'); await setPortrait(d.url); } catch (e) { /* none yet */ }
+  }
+  async function makePortrait() {
+    if (st.personNew) await savePerson();
+    if (!st.person) { toast('⚠️ Please save the photo first.', 'error'); return; }
+    const again = !!st.portraitUrl;
+    if (again && !window.confirm('Make a new portrait? (Up to 3 per photo.)')) return;
+    const btn = $('dp-portrait-go'); btn.disabled = true;
+    $('dp-portrait-note').textContent = '✨ Making the portrait… about 1 minute. Please keep this page open.';
+    try {
+      // the gender choice is read from saved settings on the server, so save it first
+      await post(API, 'settings_save', { settings: Object.assign({}, st.settings, { enabled: $('dp-on').checked, from_line: $('dp-from').value.trim() }) });
+      const d = await post(API, 'portrait_make', { again });
+      await setPortrait(d.url); redraw(); drawMade(); if (wk.week) renderWeek();
+      toast('✓ Portrait ready.');
+    } catch (e) { toast('⚠️ ' + e.message, 'error'); portraitNote(); }
+    btn.disabled = false;
+  }
+
+  // ── sample preview in Setup: the real poster drawing with sample words ──
+  const SAMPLE_T = {
+    series_ta: 'ஆசிரியர் என்னும் அன்பு…', series_en: "A Teacher's Heart",
+    title_ta: 'Teacher வரலையா?', body_ta: ['வகுப்புக்குள் போக மாட்டான்…', 'சாப்பிடவும் மாட்டான்…'],
+    punch_ta: 'அவ்வளவு அன்பு!', quote_ta: 'Miss எப்போ வருவாங்க?', end_ta: 'ஒரு ஆசிரியர் தான் குழந்தையின் உலகம்.',
+    line_en: 'A teacher is a child\'s safe place.',
+    title_en: 'Where is my teacher?', body_en: ['He would not go inside the class…', 'He would not eat his lunch…'],
+    punch_en: 'That is love.', quote_en: 'When will Miss come?', end_en: 'A teacher becomes a child\'s whole world.'
+  };
   async function redraw() {
     const c = $('dp-canvas'); if (!c) return;
-    const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings;
-    // background
-    const g = x.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#1F3B2C'); g.addColorStop(1, '#0F2219');
-    x.fillStyle = g; x.fillRect(0, 0, W, H);
-    // logo + school name
     if (cfg.logoUrl && !logoImg) { try { logoImg = await loadImg(cfg.logoUrl); } catch (e) { logoImg = null; } }
-    if (logoImg) { x.save(); x.beginPath(); x.arc(110, 110, 70, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); x.clip(); x.drawImage(logoImg, 40, 40, 140, 140); x.restore(); }
-    x.fillStyle = GOLD; x.font = '700 46px ' + F_EN; x.textAlign = 'left';
-    const nm = wrap(x, cfg.school.name || 'Your School Name', W - 260);
-    nm.slice(0, 2).forEach((l, i) => x.fillText(l, 210, 100 + i * 54));
-    // person
-    const img = st.personImg;
-    if (s.style === 'painted') {
-      x.save(); x.beginPath(); x.rect(W * 0.45, 330, W * 0.55, H - 330); x.clip();
-      if (img) { x.globalAlpha = 0.9; cover(x, img, W * 0.45, 330, W * 0.55, H - 330); x.globalAlpha = 1; }
-      else { x.fillStyle = 'rgba(255,255,255,.08)'; x.fillRect(W * 0.45, 330, W * 0.55, H - 330); }
-      const fade = x.createLinearGradient(W * 0.45, 0, W * 0.62, 0);
-      fade.addColorStop(0, '#1A3326'); fade.addColorStop(1, 'rgba(26,51,38,0)');
-      x.fillStyle = fade; x.fillRect(W * 0.45, 330, W * 0.2, H - 330);
-      x.restore();
-      x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(W * 0.5, H - 110, W * 0.46, 56);
-      x.fillStyle = '#fff'; x.font = '600 26px ' + F_EN; x.textAlign = 'center';
-      x.fillText('AI will paint them into the scene', W * 0.73, H - 73);
-    } else {
-      const r = 170, cx = W - 230, cy = H - 330;
-      x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath();
-      x.fillStyle = 'rgba(255,255,255,.12)'; x.fill(); x.clip();
-      if (img) cover(x, img, cx - r, cy - r, r * 2, r * 2);
-      x.restore();
-      x.lineWidth = 10; x.strokeStyle = GOLD; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
-      const nmTxt = [$('dp-pname') && $('dp-pname').value.trim(), $('dp-prole') && $('dp-prole').value.trim()].filter(Boolean).join(', ');
-      if (nmTxt) { x.fillStyle = SANDAL; x.font = '600 30px ' + F_EN; x.textAlign = 'center'; x.fillText(nmTxt, cx, cy + r + 50); }
-    }
-    // message
-    x.textAlign = 'left';
-    let y = 420; const maxW = W * 0.5;
-    if (s.language !== 'en') {
-      x.fillStyle = '#F2D27A'; x.font = '700 64px ' + F_TA;
-      wrap(x, SAMPLE.ta, maxW).forEach(l => { x.fillText(l, 60, y); y += 84; });
-      y += 20;
-    }
-    if (s.language !== 'ta') {
-      x.fillStyle = SANDAL; x.font = (s.language === 'en' ? '700 56px ' : '500 38px ') + F_EN;
-      wrap(x, SAMPLE.en, maxW).forEach(l => { x.fillText(l, 60, y); y += (s.language === 'en' ? 72 : 52); });
-    }
-    const from = $('dp-from') ? $('dp-from').value.trim() : '';
-    if (from) { x.fillStyle = GOLD; x.font = 'italic 500 32px ' + F_EN; wrap(x, from, maxW).forEach(l => { y += 20; x.fillText(l, 60, y + 20); y += 30; }); }
-    // bottom band
-    x.fillStyle = MAROON; x.fillRect(0, H - 40, W, 40);
+    drawOn(c, SAMPLE_T, null, true);
     const note = $('dp-note');
-    if (note) note.textContent = 'This is a sample only, to show your choices. Real posters will have a full picture and a new message each time.'
-      + (img ? '' : ' Add the photo to see it here.');
+    if (note) note.textContent = 'Sample words only, to show your choices. Real posters have a full picture and a new story each time.'
+      + (st.settings.style === 'placed' && !st.portrait ? ' Make the big portrait to see the person here.' : '');
   }
 
   // ════════════ Step 2: make a poster ════════════
@@ -317,6 +338,9 @@
       +   '<div id="dp-mk-edit" class="hidden">'
       +     '<div class="lbl" id="dp-mk-title-lbl">Heading</div><input id="dp-mk-title" class="form-control" maxlength="80">'
       +     '<div class="lbl" id="dp-mk-body-lbl">Lines (one per line)</div><textarea id="dp-mk-body" class="form-control" rows="4"></textarea>'
+      +     '<div class="lbl">⭐ Punch line (highlighted)</div><input id="dp-mk-punch" class="form-control" maxlength="60">'
+      +     '<div class="lbl">💬 Quote bubble (optional — leave empty to hide)</div><input id="dp-mk-quote" class="form-control" maxlength="90">'
+      +     '<div class="lbl">Ending line</div><input id="dp-mk-end" class="form-control" maxlength="90">'
       +     '<div id="dp-mk-en-row"><div class="lbl">English line</div><input id="dp-mk-en" class="form-control" maxlength="120"></div>'
       +     '<div class="help" style="margin-top:6px">Please read the Tamil once before sharing.</div>'
       +     '<div class="actions" style="margin-top:10px;flex-wrap:wrap">'
@@ -340,7 +364,7 @@
     $('dp-mk-add').onclick = () => addToReady();
     $('dp-mk-dl').onclick = () => download();
     $('dp-mk-save').onclick = () => saveItem(true);
-    box.addEventListener('input', (e) => { if (/^dp-mk-(title|body|en)$/.test(e.target.id)) { readEdits(); drawMade(); } });
+    box.addEventListener('input', (e) => { if (/^dp-mk-(title|body|en|punch|quote|end)$/.test(e.target.id)) { readEdits(); drawMade(); } });
   }
   function mkStatus(t) { const s = $('dp-mk-status'); if (s) s.innerHTML = t; }
   function mkButtons() {
@@ -355,18 +379,22 @@
   function fillEdits() {
     const t = mk.text, en = st.settings.language === 'en';
     $('dp-mk-edit').classList.remove('hidden');
-    $('dp-mk-title-lbl').textContent = en ? 'Heading' : 'Tamil heading';
+    $('dp-mk-title-lbl').textContent = en ? 'Hook (first line)' : 'Hook — first Tamil line';
     $('dp-mk-body-lbl').textContent = (en ? 'Lines' : 'Tamil lines') + ' (one per line)';
     $('dp-mk-title').value = en ? (t.title_en || '') : (t.title_ta || '');
     $('dp-mk-body').value = ((en ? t.body_en : t.body_ta) || []).join('\n');
     $('dp-mk-en-row').style.display = st.settings.language === 'both' ? '' : 'none';
     $('dp-mk-en').value = t.line_en || '';
+    const L = en ? 'en' : 'ta';
+    $('dp-mk-punch').value = t['punch_' + L] || ''; $('dp-mk-quote').value = t['quote_' + L] || ''; $('dp-mk-end').value = t['end_' + L] || '';
   }
   function readEdits() {
     const t = mk.text; if (!t) return;
     const lines = $('dp-mk-body').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 5);
     if (st.settings.language === 'en') { t.title_en = $('dp-mk-title').value.trim(); t.body_en = lines; }
     else { t.title_ta = $('dp-mk-title').value.trim(); t.body_ta = lines; t.line_en = $('dp-mk-en').value.trim(); }
+    const L = st.settings.language === 'en' ? 'en' : 'ta';
+    t['punch_' + L] = $('dp-mk-punch').value.trim(); t['quote_' + L] = $('dp-mk-quote').value.trim(); t['end_' + L] = $('dp-mk-end').value.trim();
   }
 
   async function loadPicture() {
@@ -423,20 +451,63 @@
   // ── drawing the finished poster ──
   function lineSet(x, text, font, maxW) { x.font = font; return wrap(x, text, maxW); }
   function drawMade() { drawOn($('dp-mk-canvas'), mk.text, mk.bg); }
-  function drawOn(c, t, bg) {
+  // Story-style poster: series title, hook, lines, highlighted punch line, quote bubble, ending,
+  // with the big portrait (placed) or the painted person (in the picture) on the right.
+  function rrect(x, X, Y, W, H, R) { x.beginPath(); x.moveTo(X + R, Y); x.arcTo(X + W, Y, X + W, Y + H, R); x.arcTo(X + W, Y + H, X, Y + H, R); x.arcTo(X, Y + H, X, Y, R); x.arcTo(X, Y, X + W, Y, R); x.closePath(); }
+  function drawOn(c, t, bg, sample) {
     if (!c || !t) return;
     const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings;
     const placed = s.style === 'placed';
+    const en = s.language === 'en', L = en ? 'en' : 'ta';
+    const F_HEAD = en ? '"Playfair Display", Georgia, serif' : F_TA, F_BODY = en ? F_EN : F_TA;
     // picture
+    x.save();
     x.fillStyle = '#16301F'; x.fillRect(0, 0, W, H);
     if (bg) cover(x, bg, 0, 0, W, H);
-    // shade the left side and the top so the words read clearly
+    else { const g0 = x.createLinearGradient(0, 0, W, H); g0.addColorStop(0, '#24452F'); g0.addColorStop(1, '#0E2017'); x.fillStyle = g0; x.fillRect(0, 0, W, H); }
+    // shade so the words read clearly
     let g = x.createLinearGradient(0, 0, W, 0);
-    g.addColorStop(0, 'rgba(12,28,20,.90)'); g.addColorStop(0.48, 'rgba(12,28,20,.72)'); g.addColorStop(0.72, 'rgba(12,28,20,0)');
+    g.addColorStop(0, 'rgba(12,28,20,.92)'); g.addColorStop(0.5, 'rgba(12,28,20,.78)'); g.addColorStop(0.75, 'rgba(12,28,20,.15)'); g.addColorStop(1, 'rgba(12,28,20,0)');
     x.fillStyle = g; x.fillRect(0, 0, W, H);
-    g = x.createLinearGradient(0, 0, 0, 260);
-    g.addColorStop(0, 'rgba(10,20,15,.85)'); g.addColorStop(1, 'rgba(10,20,15,0)');
-    x.fillStyle = g; x.fillRect(0, 0, W, 260);
+    g = x.createLinearGradient(0, 0, 0, 250);
+    g.addColorStop(0, 'rgba(10,20,15,.88)'); g.addColorStop(1, 'rgba(10,20,15,0)');
+    x.fillStyle = g; x.fillRect(0, 0, W, 250);
+
+    // the person on the right
+    const nmTxt = [$('dp-pname') ? $('dp-pname').value.trim() : '', $('dp-prole') ? $('dp-prole').value.trim() : ''].filter(Boolean);
+    let tagX = 0, tagY = 0;
+    if (placed && st.portrait) {
+      const ph = H * 0.66, pw = ph * st.portrait.width / st.portrait.height;
+      const px = W - pw * 0.92, py = H - 64 - ph;
+      // soft glow behind the person
+      const gl = x.createRadialGradient(px + pw / 2, py + ph * 0.4, 10, px + pw / 2, py + ph * 0.4, pw * 0.7);
+      gl.addColorStop(0, 'rgba(242,210,122,.30)'); gl.addColorStop(1, 'rgba(242,210,122,0)');
+      x.fillStyle = gl; x.fillRect(px - 100, py - 100, pw + 200, ph + 100);
+      x.drawImage(st.portrait, px, py, pw, ph);
+      tagX = px + pw * 0.5; tagY = H - 64 - 26;
+    } else if (placed && st.personImg) {
+      const r = 150, cx = W - 200, cy = H - 380;
+      x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath(); x.clip();
+      cover(x, st.personImg, cx - r, cy - r, r * 2, r * 2); x.restore();
+      x.lineWidth = 10; x.strokeStyle = GOLD; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
+      tagX = cx; tagY = cy + r + 60;
+    } else if (!placed && sample) {
+      x.fillStyle = 'rgba(255,255,255,.07)'; x.fillRect(W * 0.58, 300, W * 0.42, H - 364);
+      x.fillStyle = 'rgba(255,255,255,.75)'; x.font = '600 26px ' + F_EN; x.textAlign = 'center';
+      x.fillText('AI paints the person here', W * 0.79, H * 0.6); x.textAlign = 'left';
+    }
+    if (tagX && nmTxt.length) {
+      x.font = '700 30px ' + F_EN; const w1 = x.measureText(nmTxt[0]).width;
+      x.font = '500 25px ' + F_EN; const w2 = nmTxt[1] ? x.measureText(nmTxt[1]).width : 0;
+      const bw = Math.min(W * 0.42, Math.max(w1, w2) + 48), bh = nmTxt[1] ? 82 : 50;
+      const bx = Math.min(W - bw - 16, tagX - bw / 2), by = tagY - bh + 10;
+      x.fillStyle = 'rgba(62,13,13,.92)'; rrect(x, bx, by, bw, bh, 12); x.fill();
+      x.fillStyle = GOLD; x.fillRect(bx + 14, by, bw - 28, 3);
+      x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = '700 30px ' + F_EN; x.fillText(nmTxt[0], bx + bw / 2, by + 36, bw - 20);
+      if (nmTxt[1]) { x.fillStyle = '#F2D27A'; x.font = '500 25px ' + F_EN; x.fillText(nmTxt[1], bx + bw / 2, by + 68, bw - 20); }
+      x.textAlign = 'left';
+    }
+
     // logo + school name
     if (logoImg) { x.save(); x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); x.clip(); x.drawImage(logoImg, 44, 42, 132, 132); x.restore();
       x.lineWidth = 5; x.strokeStyle = GOLD; x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.stroke(); }
@@ -444,53 +515,75 @@
     const nm = lineSet(x, cfg.school.name || '', '700 44px ' + F_EN, W - 260).slice(0, 2);
     x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 8;
     nm.forEach((l, i) => x.fillText(l, 205, (nm.length > 1 ? 92 : 120) + i * 52));
-    // the words — shrink until they fit
-    const en = s.language === 'en';
+
+    // the words — plan them, shrinking until they fit
+    const series = en ? t.series_en : t.series_ta;
     const title = en ? t.title_en : t.title_ta;
     const body = (en ? t.body_en : t.body_ta) || [];
+    const punch = t['punch_' + L] || '', quote = t['quote_' + L] || '', end = t['end_' + L] || '';
     const eng = s.language === 'both' ? t.line_en : '';
     const from = (st.settings.from_line || '').trim();
-    const maxW = W * 0.52, top = 330, bottom = H - 150;
+    const maxW = W * ((placed && (st.portrait || st.personImg)) || !placed ? 0.5 : 0.58), X0 = 64, top = 300, bottom = H - 110;
     let k = 1, plan;
-    for (; k >= 0.6; k -= 0.05) {
+    for (; k >= 0.55; k -= 0.05) {
       plan = []; let y = top;
-      const tf = en ? '700 ' + Math.round(70 * k) + 'px "Playfair Display", Georgia, serif' : '700 ' + Math.round(68 * k) + 'px ' + F_TA;
-      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['#F2D27A', tf, l, y]); y += Math.round(86 * k); });
-      y += Math.round(10 * k); plan.push(['rule', '', '', y]); y += Math.round(44 * k);
-      const bf = (en ? '500 ' + Math.round(40 * k) + 'px ' + F_EN : '600 ' + Math.round(40 * k) + 'px ' + F_TA);
-      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push([SANDAL, bf, l, y]); y += Math.round(58 * k); }); y += Math.round(10 * k); });
-      if (eng) { y += Math.round(14 * k); const ef = 'italic 500 ' + Math.round(34 * k) + 'px ' + F_EN;
-        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['#FFFFFF', ef, l, y]); y += Math.round(46 * k); }); }
-      if (from) { y += Math.round(22 * k); const ff = '600 ' + Math.round(30 * k) + 'px ' + F_EN;
-        lineSet(x, from, ff, maxW).forEach(l => { plan.push([GOLD, ff, l, y]); y += Math.round(40 * k); }); }
+      const R = (n) => Math.round(n * k);
+      if (series) { const f = (en ? 'italic 600 ' : '600 ') + R(34) + 'px ' + (en ? F_EN : F_TA);
+        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { plan.push(['text', '#E8C96A', f, l, y]); y += R(46); });
+        plan.push(['rule', y - R(18)]); y += R(40); }
+      const tf = '700 ' + R(en ? 70 : 66) + 'px ' + F_HEAD;
+      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['text', '#FFFFFF', tf, l, y + R(20)]); y += R(84); });
+      y += R(14);
+      const bf = (en ? '500 ' : '600 ') + R(38) + 'px ' + F_BODY;
+      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push(['text', SANDAL, bf, l, y]); y += R(54); }); });
+      if (punch) { y += R(24); const pf = '800 ' + R(44) + 'px ' + F_BODY;
+        lineSet(x, punch, pf, maxW - R(40)).forEach(l => { plan.push(['punch', pf, l, y]); y += R(70); }); y += R(6); }
+      if (quote) { y += R(18); const qf = '700 ' + R(36) + 'px ' + F_BODY;
+        const ql = lineSet(x, '“' + quote + '”', qf, maxW - R(70)); plan.push(['quote', qf, ql, y, R(50)]); y += ql.length * R(50) + R(70); }
+      if (end) { y += R(10); const ef = '700 ' + R(40) + 'px ' + F_BODY;
+        lineSet(x, end, ef, maxW).forEach(l => { plan.push(['text', '#F2D27A', ef, l, y]); y += R(54); }); }
+      if (eng) { y += R(12); const ef = 'italic 500 ' + R(31) + 'px ' + F_EN;
+        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['text', '#FFFFFF', ef, l, y]); y += R(42); }); }
+      if (from) { y += R(18); const ff = '600 ' + R(28) + 'px ' + F_EN;
+        lineSet(x, from, ff, maxW).forEach(l => { plan.push(['text', GOLD, ff, l, y]); y += R(38); }); }
       if (y <= bottom) break;
     }
     plan.forEach(p => {
-      if (p[0] === 'rule') { x.shadowBlur = 0; x.fillStyle = GOLD; x.fillRect(64, p[3] - 4, 160, 5); x.shadowBlur = 8; return; }
-      x.fillStyle = p[0]; x.font = p[1]; x.fillText(p[2], 64, p[3]);
+      if (p[0] === 'rule') {
+        x.shadowBlur = 0; x.fillStyle = GOLD; x.fillRect(X0, p[1], 70, 3);
+        x.beginPath(); x.arc(X0 + 86, p[1] + 1.5, 5, 0, Math.PI * 2); x.fill(); x.fillRect(X0 + 102, p[1], 70, 3); x.shadowBlur = 8; return;
+      }
+      if (p[0] === 'punch') {
+        // yellow brush highlight behind dark words
+        x.font = p[1]; const w = x.measureText(p[2]).width, fs = parseInt(p[1].split(' ')[1], 10);
+        x.shadowBlur = 0; x.save(); x.translate(X0 - 14, p[3] - fs * 0.92); x.rotate(-0.012);
+        x.fillStyle = '#F2C94C'; rrect(x, 0, 0, w + 34, fs * 1.32, 8); x.fill();
+        x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(6, 4, w + 22, fs * 0.18); x.restore();
+        x.fillStyle = '#3E0D0D'; x.fillText(p[2], X0 + 3, p[3]); x.shadowBlur = 8; return;
+      }
+      if (p[0] === 'quote') {
+        // speech bubble with little dots, like a child thinking
+        x.font = p[1]; const lh = p[4], lines = p[2];
+        const w = Math.max.apply(null, lines.map(l => x.measureText(l).width)) + 64, h = lines.length * lh + 34;
+        const bx = X0 - 6, by = p[3] - lh + 2;
+        x.shadowBlur = 12; x.fillStyle = '#FBEFE6'; rrect(x, bx, by, w, h, h / 2.4); x.fill();
+        x.beginPath(); x.arc(bx + w - 30, by + h + 14, 11, 0, Math.PI * 2); x.fill();
+        x.beginPath(); x.arc(bx + w - 8, by + h + 34, 7, 0, Math.PI * 2); x.fill();
+        x.shadowBlur = 0; x.fillStyle = MAROON;
+        lines.forEach((l, i) => x.fillText(l, bx + 32, p[3] + 14 + i * lh));
+        x.shadowBlur = 8; return;
+      }
+      x.fillStyle = p[1]; x.font = p[2]; x.fillText(p[3], X0, p[4]);
     });
     x.shadowBlur = 0;
-    // the person's own photo (placed style)
-    if (placed && st.personImg) {
-      const r = 160, cx = W - 215, cy = H - 360;
-      x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath(); x.clip();
-      cover(x, st.personImg, cx - r, cy - r, r * 2, r * 2); x.restore();
-      x.lineWidth = 10; x.strokeStyle = GOLD; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
-      const nmTxt = [$('dp-pname').value.trim(), $('dp-prole').value.trim()].filter(Boolean);
-      if (nmTxt.length) {
-        x.textAlign = 'center';
-        x.fillStyle = 'rgba(62,13,13,.88)'; x.fillRect(cx - 200, cy + r + 14, 400, nmTxt.length > 1 ? 86 : 52);
-        x.fillStyle = '#fff'; x.font = '700 30px ' + F_EN; x.fillText(nmTxt[0], cx, cy + r + 50, 380);
-        if (nmTxt[1]) { x.fillStyle = '#F2D27A'; x.font = '500 26px ' + F_EN; x.fillText(nmTxt[1], cx, cy + r + 86, 380); }
-        x.textAlign = 'left';
-      }
-    }
+
     // bottom band
     x.fillStyle = MAROON; x.fillRect(0, H - 64, W, 64);
     x.fillStyle = GOLD; x.fillRect(0, H - 68, W, 4);
     x.fillStyle = '#fff'; x.textAlign = 'center'; x.font = '600 28px ' + F_EN;
     x.fillText([cfg.school.name, cfg.school.phone ? '📞 ' + cfg.school.phone : ''].filter(Boolean).join('   ·   '), W / 2, H - 22, W - 60);
     x.textAlign = 'left';
+    x.restore();
   }
   function toJpeg(c) {
     for (let q = 0.9; q >= 0.5; q -= 0.1) { const u = c.toDataURL('image/jpeg', q); if (u.length * 0.75 < 850 * 1024) return u; }
@@ -674,6 +767,8 @@
         }
         build();
         await loadPerson();
+        await loadPortrait();
+        styleNote();
         await redraw();
         loadWeek();
         if (!document.getElementById('fw-fonts')) {   // same Tamil font link as Festival Wishes

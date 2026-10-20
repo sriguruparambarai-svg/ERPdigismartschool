@@ -26,6 +26,12 @@
 //   week_update  { id, text?, variant?, status? }     → { ok, item }  save edits / another picture / added / skipped
 // Stored as a small file: <school>/daily/week-<Monday's date>.json
 //
+// Update (Oct 2026, after comparing with agency posters):
+//   portrait_get  {}            → { ok, url }   the school's big cut-out portrait (or '' if not made)
+//   portrait_make { again? }    → { ok, url }   AI makes it ONCE from the saved photo (at most 3 tries per photo)
+//   Messages are now written as a short story: series title, hook, lines, a highlighted punch line,
+//   an optional quote bubble, and an ending (fields *_ta / *_en below).
+//
 // Step 4 (Monday auto-prepare):
 //   GET (Vercel scheduler, Monday 6:00 and 7:00 am India time) → makes the week's 3 posters for every
 //   school that has Social Media Posts on AND ticked "Make 3 posters for us every Monday".
@@ -205,7 +211,7 @@ function scenePrompt(theme, variant, painted, gender) {
   return LOOK + 'Scene: ' + scene + ' '
     + (painted
       ? personLine(gender) + 'lit by the same light as the scene and blended in naturally, not cut out. '
-      : 'Keep the lower right corner calm too, because a round photo will be placed there. ')
+      : 'Keep the RIGHT side soft and simple too, with no people or faces, because a person\'s portrait will be placed there. ')
     + NO_TEXT;
 }
 
@@ -292,7 +298,7 @@ async function posterPicture(sid, settings, theme, variant) {
     return { url: publicUrl(path), made: true };
   }
   // placed: shared by every school
-  const path = ART_FOLDER + '/' + theme + '-v' + variant + '.jpg';
+  const path = ART_FOLDER + '/p2-' + theme + '-v' + variant + '.jpg';   // p2 = pictures made for the big portrait
   if (await exists(path)) return { url: publicUrl(path), made: false };
   const out = await makePicture(scenePrompt(theme, variant, false), null);
   await storeFile(out.buf, path, out.jpeg ? 'image/jpeg' : 'image/png');
@@ -308,18 +314,100 @@ function nextTheme(history) {
   return allowed[0];
 }
 
+// Our own series titles, so parents recognise each kind of poster (written by DigiSmart, fixed)
+const SERIES = {
+  teachers:  { ta: 'ஆசிரியர் என்னும் அன்பு…', en: "A Teacher's Heart" },
+  memories:  { ta: 'பள்ளி நினைவுகள்…', en: 'Our School Days' },
+  parenting: { ta: 'பெற்றோருக்கு ஒரு வார்த்தை…', en: 'A Word for Parents' },
+  exam:      { ta: 'தேர்வு நேர டிப்ஸ்…', en: 'Exam Time Tips' },
+  values:    { ta: 'இன்றைய சிந்தனை…', en: 'Thought for Today' },
+  admission: { ta: 'உங்கள் குழந்தையின் அடுத்த அடி…', en: "Your Child's Next Step" }
+};
+
+// ── The big cut-out portrait (placed style): made once per saved photo, then used on every poster ──
+const PORTRAIT_TRIES = 3;
+// The photo's own fingerprint, so saving only a new name does not throw away (and re-pay for) the portrait
+async function photoKey(base) {
+  try {
+    const r = await fetch(publicUrl(base + '.jpg') + '?t=' + Date.now(), { method: 'HEAD' });
+    if (!r.ok) return '';
+    const k = String(r.headers.get('etag') || r.headers.get('content-length') || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+    return k || 'x';
+  } catch (e) { return ''; }
+}
+async function portraitInfo(sid) {
+  const base = sid + '/festival/person';
+  const v = await photoKey(base);
+  if (!v) return null;
+  return { base, v };
+}
+function portraitPath(sid, v, gender, n) { return sid + '/daily/portrait-' + v + '-' + gender + '-' + n + '.png'; }
+async function currentPortrait(sid, gender) {
+  const p = await portraitInfo(sid); if (!p) return '';
+  const done = await readJson(sid + '/daily/portrait.json', {});
+  if (done.v === p.v && done.gender === gender && done.path && (await exists(done.path))) return publicUrl(done.path);
+  return '';
+}
+async function makePortrait(sid, gender, again) {
+  const p = await portraitInfo(sid);
+  if (!p) throw new Error('Please save the correspondent / principal photo first.');
+  const done = await readJson(sid + '/daily/portrait.json', {});
+  const same = done.v === p.v && done.gender === gender;
+  if (same && done.path && !again && (await exists(done.path))) return { url: publicUrl(done.path), made: false };
+  const n = same ? (done.n || 0) + 1 : 1;
+  if (n > PORTRAIT_TRIES) throw new Error('The portrait has already been made ' + PORTRAIT_TRIES + ' times for this photo. To try again, save a new, clearer photo.');
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('AI pictures are not set up yet for ERP (OPENAI_API_KEY missing in Vercel).');
+  const pr = await fetch(publicUrl(p.base + '.jpg') + '?t=' + Date.now());
+  if (!pr.ok) throw new Error('Could not read the saved photo. Please save it again.');
+  const personBuf = Buffer.from(await pr.arrayBuffer());
+  const who = gender === 'madam'
+    ? 'the woman from the reference photo. Keep her face, features, skin tone, hairstyle, bindi and glasses (if any) exactly the same so she is clearly recognisable. She wears an elegant, neatly draped cotton-silk saree in a rich colour, '
+    : 'the man from the reference photo. Keep his face, features, skin tone, hairstyle, moustache and glasses (if any) exactly the same so he is clearly recognisable. He wears a neat, well-ironed formal shirt, ';
+  const prompt = 'A high-quality professional studio portrait photograph of ' + who
+    + 'with a warm, kind, confident smile, like a respected Indian school leader. Half-body (waist up), facing slightly towards the left, '
+    + 'soft flattering studio light, sharp and natural. The person is centred and fills most of the frame, with the top of the head fully inside the picture. '
+    + 'Completely plain transparent background — only the person, nothing else. No text, no logo, no watermark.';
+  let opts = { background: 'transparent', output_format: 'png', input_fidelity: 'high' };
+  let out = null;
+  for (let attempt = 0; attempt < 4 && !out; attempt++) {
+    const fd = new FormData();
+    fd.append('model', OPENAI_MODEL); fd.append('prompt', prompt); fd.append('n', '1');
+    fd.append('size', '1024x1536'); fd.append('quality', IMAGE_QUALITY);
+    Object.entries(opts).forEach(([k, v]) => fd.append(k, String(v)));
+    fd.append('image[]', new Blob([personBuf], { type: 'image/jpeg' }), 'person.jpg');
+    const r = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + apiKey }, body: fd });
+    const raw = await r.text();
+    let d = null; try { d = JSON.parse(raw); } catch (e) {}
+    if (r.ok && d && d.data && d.data[0] && d.data[0].b64_json) { out = Buffer.from(d.data[0].b64_json, 'base64'); break; }
+    const msg = (d && d.error && d.error.message) || raw.slice(0, 200);
+    const bad = Object.keys(opts).find(k => msg.indexOf(k) !== -1);
+    if (bad) { opts = Object.assign({}, opts); delete opts[bad]; continue; }   // a model without see-through background: plain PNG, the page softens the edges
+    if (/safety|moderation|rejected/i.test(msg)) throw new Error('The picture maker could not draw this portrait. Please try a different, clearer photo.');
+    throw new Error('Picture maker error ' + r.status + ': ' + msg);
+  }
+  if (!out) throw new Error('The picture maker is not available right now.');
+  const path = portraitPath(sid, p.v, gender, n);
+  await storeFile(out, path, 'image/png');
+  await storeFile(Buffer.from(JSON.stringify({ v: p.v, gender, n, path })), sid + '/daily/portrait.json', 'application/json');
+  return { url: publicUrl(path), made: true };
+}
+
 // AI writes the words. Only the school name and fixed choices go in — no free text from the page.
 async function writeMessage(schoolName, theme, language, history) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('AI writing is not set up (ANTHROPIC_API_KEY missing in Vercel).');
   const recent = (history.items || []).slice(0, 30).map(it => '- ' + it.title).join('\n') || '(none yet)';
-  const want = language === 'en'
-    ? '"title_en": a short heading (3–7 words), "body_en": 2–3 short lines (each under 12 words)'
-    : language === 'ta'
-      ? '"title_ta": a short Tamil heading (2–6 words), "body_ta": 2–4 short Tamil lines (each under 9 words)'
-      : '"title_ta": a short Tamil heading (2–6 words), "body_ta": 2–4 short Tamil lines (each under 9 words), "line_en": ONE short English line (under 12 words) that sums it up';
+  const L = language === 'en' ? 'en' : 'ta', lang = L === 'en' ? 'English' : 'Tamil';
+  const want = '"title_' + L + '": the HOOK — a short, striking ' + lang + ' opening line or question that stops a parent scrolling (2–6 words), '
+    + '"body_' + L + '": 2–3 very short ' + lang + ' lines that tell the little story or moment (each under 8 words), '
+    + '"punch_' + L + '": ONE short ' + lang + ' punch line (2–5 words) that hits the heart — it will be highlighted, '
+    + '"quote_' + L + '": a short ' + lang + ' quote a child or parent would say in this moment (under 8 words, in their own voice), or "" if it does not fit, '
+    + '"end_' + L + '": ONE warm ' + lang + ' closing line (under 9 words) that gives the meaning'
+    + (language === 'both' ? ', "line_en": ONE short English line (under 12 words) that sums it up' : '');
   const prompt = 'You write daily social media posters for an Indian school in Tamil Nadu, "' + schoolName + '". '
-    + 'Parents follow the school page. The posters are warm, emotional and positive, like the best Tamil school posts that parents love to share.\n\n'
+    + 'Parents follow the school page. The posters are warm, emotional and positive, like the best Tamil school posts that parents love to share. '
+    + 'Each poster tells ONE small, real-feeling moment as a story — a hook, a few short lines, a punch line, maybe a child\'s words, and a meaningful ending — not a list of advice.\n\n'
     + 'Today\'s theme: ' + THEMES[theme].name + ' — ' + THEMES[theme].brief + '.\n\n'
     + 'Rules:\n'
     + '- Write something NEW and original. Do not copy lines from any other page, film, song or poem.\n'
@@ -346,6 +434,9 @@ async function writeMessage(schoolName, theme, language, history) {
   return {
     title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 4, 90), line_en: str(t.line_en, 120),
     title_en: str(t.title_en, 80), body_en: lines(t.body_en, 3, 120),
+    punch_ta: str(t.punch_ta, 60), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 90),
+    punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 90),
+    series_ta: SERIES[theme].ta, series_en: SERIES[theme].en,
     caption_en: str(t.caption_en, 1200), caption_ta: str(t.caption_ta, 1600),
     hashtags: str(t.hashtags, 300), title: str(t.title, 80) || THEMES[theme].name
   };
@@ -376,7 +467,7 @@ async function prepareWeek(sid, schoolName) {
   await Promise.all(items.map(async it => {
     try { it.url = (await posterPicture(sid, settings, it.theme, it.variant)).url; }
     catch (e) { it.error = e.message; }
-  }));
+  }).concat(settings.style === 'placed' ? [makePortrait(sid, settings.gender, false).catch(() => null)] : []));
   const week = { week: weekKey(), made_at: new Date().toISOString(), style: settings.style, language: settings.language, items };
   await saveWeek(sid, week);
   return week;
@@ -475,6 +566,15 @@ module.exports = async (req, res) => {
     }
 
     // ── Step 3: this week's posters ──
+    if (action === 'portrait_get') {
+      const settings = await readSettings(sid);
+      return res.status(200).json({ ok: true, url: await currentPortrait(sid, settings.gender) });
+    }
+    if (action === 'portrait_make') {
+      const settings = await readSettings(sid);
+      const r = await makePortrait(sid, settings.gender, body.again === true);
+      return res.status(200).json({ ok: true, url: r.url, made: r.made });
+    }
     if (action === 'week_get') {
       return res.status(200).json({ ok: true, week: await readJson(weekPath(sid), null), this_week: weekKey() });
     }
@@ -497,6 +597,8 @@ module.exports = async (req, res) => {
         it.text = Object.assign({}, it.text, {
           title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 5, 90), line_en: str(t.line_en, 120),
           title_en: str(t.title_en, 80), body_en: lines(t.body_en, 5, 120),
+          punch_ta: str(t.punch_ta, 60), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 90),
+          punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 90),
           caption_en: str(t.caption_en, 1200), caption_ta: str(t.caption_ta, 1600), hashtags: str(t.hashtags, 300), title: str(t.title, 80)
         });
       }
