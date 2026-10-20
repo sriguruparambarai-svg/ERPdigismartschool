@@ -39,6 +39,9 @@
     },
     "api/festival-wishes.js": {
       "maxDuration": 300
+    },
+    "api/daily-posters.js": {
+      "maxDuration": 300
     }
   }
 }

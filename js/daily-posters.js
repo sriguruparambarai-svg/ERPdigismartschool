@@ -1,7 +1,9 @@
 // DigiSmart ERP — Daily Posters (a tab inside Social Media Posts)
 // Step 1: the school's setup — the correspondent / principal photo (shared with Festival Wishes),
 // how they appear in the posters, the poster language, and the on/off switch.
-// Later steps add: the poster maker, "This week's posters" and the Monday auto-prepare.
+// Step 2: the poster maker — AI writes the message, makes the picture; the words, logo, name and
+//         (placed) photo are drawn on top here, so Tamil letters are always clean.
+// Later steps add: "This week's posters" and the Monday auto-prepare.
 //
 // Used by pages/social-posts.html:
 //   DP.init({ logoUrl, school })   after the page's "info" call
@@ -24,6 +26,8 @@
     settings: { enabled: false, style: 'placed', language: 'both', gender: 'sir', per_week: 3, from_line: '' },
     person: null, personImg: null, personNew: ''
   };
+  // Step 2: the poster being made
+  const mk = { theme: 'auto', made: null, text: null, variant: 1, bg: null, busy: false };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -129,7 +133,8 @@
       +   '<div class="card-title" style="text-align:left">👀 How a poster will look</div>'
       +   '<canvas id="dp-canvas" width="1080" height="1350" style="width:100%;max-width:340px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);background:' + MAROON_DARK + ';margin-top:8px"></canvas>'
       +   '<div class="help" id="dp-note" style="margin-top:8px"></div>'
-      + '</div></div>';
+      + '</div></div>'
+      + makerHtml();
 
     $('dp-on').checked = !!s.enabled;
     $('dp-from').value = s.from_line || '';
@@ -138,6 +143,7 @@
     $('dp-psave').onclick = savePerson;
     $('dp-pdel').onclick = removePerson;
     $('dp-save').onclick = saveSettings;
+    wireMaker(box);
     styleNote();
   }
 
@@ -289,6 +295,213 @@
     const note = $('dp-note');
     if (note) note.textContent = 'This is a sample only, to show your choices. Real posters will have a full picture and a new message each time.'
       + (img ? '' : ' Add the photo to see it here.');
+  }
+
+  // ════════════ Step 2: make a poster ════════════
+  const THEMES = [['auto', '✨ Auto (next theme in turn)'], ['teachers', "Teachers' love"], ['memories', 'School memories'],
+    ['parenting', 'Parenting tips'], ['exam', 'Exam tips'], ['values', 'Values & assembly'], ['admission', 'Admission open']];
+  function makerHtml() {
+    return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start;margin-top:16px">'
+      + '<div class="card">'
+      +   '<div class="card-title">✨ Make a poster now</div>'
+      +   '<div class="help" style="margin:4px 0 10px">AI writes a new message and makes the picture. Check the words, change them if you like, then add it to "Ready to Post". The first picture of a theme takes 1–2 minutes; after that it is ready at once.</div>'
+      +   '<label class="form-label">Theme</label>'
+      +   '<select id="dp-mk-theme" class="form-control">' + THEMES.map(t => '<option value="' + t[0] + '">' + esc(t[1]) + '</option>').join('') + '</select>'
+      +   '<div class="actions" style="margin-top:10px"><button class="btn btn-primary" id="dp-mk-go">✨ Make poster</button></div>'
+      +   '<div class="help" id="dp-mk-status" style="margin-top:8px"></div>'
+      +   '<div id="dp-mk-edit" class="hidden">'
+      +     '<div class="lbl" id="dp-mk-title-lbl">Heading</div><input id="dp-mk-title" class="form-control" maxlength="80">'
+      +     '<div class="lbl" id="dp-mk-body-lbl">Lines (one per line)</div><textarea id="dp-mk-body" class="form-control" rows="4"></textarea>'
+      +     '<div id="dp-mk-en-row"><div class="lbl">English line</div><input id="dp-mk-en" class="form-control" maxlength="120"></div>'
+      +     '<div class="help" style="margin-top:6px">Please read the Tamil once before sharing.</div>'
+      +     '<div class="actions" style="margin-top:10px;flex-wrap:wrap">'
+      +       '<button class="btn btn-secondary btn-sm" id="dp-mk-text">📝 New message</button>'
+      +       '<button class="btn btn-secondary btn-sm" id="dp-mk-pic">🖼 Another picture</button></div>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="card" style="text-align:center">'
+      +   '<canvas id="dp-mk-canvas" width="1080" height="1350" style="width:100%;max-width:380px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);background:' + MAROON_DARK + '"></canvas>'
+      +   '<div class="actions" style="justify-content:center;margin-top:10px">'
+      +     '<button class="btn btn-primary btn-sm" id="dp-mk-add" disabled>✅ Add to Ready to Post</button>'
+      +     '<button class="btn btn-secondary btn-sm" id="dp-mk-dl" disabled>⬇ Download</button></div>'
+      +   '<div class="help" style="margin-top:8px">"Ready to Post" lets you post to Facebook / Instagram, send to WhatsApp, or put it in the Parent Gallery.</div>'
+      + '</div></div>';
+  }
+  function wireMaker(box) {
+    $('dp-mk-go').onclick = () => makePoster();
+    $('dp-mk-text').onclick = () => newText();
+    $('dp-mk-pic').onclick = () => newPicture();
+    $('dp-mk-add').onclick = () => addToReady();
+    $('dp-mk-dl').onclick = () => download();
+    box.addEventListener('input', (e) => { if (/^dp-mk-(title|body|en)$/.test(e.target.id)) { readEdits(); drawMade(); } });
+  }
+  function mkStatus(t) { const s = $('dp-mk-status'); if (s) s.innerHTML = t; }
+  function mkButtons() {
+    ['dp-mk-go', 'dp-mk-text', 'dp-mk-pic'].forEach(id => { if ($(id)) $(id).disabled = mk.busy; });
+    const ready = !mk.busy && mk.text && mk.bg;
+    ['dp-mk-add', 'dp-mk-dl'].forEach(id => { if ($(id)) $(id).disabled = !ready; });
+  }
+  function rememberedVariant(theme) { try { return parseInt(localStorage.getItem('dp_v_' + st.settings.style + '_' + theme), 10) || 1; } catch (e) { return 1; } }
+  function rememberVariant(theme, v) { try { localStorage.setItem('dp_v_' + st.settings.style + '_' + theme, String(v)); } catch (e) {} }
+
+  // The words shown in the edit boxes, by language
+  function fillEdits() {
+    const t = mk.text, en = st.settings.language === 'en';
+    $('dp-mk-edit').classList.remove('hidden');
+    $('dp-mk-title-lbl').textContent = en ? 'Heading' : 'Tamil heading';
+    $('dp-mk-body-lbl').textContent = (en ? 'Lines' : 'Tamil lines') + ' (one per line)';
+    $('dp-mk-title').value = en ? (t.title_en || '') : (t.title_ta || '');
+    $('dp-mk-body').value = ((en ? t.body_en : t.body_ta) || []).join('\n');
+    $('dp-mk-en-row').style.display = st.settings.language === 'both' ? '' : 'none';
+    $('dp-mk-en').value = t.line_en || '';
+  }
+  function readEdits() {
+    const t = mk.text; if (!t) return;
+    const lines = $('dp-mk-body').value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 5);
+    if (st.settings.language === 'en') { t.title_en = $('dp-mk-title').value.trim(); t.body_en = lines; }
+    else { t.title_ta = $('dp-mk-title').value.trim(); t.body_ta = lines; t.line_en = $('dp-mk-en').value.trim(); }
+  }
+
+  async function loadPicture() {
+    const d = await post(API, 'picture', { theme: mk.theme, variant: mk.variant });
+    mk.bg = await loadImg(d.url);
+    mk.max = d.max || 4;
+    rememberVariant(mk.theme, mk.variant);
+  }
+  async function makePoster() {
+    if (mk.busy) return;
+    if (st.settings.style === 'painted' && !st.person) { toast('⚠️ Please save the correspondent / principal photo in Setup first.', 'error'); return; }
+    mk.busy = true; mkButtons();
+    try {
+      mkStatus('✍️ AI is writing the message…');
+      const d = await post(API, 'write', { theme: $('dp-mk-theme').value });
+      mk.text = d.text; mk.theme = d.theme; mk.variant = rememberedVariant(d.theme); mk.bg = null;
+      fillEdits(); drawMade();
+      mkStatus('🖼 Getting the picture for <b>' + esc(d.theme_name) + '</b>… (the first one of a theme takes 1–2 minutes)');
+      await loadPicture();
+      drawMade();
+      mkStatus('✓ Ready: <b>' + esc(d.theme_name) + '</b>. Check the words, then add it to "Ready to Post".');
+    } catch (e) { mkStatus('⚠️ ' + esc(e.message)); }
+    mk.busy = false; mkButtons();
+  }
+  async function newText() {
+    if (mk.busy || !mk.text) return;
+    mk.busy = true; mkButtons();
+    try {
+      mkStatus('✍️ Writing a new message…');
+      const d = await post(API, 'write', { theme: mk.theme });
+      mk.text = d.text; fillEdits(); drawMade(); mkStatus('✓ New message ready.');
+    } catch (e) { mkStatus('⚠️ ' + esc(e.message)); }
+    mk.busy = false; mkButtons();
+  }
+  async function newPicture() {
+    if (mk.busy || !mk.text) return;
+    mk.busy = true; mkButtons();
+    const keep = mk.variant;
+    try {
+      mk.variant = (mk.variant % (mk.max || 4)) + 1;
+      mkStatus('🖼 Getting another picture… (a new one takes 1–2 minutes)');
+      await loadPicture(); drawMade(); mkStatus('✓ Picture ' + mk.variant + ' of ' + (mk.max || 4) + '.');
+    } catch (e) { mk.variant = keep; mkStatus('⚠️ ' + esc(e.message)); }
+    mk.busy = false; mkButtons();
+  }
+
+  // ── drawing the finished poster ──
+  function lineSet(x, text, font, maxW) { x.font = font; return wrap(x, text, maxW); }
+  function drawMade() {
+    const c = $('dp-mk-canvas'); if (!c || !mk.text) return;
+    const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings, t = mk.text;
+    const placed = s.style === 'placed';
+    // picture
+    x.fillStyle = '#16301F'; x.fillRect(0, 0, W, H);
+    if (mk.bg) cover(x, mk.bg, 0, 0, W, H);
+    // shade the left side and the top so the words read clearly
+    let g = x.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, 'rgba(12,28,20,.90)'); g.addColorStop(0.48, 'rgba(12,28,20,.72)'); g.addColorStop(0.72, 'rgba(12,28,20,0)');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    g = x.createLinearGradient(0, 0, 0, 260);
+    g.addColorStop(0, 'rgba(10,20,15,.85)'); g.addColorStop(1, 'rgba(10,20,15,0)');
+    x.fillStyle = g; x.fillRect(0, 0, W, 260);
+    // logo + school name
+    if (logoImg) { x.save(); x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); x.clip(); x.drawImage(logoImg, 44, 42, 132, 132); x.restore();
+      x.lineWidth = 5; x.strokeStyle = GOLD; x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.stroke(); }
+    x.textAlign = 'left'; x.fillStyle = '#F2D27A';
+    const nm = lineSet(x, cfg.school.name || '', '700 44px ' + F_EN, W - 260).slice(0, 2);
+    x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 8;
+    nm.forEach((l, i) => x.fillText(l, 205, (nm.length > 1 ? 92 : 120) + i * 52));
+    // the words — shrink until they fit
+    const en = s.language === 'en';
+    const title = en ? t.title_en : t.title_ta;
+    const body = (en ? t.body_en : t.body_ta) || [];
+    const eng = s.language === 'both' ? t.line_en : '';
+    const from = (st.settings.from_line || '').trim();
+    const maxW = W * 0.52, top = 330, bottom = H - 150;
+    let k = 1, plan;
+    for (; k >= 0.6; k -= 0.05) {
+      plan = []; let y = top;
+      const tf = en ? '700 ' + Math.round(70 * k) + 'px "Playfair Display", Georgia, serif' : '700 ' + Math.round(68 * k) + 'px ' + F_TA;
+      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['#F2D27A', tf, l, y]); y += Math.round(86 * k); });
+      y += Math.round(10 * k); plan.push(['rule', '', '', y]); y += Math.round(44 * k);
+      const bf = (en ? '500 ' + Math.round(40 * k) + 'px ' + F_EN : '600 ' + Math.round(40 * k) + 'px ' + F_TA);
+      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push([SANDAL, bf, l, y]); y += Math.round(58 * k); }); y += Math.round(10 * k); });
+      if (eng) { y += Math.round(14 * k); const ef = 'italic 500 ' + Math.round(34 * k) + 'px ' + F_EN;
+        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['#FFFFFF', ef, l, y]); y += Math.round(46 * k); }); }
+      if (from) { y += Math.round(22 * k); const ff = '600 ' + Math.round(30 * k) + 'px ' + F_EN;
+        lineSet(x, from, ff, maxW).forEach(l => { plan.push([GOLD, ff, l, y]); y += Math.round(40 * k); }); }
+      if (y <= bottom) break;
+    }
+    plan.forEach(p => {
+      if (p[0] === 'rule') { x.shadowBlur = 0; x.fillStyle = GOLD; x.fillRect(64, p[3] - 4, 160, 5); x.shadowBlur = 8; return; }
+      x.fillStyle = p[0]; x.font = p[1]; x.fillText(p[2], 64, p[3]);
+    });
+    x.shadowBlur = 0;
+    // the person's own photo (placed style)
+    if (placed && st.personImg) {
+      const r = 160, cx = W - 215, cy = H - 360;
+      x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath(); x.clip();
+      cover(x, st.personImg, cx - r, cy - r, r * 2, r * 2); x.restore();
+      x.lineWidth = 10; x.strokeStyle = GOLD; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
+      const nmTxt = [$('dp-pname').value.trim(), $('dp-prole').value.trim()].filter(Boolean);
+      if (nmTxt.length) {
+        x.textAlign = 'center';
+        x.fillStyle = 'rgba(62,13,13,.88)'; x.fillRect(cx - 200, cy + r + 14, 400, nmTxt.length > 1 ? 86 : 52);
+        x.fillStyle = '#fff'; x.font = '700 30px ' + F_EN; x.fillText(nmTxt[0], cx, cy + r + 50, 380);
+        if (nmTxt[1]) { x.fillStyle = '#F2D27A'; x.font = '500 26px ' + F_EN; x.fillText(nmTxt[1], cx, cy + r + 86, 380); }
+        x.textAlign = 'left';
+      }
+    }
+    // bottom band
+    x.fillStyle = MAROON; x.fillRect(0, H - 64, W, 64);
+    x.fillStyle = GOLD; x.fillRect(0, H - 68, W, 4);
+    x.fillStyle = '#fff'; x.textAlign = 'center'; x.font = '600 28px ' + F_EN;
+    x.fillText([cfg.school.name, cfg.school.phone ? '📞 ' + cfg.school.phone : ''].filter(Boolean).join('   ·   '), W / 2, H - 22, W - 60);
+    x.textAlign = 'left';
+  }
+  function toJpeg(c) {
+    for (let q = 0.9; q >= 0.5; q -= 0.1) { const u = c.toDataURL('image/jpeg', q); if (u.length * 0.75 < 850 * 1024) return u; }
+    return c.toDataURL('image/jpeg', 0.5);
+  }
+  function fileName() { return 'daily-poster-' + (mk.theme || 'post') + '-' + new Date().toISOString().slice(0, 10) + '.jpg'; }
+  function download() {
+    const a = document.createElement('a'); a.href = toJpeg($('dp-mk-canvas')); a.download = fileName(); a.click();
+  }
+  async function addToReady() {
+    if (mk.busy || !mk.text || !mk.bg) return;
+    readEdits(); drawMade();
+    mk.busy = true; mkButtons();
+    try {
+      if (typeof showLoading === 'function') showLoading('Adding to Ready to Post…');
+      const t = mk.text;
+      await post(API, 'post', { data_url: toJpeg($('dp-mk-canvas')), title: t.title, caption_en: t.caption_en, caption_ta: t.caption_ta, hashtags: t.hashtags });
+      if (typeof hideLoading === 'function') hideLoading();
+      toast('✓ Added to "Ready to Post".');
+      if (typeof loadPosts === 'function') await loadPosts();
+      if (typeof switchTab === 'function') switchTab('ready');
+    } catch (e) {
+      if (typeof hideLoading === 'function') hideLoading();
+      toast('⚠️ ' + e.message, 'error');
+    }
+    mk.busy = false; mkButtons();
   }
 
   window.DP = {

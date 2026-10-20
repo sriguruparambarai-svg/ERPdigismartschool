@@ -596,7 +596,7 @@ function readyCard(p) {
     + (p.fb_post_id ? '<div class="help" style="margin-top:8px">✓ Already on Facebook — Post now will send only to Instagram.</div>' : '')
     + (p.own_video ? videoRow(p) : styleRow(p))
     + (logoUrl && !p.own_video ? '<label class="tick" id="lgrow-' + esc(p.id) + '" style="margin-top:10px;font-weight:500' + (styleOf(p.id) === 'photos' ? '' : ';display:none') + '"><input type="checkbox" id="lg-' + esc(p.id) + '"'
-        + (settings.logo_corner !== 'off' && p.class_name !== 'Festival Wishes' ? ' checked' : '') + ' onchange="outCache[\'' + esc(p.id) + '\']=null"> 🏫 Add school logo to the photos</label>' : '')
+        + (settings.logo_corner !== 'off' && p.class_name !== 'Festival Wishes' && p.class_name !== 'Daily Posters' ? ' checked' : '') + ' onchange="outCache[\'' + esc(p.id) + '\']=null"> 🏫 Add school logo to the photos</label>' : '')
     + (canFull && meta.connected ? '<div class="actions" style="align-items:center;padding:10px;background:#E6F1FB;border-radius:10px">'
         + '<button class="btn btn-primary btn-sm" onclick="publishPost(\'' + esc(p.id) + '\')">🚀 Post now</button>'
         + (p.fb_post_id ? '' : '<label class="tick" style="margin:0;font-weight:500"><input type="checkbox" id="fb-' + esc(p.id) + '" checked> Facebook</label>')
