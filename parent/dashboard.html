@@ -336,6 +336,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div id="dnote-list"></div>
     </div>
 
+    <!-- Voice messages from school -->
+    <div id="voice-section" class="hidden">
+      <div class="section-title">
+        <span>🎙 Voice Messages from School</span>
+      </div>
+      <div id="voice-list"></div>
+    </div>
+
     <!-- Urgent notices -->
     <div id="urgent-section" class="hidden">
       <div class="section-title">
@@ -738,7 +746,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   session = JSON.parse(saved);
   setupUI();
   checkPasswordGate();
-  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery(), loadClassWork()]);
+  await Promise.all([loadNotices(), loadHomework(), loadEvents(), loadConsent(), loadFoundation(), loadGallery(), loadClassWork(), loadVoice()]);
   loadStats();
   initAlerts();
   initOnlinePay();
@@ -1286,6 +1294,27 @@ async function loadBirthday() {
     document.getElementById('bday-msg').textContent = out.message || '';
     document.getElementById('bday-card').style.display = 'block';
   } catch (e) { /* no card if this fails */ }
+}
+
+// ══ VOICE MESSAGES FROM SCHOOL ══
+// Only messages still within their days come back from the server.
+async function loadVoice() {
+  try {
+    const out = await parentApi('voice');
+    const notes = (out && out.data) || [];
+    if (!notes.length) return;
+    const kinds = { homework: '📚 Homework', exam: '📝 Exam', instructions: '📌 Instructions', wishes: '🎉 Wishes', general: '📣 Message' };
+    const day = (iso) => new Date(String(iso).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    document.getElementById('voice-list').innerHTML = notes.map(n =>
+      '<div style="background:#fff;border:1px solid #E8E0D5;border-left:4px solid #C9A84C;border-radius:10px;padding:12px;margin-bottom:10px">'
+      + '<div style="font-size:11px;font-weight:600;color:#8B6B1F">' + (kinds[n.kind] || kinds.general) + '</div>'
+      + '<div style="font-size:14px;font-weight:700;color:#6B1A1A;margin-top:2px">' + escapeHtml(n.title || '') + '</div>'
+      + '<div style="font-size:11px;color:#9B928A;margin-top:2px">From ' + escapeHtml(n.sender_name || 'School Office')
+      + ' · ' + day(n.created_at) + ' · can be heard till ' + day(n.expires_on) + '</div>'
+      + '<audio controls preload="none" src="' + escapeHtml(n.audio_url || '') + '" style="width:100%;margin-top:9px"></audio>'
+      + '</div>').join('');
+    document.getElementById('voice-section').classList.remove('hidden');
+  } catch (e) { /* section stays hidden if this fails */ }
 }
 
 async function loadGallery() {

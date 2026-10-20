@@ -432,6 +432,24 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, data: rows || [] });
     }
 
+    // ══ VOICE MESSAGES — from the school, for everyone or this child's class, still within their days ══
+    if (action === 'voice') {
+      const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
+      if (!me || !me.length) return res.status(404).json({ ok: false, error: 'Student record not found.' });
+      const cls = String(me[0].class || '');
+      const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+      const rows = await sb('GET', 'voice_notes?school_id=eq.' + encodeURIComponent(schoolId) +
+        '&expires_on=gte.' + today +
+        '&select=id,title,kind,target_classes,audio_url,duration_sec,sender_name,expires_on,created_at' +
+        '&order=created_at.desc&limit=50') || [];
+      const mine = rows.filter(function (n) {
+        const t = Array.isArray(n.target_classes) ? n.target_classes : ['all'];
+        return t.indexOf('all') !== -1 || t.indexOf(cls) !== -1;
+      });
+      return res.status(200).json({ ok: true, data: mine });
+    }
+
     // ══ ANSWER A CONSENT FORM / MARK HOMEWORK DONE — only for this child ══
     if (action === 'consent_submit' || action === 'hw_done') {
       const commId = String(body.comm_id || '');

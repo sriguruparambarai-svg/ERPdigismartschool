@@ -50,6 +50,9 @@
     },
     "api/daily-posters.js": {
       "maxDuration": 300
+    },
+    "api/voice-notes.js": {
+      "maxDuration": 60
     }
   }
 }

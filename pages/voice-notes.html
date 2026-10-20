@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Messages — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.v-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+.v-label{font-size:12px;font-weight:700;color:var(--maroon)}
+.v-meta{font-size:11px;color:#9B928A;margin-top:3px;line-height:1.5}
+.v-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:9px;margin-top:12px}
+@media (max-width:700px){.v-row{grid-template-columns:1fr}}
+.v-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.v-chip{border:1px solid var(--border);background:#FBF8F3;border-radius:16px;padding:5px 11px;font-size:12px;cursor:pointer;user-select:none}
+.v-chip.on{background:var(--maroon);border-color:var(--maroon);color:#fff}
+.v-rec{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px;padding:14px;border:1px dashed var(--gold);border-radius:12px;background:#FFFCF5}
+.v-mic{width:64px;height:64px;border-radius:50%;border:0;background:var(--maroon);color:#fff;font-size:26px;cursor:pointer;flex-shrink:0}
+.v-mic.live{background:#B3261E;animation:vpulse 1.2s infinite}
+@keyframes vpulse{0%{box-shadow:0 0 0 0 rgba(179,38,30,.45)}70%{box-shadow:0 0 0 14px rgba(179,38,30,0)}100%{box-shadow:0 0 0 0 rgba(179,38,30,0)}}
+.v-time{font-size:22px;font-weight:700;color:var(--maroon);font-variant-numeric:tabular-nums;min-width:62px}
+.v-hint{font-size:12px;color:#6B6259;line-height:1.5}
+audio{max-width:100%}
+.v-pill{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:10px;background:#F3E9D2;color:#7A5A12;margin-right:5px}
+.v-pill.gone{background:#F1E3E3;color:#8B2B2B}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Voice Messages</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Parents → Voice Messages</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+        <div class="badge badge-maroon">Admin</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- NEW VOICE MESSAGE -->
+      <div class="v-card">
+        <div class="v-label">New voice message</div>
+        <div class="v-meta">Speak your message — parents hear it in the parent app and get a phone alert.
+          Homework messages stay for at most 2 days, all others for at most 15 days, then they are deleted on their own.</div>
+
+        <div class="v-row">
+          <div>
+            <label class="form-label">What is it about? (parents see this)</label>
+            <input id="v-title" class="form-control" maxlength="200" placeholder="e.g. Quarterly exam timetable">
+          </div>
+          <div>
+            <label class="form-label">Type</label>
+            <select id="v-kind" class="form-control" onchange="kindChanged()">
+              <option value="instructions">Instructions</option>
+              <option value="homework">Homework</option>
+              <option value="exam">Exam</option>
+              <option value="wishes">Festival wishes</option>
+              <option value="general">General</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Parents can hear it for</label>
+            <select id="v-days" class="form-control"></select>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;max-width:320px">
+          <label class="form-label">From</label>
+          <input id="v-from" class="form-control" maxlength="80" placeholder="e.g. Correspondent">
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="form-label">Who should hear it</label>
+          <div class="v-chips" id="v-classes"></div>
+        </div>
+
+        <div class="v-rec">
+          <button class="v-mic" id="v-mic" onclick="toggleRecord()" title="Record">🎙</button>
+          <div class="v-time" id="v-time">0:00</div>
+          <div class="v-hint" id="v-hint">Tap the mic and speak. Tap again to stop. Up to 10 minutes.</div>
+        </div>
+
+        <div id="v-preview" class="hidden" style="margin-top:12px">
+          <div class="v-label" style="margin-bottom:6px">Listen before sending</div>
+          <audio id="v-audio" controls preload="metadata"></audio>
+          <div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="clearRecording()">🗑 Record again</button></div>
+        </div>
+
+        <div style="margin-top:12px;font-size:12px;color:#6B6259">
+          Or send a recording you already have (for example a WhatsApp voice note):
+          <input type="file" id="v-file" accept="audio/*,.opus,.ogg,.m4a,.mp3,.aac,.wav,.webm" class="form-control" style="max-width:320px;margin-top:6px">
+        </div>
+
+        <div id="v-status" class="v-meta"></div>
+        <button class="btn btn-gold" style="margin-top:12px" id="v-send" onclick="sendNote()">📤 Send to parents</button>
+      </div>
+
+      <div class="v-label" style="margin:18px 0 10px">Voice messages sent</div>
+      <div id="v-list"><div class="empty-state" style="padding:26px"><div class="empty-text">Loading…</div></div></div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+const API = '/api/voice-notes';
+const MAX_SECONDS = 600;               // 10 minutes
+const MAX_BYTES = 3 * 1024 * 1024;     // the server's limit too
+// The longest each type may stay, and what is picked first
+const KIND_DAYS = {
+  homework:     { max: 2,  start: 2 },
+  exam:         { max: 15, start: 15 },
+  instructions: { max: 15, start: 7 },
+  wishes:       { max: 15, start: 3 },
+  general:      { max: 15, start: 7 }
+};
+const KIND_LABEL = { homework: 'Homework', exam: 'Exam', instructions: 'Instructions', wishes: 'Festival wishes', general: 'General' };
+const CLASSES = (typeof ALL_CLASSES !== 'undefined') ? ALL_CLASSES
+  : ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+
+let chosen = new Set(['all']);
+let recBlob = null;          // the recording waiting to be sent
+let recSeconds = 0;
+let recorder = null, recStream = null, recTimer = null, recStart = 0, recChunks = [];
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+
+async function call(action, extra) {
+  const body = Object.assign({ action: action, token: token(), school_id: SCHOOL_ID }, extra || {});
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  let data;
+  try { data = await r.json(); }
+  catch (e) { throw new Error('The server sent back something unreadable (status ' + r.status + ').'); }
+  if (!data.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function mmss(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+
+function niceDate(iso) {
+  const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+// ── Type → how many days ──
+function kindChanged() {
+  const k = KIND_DAYS[document.getElementById('v-kind').value] || KIND_DAYS.general;
+  const sel = document.getElementById('v-days');
+  let html = '';
+  for (let d = 1; d <= k.max; d++) {
+    html += '<option value="' + d + '"' + (d === k.start ? ' selected' : '') + '>'
+      + (d === 1 ? 'Today only' : d + ' days') + '</option>';
+  }
+  sel.innerHTML = html;
+}
+
+// ── Who hears it ──
+function renderClasses() {
+  const all = chosen.has('all');
+  document.getElementById('v-classes').innerHTML =
+    '<span class="v-chip' + (all ? ' on' : '') + '" onclick="pickClass(\'all\')">Whole school</span>'
+    + CLASSES.map(c => '<span class="v-chip' + (!all && chosen.has(c) ? ' on' : '') + '" onclick="pickClass(\'' + c + '\')">' + esc(c) + '</span>').join('');
+}
+
+function pickClass(c) {
+  if (c === 'all') { chosen = new Set(['all']); }
+  else {
+    chosen.delete('all');
+    if (chosen.has(c)) chosen.delete(c); else chosen.add(c);
+  }
+  renderClasses();
+}
+
+// ── Recording ──
+function bestType() {
+  const want = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'];
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return '';
+  for (const t of want) { if (MediaRecorder.isTypeSupported(t)) return t; }
+  return '';
+}
+
+async function toggleRecord() {
+  if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+
+  if (!navigator.mediaDevices || typeof MediaRecorder === 'undefined') {
+    showToast('⚠️ This browser cannot record. Please use Chrome, or choose an audio file below.', 'error');
+    return;
+  }
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (e) {
+    showToast('⚠️ Microphone not allowed. Please allow the microphone for this site and try again. (' + (e.name || e.message) + ')', 'error');
+    return;
+  }
+
+  clearRecording();
+  const type = bestType();
+  const opts = { audioBitsPerSecond: 32000 };   // clear voice, small file
+  if (type) opts.mimeType = type;
+  try { recorder = new MediaRecorder(recStream, opts); }
+  catch (e) { recorder = new MediaRecorder(recStream); }
+
+  recChunks = [];
+  recorder.ondataavailable = ev => { if (ev.data && ev.data.size) recChunks.push(ev.data); };
+  recorder.onstop = () => {
+    clearInterval(recTimer);
+    recSeconds = Math.round((Date.now() - recStart) / 1000);
+    if (recStream) recStream.getTracks().forEach(t => t.stop());
+    recStream = null;
+    document.getElementById('v-mic').classList.remove('live');
+    document.getElementById('v-mic').textContent = '🎙';
+    const t = (recorder.mimeType || type || 'audio/webm').split(';')[0];
+    useBlob(new Blob(recChunks, { type: t }), recSeconds);
+  };
+
+  recorder.start(1000);
+  recStart = Date.now();
+  document.getElementById('v-mic').classList.add('live');
+  document.getElementById('v-mic').textContent = '⏹';
+  document.getElementById('v-hint').textContent = 'Recording… speak clearly. Tap ⏹ to stop.';
+  recTimer = setInterval(() => {
+    const s = Math.round((Date.now() - recStart) / 1000);
+    document.getElementById('v-time').textContent = mmss(s);
+    if (s >= MAX_SECONDS && recorder && recorder.state === 'recording') {
+      showToast('10 minutes reached — recording stopped.', 'success');
+      recorder.stop();
+    }
+  }, 250);
+}
+
+function useBlob(blob, seconds) {
+  if (!blob || !blob.size) {
+    showToast('⚠️ Nothing was recorded. Please check the microphone and try again.', 'error');
+    return;
+  }
+  if (blob.size > MAX_BYTES) {
+    showToast('⚠️ This recording is too large (' + (blob.size / 1048576).toFixed(1) + ' MB). Please keep it under about 10 minutes.', 'error');
+    return;
+  }
+  recBlob = blob;
+  recSeconds = seconds || 0;
+  const a = document.getElementById('v-audio');
+  if (a.src) URL.revokeObjectURL(a.src);
+  a.src = URL.createObjectURL(blob);
+  document.getElementById('v-preview').classList.remove('hidden');
+  document.getElementById('v-time').textContent = mmss(recSeconds);
+  document.getElementById('v-hint').textContent = 'Ready. Listen once, then tap "Send to parents".';
+}
+
+function clearRecording() {
+  recBlob = null; recSeconds = 0;
+  const a = document.getElementById('v-audio');
+  if (a.src) { URL.revokeObjectURL(a.src); a.removeAttribute('src'); a.load(); }
+  document.getElementById('v-preview').classList.add('hidden');
+  document.getElementById('v-time').textContent = '0:00';
+  document.getElementById('v-hint').textContent = 'Tap the mic and speak. Tap again to stop. Up to 10 minutes.';
+  const f = document.getElementById('v-file');
+  if (f) f.value = '';
+}
+
+// A recording picked from the computer/phone
+const EXT_TYPE = { opus: 'audio/ogg', ogg: 'audio/ogg', oga: 'audio/ogg', m4a: 'audio/mp4', mp4: 'audio/mp4',
+  aac: 'audio/aac', mp3: 'audio/mpeg', wav: 'audio/wav', webm: 'audio/webm' };
+
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'v-file') return;
+  const f = (e.target.files || [])[0];
+  if (!f) return;
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  let type = (f.type || '').toLowerCase();
+  if (!type || type === 'application/octet-stream' || !/^(audio|video)\//.test(type)) type = EXT_TYPE[ext] || '';
+  if (!type) { showToast('⚠️ ' + f.name + ' is not a voice recording.', 'error'); e.target.value = ''; return; }
+  const blob = new Blob([f], { type: type });
+  // Find out how long it is
+  const probe = new Audio();
+  probe.preload = 'metadata';
+  probe.onloadedmetadata = () => { const d = isFinite(probe.duration) ? probe.duration : 0; URL.revokeObjectURL(probe.src); useBlob(blob, d); };
+  probe.onerror = () => { URL.revokeObjectURL(probe.src); useBlob(blob, 0); };
+  probe.src = URL.createObjectURL(blob);
+});
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('Could not read the recording.'));
+    r.readAsDataURL(blob);
+  });
+}
+
+// ── Send ──
+async function sendNote() {
+  const title = document.getElementById('v-title').value.trim();
+  const kind = document.getElementById('v-kind').value;
+  const days = parseInt(document.getElementById('v-days').value, 10) || 1;
+  const from = document.getElementById('v-from').value.trim();
+  const classes = Array.from(chosen);
+
+  if (recorder && recorder.state === 'recording') { showToast('⚠️ Please stop the recording first.', 'error'); return; }
+  if (!title) { showToast('⚠️ Please write what the message is about.', 'error'); return; }
+  if (classes.length === 0) { showToast('⚠️ Please choose who should hear it.', 'error'); return; }
+  if (!recBlob) { showToast('⚠️ Please record the message first.', 'error'); return; }
+
+  const who = chosen.has('all') ? 'the whole school' : classes.join(', ');
+  if (!confirmAction('Send this voice message to parents of ' + who + '?\nParents can hear it for ' + (days === 1 ? 'today only' : days + ' days') + '.')) return;
+
+  try { localStorage.setItem('voice_from', from); } catch (e) {}
+
+  const btn = document.getElementById('v-send');
+  const status = document.getElementById('v-status');
+  btn.disabled = true;
+  try {
+    status.textContent = 'Uploading the recording…';
+    const dataUrl = await blobToDataUrl(recBlob);
+    const up = await call('audio', { data_url: dataUrl });
+
+    status.textContent = 'Sending to parents…';
+    const res = await call('create', {
+      title: title, kind: kind, days: days, classes: classes,
+      audio_url: up.url, duration_sec: recSeconds, sender_name: from
+    });
+
+    const al = res.alerts || {};
+    status.textContent = '';
+    showToast('Voice message sent.' + (al.sent ? ' Phone alert went to ' + al.sent + ' parent phone(s).' : ''), 'success');
+    document.getElementById('v-title').value = '';
+    clearRecording();
+    await loadNotes();
+  } catch (e) {
+    status.textContent = '';
+    showToast('⚠️ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── List ──
+async function loadNotes() {
+  try {
+    const res = await call('list', {});
+    const rows = res.rows || [];
+    const today = res.today || new Date().toISOString().slice(0, 10);
+    if (rows.length === 0) {
+      document.getElementById('v-list').innerHTML =
+        '<div class="empty-state" style="padding:32px"><div class="empty-icon">🎙</div>'
+        + '<div class="empty-text">No voice messages yet.</div></div>';
+      return;
+    }
+    document.getElementById('v-list').innerHTML = rows.map(n => {
+      const cls = Array.isArray(n.target_classes) ? n.target_classes : ['all'];
+      const live = String(n.expires_on) >= today;
+      return '<div class="v-card">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+        + '<div><div class="v-label">' + esc(n.title) + '</div>'
+        + '<div class="v-meta"><span class="v-pill">' + esc(KIND_LABEL[n.kind] || n.kind) + '</span>'
+        + '<span class="v-pill' + (live ? '' : ' gone') + '">' + (live ? 'Parents can hear till ' + niceDate(n.expires_on) : 'Over — deleted tonight') + '</span><br>'
+        + (cls.indexOf('all') !== -1 ? 'Whole school' : esc(cls.join(', ')))
+        + ' · from ' + esc(n.sender_name || 'School Office')
+        + ' · sent ' + niceDate(n.created_at)
+        + (n.duration_sec ? ' · ' + mmss(n.duration_sec) : '') + '</div></div>'
+        + '<button class="btn btn-secondary btn-sm" onclick="removeNote(\'' + esc(n.id) + '\')">🗑 Delete</button>'
+        + '</div>'
+        + '<audio controls preload="none" src="' + esc(n.audio_url) + '" style="margin-top:10px;width:100%"></audio>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    document.getElementById('v-list').innerHTML =
+      '<div class="v-card" style="color:#B3261E;font-size:13px">Could not load voice messages: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function removeNote(id) {
+  if (!confirmAction('Delete this voice message? Parents will no longer hear it.')) return;
+  try {
+    showLoading('Deleting...');
+    await call('remove', { id: id });
+    hideLoading();
+    showToast('Voice message deleted.', 'success');
+    await loadNotes();
+  } catch (e) {
+    hideLoading();
+    showToast('⚠️ ' + e.message, 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  renderSidebar('voice');
+  const d = document.getElementById('today-date');
+  if (d) d.textContent = new Date().toDateString();
+  let from = '';
+  try { from = localStorage.getItem('voice_from') || ''; } catch (e) {}
+  document.getElementById('v-from').value = from || 'School Office';
+  kindChanged();
+  renderClasses();
+  await loadNotes();
+});
+</script>
+</body>
+</html>

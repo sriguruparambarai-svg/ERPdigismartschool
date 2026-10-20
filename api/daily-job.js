@@ -3,6 +3,7 @@
 //   1. sends the day's foundation question to every class that has one waiting
 //   2. deletes photo albums that are past their one year
 //   3. deletes Social Media class videos the school no longer keeps (its own choice, 1 week by default)
+//   4. deletes voice messages to parents whose days are over
 //
 // Vercel sends a GET with "Authorization: Bearer <CRON_SECRET>". Nothing else
 // gets in. Sundays are skipped for the question; the album tidy-up still runs.
@@ -68,6 +69,18 @@ module.exports = async (req, res) => {
     out.videos = await r.json();
   } catch (e) {
     out.videos = { ok: false, error: String(e.message || e) };
+  }
+
+  // ── 4. Clear out voice messages whose days are over (homework 2 days, others up to 15) ──
+  try {
+    const r = await fetch(BASE + '/api/voice-notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cleanup', cron_secret: secret })
+    });
+    out.voice = await r.json();
+  } catch (e) {
+    out.voice = { ok: false, error: String(e.message || e) };
   }
 
   return res.status(200).json(out);
