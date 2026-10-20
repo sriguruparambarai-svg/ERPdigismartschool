@@ -662,7 +662,16 @@
     },
     async open() {
       if (!built) {
-        await loadSettings();
+        // Step 5: a paid add-on — if it is not switched on for this school, show a friendly note instead
+        try { const d = await post(API, 'settings_get'); st.settings = d.settings; }
+        catch (e) {
+          const box = $('tab-daily');
+          if (box) box.innerHTML = '<div class="card"><div class="card-title">🗓 Daily Posters</div>'
+            + '<div class="help" style="margin-top:6px">Every Monday, 3 ready posters for your school page — teachers\' love, school memories, parenting tips, exam tips, values and admission messages — '
+            + 'with your correspondent / principal, school logo and name, in Tamil and English. You check them and share with one tap.</div>'
+            + '<div class="help" style="margin-top:10px;font-weight:600;color:' + MAROON + '">' + esc(e.message) + '</div></div>';
+          return;
+        }
         build();
         await loadPerson();
         await redraw();

@@ -32,6 +32,8 @@
 //   Schools already done this week are skipped, so the 7 am run only finishes what 6 am could not.
 // Env: ANTHROPIC_API_KEY (message writing) · OPENAI_API_KEY (pictures)
 //
+// Step 5: a paid add-on — the super admin switches it on per school (schools.has_daily_posters = true).
+//
 // Same rules as Social Media Posts: has_social must be on, and only the owner / full-access
 // staff (principal, admin) may use it.
 // Env: SUPABASE_SERVICE_KEY (already set)
@@ -390,7 +392,7 @@ module.exports = async (req, res) => {
     const started = Date.now();
     const out = { ok: true, ran_at: new Date().toISOString(), week: weekKey(), schools: [] };
     try {
-      const schools = ((await sb('GET', 'schools?has_social=is.true&select=school_id,name&limit=300')) || []).filter(s => isSchool(s.school_id));
+      const schools = ((await sb('GET', 'schools?has_social=is.true&has_daily_posters=is.true&select=school_id,name&limit=300')) || []).filter(s => isSchool(s.school_id));
       const todo = [];
       for (const s of schools) {
         const set = await readSettings(s.school_id);
@@ -426,9 +428,18 @@ module.exports = async (req, res) => {
     const sid = String(session.sid || '');
     if (!isSchool(sid)) return res.status(401).json({ ok: false, error: 'Invalid session. Please log in again.' });
 
-    const sch = ((await sb('GET', 'schools?school_id=eq.' + encodeURIComponent(sid) + '&select=school_id,has_social&limit=1')) || [])[0];
+    let sch;
+    try {
+      sch = ((await sb('GET', 'schools?school_id=eq.' + encodeURIComponent(sid) + '&select=school_id,has_social,has_daily_posters&limit=1')) || [])[0];
+    } catch (e) {
+      if (/has_daily_posters/.test(e.message)) return res.status(403).json({ ok: false, not_on: true, error: 'Daily Posters is not set up yet. Please contact DigiSmart.' });
+      throw e;
+    }
     if (!sch || sch.has_social !== true) {
       return res.status(403).json({ ok: false, error: 'Social Media Posts is not switched on for this school. Please contact DigiSmart.' });
+    }
+    if (sch.has_daily_posters !== true) {
+      return res.status(403).json({ ok: false, not_on: true, error: 'Daily Posters is an add-on that is not switched on for your school yet. Please contact DigiSmart to start it.' });
     }
 
     if (action === 'settings_get') {
