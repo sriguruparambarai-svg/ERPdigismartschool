@@ -467,11 +467,11 @@
     else { const g0 = x.createLinearGradient(0, 0, W, H); g0.addColorStop(0, '#24452F'); g0.addColorStop(1, '#0E2017'); x.fillStyle = g0; x.fillRect(0, 0, W, H); }
     // shade so the words read clearly
     let g = x.createLinearGradient(0, 0, W, 0);
-    g.addColorStop(0, 'rgba(12,28,20,.92)'); g.addColorStop(0.5, 'rgba(12,28,20,.78)'); g.addColorStop(0.75, 'rgba(12,28,20,.15)'); g.addColorStop(1, 'rgba(12,28,20,0)');
+    g.addColorStop(0, 'rgba(12,28,20,.80)'); g.addColorStop(0.36, 'rgba(12,28,20,.58)'); g.addColorStop(0.6, 'rgba(12,28,20,0)'); g.addColorStop(1, 'rgba(12,28,20,0)');
     x.fillStyle = g; x.fillRect(0, 0, W, H);
     g = x.createLinearGradient(0, 0, 0, 250);
-    g.addColorStop(0, 'rgba(10,20,15,.88)'); g.addColorStop(1, 'rgba(10,20,15,0)');
-    x.fillStyle = g; x.fillRect(0, 0, W, 250);
+    g.addColorStop(0, 'rgba(10,20,15,.80)'); g.addColorStop(1, 'rgba(10,20,15,0)');
+    x.fillStyle = g; x.fillRect(0, 0, W, 230);
 
     // the person on the right
     const nmTxt = [$('dp-pname') ? $('dp-pname').value.trim() : '', $('dp-prole') ? $('dp-prole').value.trim() : ''].filter(Boolean);
@@ -513,7 +513,7 @@
       x.lineWidth = 5; x.strokeStyle = GOLD; x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.stroke(); }
     x.textAlign = 'left'; x.fillStyle = '#F2D27A';
     const nm = lineSet(x, cfg.school.name || '', '700 44px ' + F_EN, W - 260).slice(0, 2);
-    x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 8;
+    x.shadowColor = 'rgba(0,0,0,.85)'; x.shadowBlur = 14;   // stronger shadow, since the shading is lighter now
     nm.forEach((l, i) => x.fillText(l, 205, (nm.length > 1 ? 92 : 120) + i * 52));
 
     // the words — plan them, shrinking until they fit
@@ -523,27 +523,27 @@
     const punch = t['punch_' + L] || '', quote = t['quote_' + L] || '', end = t['end_' + L] || '';
     const eng = s.language === 'both' ? t.line_en : '';
     const from = (st.settings.from_line || '').trim();
-    const maxW = W * ((placed && (st.portrait || st.personImg)) || !placed ? 0.5 : 0.58), X0 = 64, top = 300, bottom = H - 110;
+    const maxW = W * ((placed && (st.portrait || st.personImg)) || !placed ? 0.52 : 0.6), X0 = 64, top = 300, bottom = H - 110;
     let k = 1, plan;
     for (; k >= 0.55; k -= 0.05) {
       plan = []; let y = top;
       const R = (n) => Math.round(n * k);
-      if (series) { const f = (en ? 'italic 600 ' : '600 ') + R(34) + 'px ' + (en ? F_EN : F_TA);
-        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { plan.push(['text', '#E8C96A', f, l, y]); y += R(46); });
+      if (series) { const f = (en ? 'italic 600 ' : '600 ') + R(36) + 'px ' + (en ? F_EN : F_TA);
+        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { plan.push(['text', '#E8C96A', f, l, y]); y += R(48); });
         plan.push(['rule', y - R(18)]); y += R(40); }
-      const tf = '700 ' + R(en ? 70 : 66) + 'px ' + F_HEAD;
-      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['text', '#FFFFFF', tf, l, y + R(20)]); y += R(84); });
+      const tf = '700 ' + R(en ? 86 : 80) + 'px ' + F_HEAD;
+      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['text', '#FFFFFF', tf, l, y + R(26)]); y += R(100); });
       y += R(14);
-      const bf = (en ? '500 ' : '600 ') + R(38) + 'px ' + F_BODY;
-      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push(['text', SANDAL, bf, l, y]); y += R(54); }); });
-      if (punch) { y += R(24); const pf = '800 ' + R(44) + 'px ' + F_BODY;
-        lineSet(x, punch, pf, maxW - R(40)).forEach(l => { plan.push(['punch', pf, l, y]); y += R(70); }); y += R(6); }
-      if (quote) { y += R(18); const qf = '700 ' + R(36) + 'px ' + F_BODY;
-        const ql = lineSet(x, '“' + quote + '”', qf, maxW - R(70)); plan.push(['quote', qf, ql, y, R(50)]); y += ql.length * R(50) + R(70); }
-      if (end) { y += R(10); const ef = '700 ' + R(40) + 'px ' + F_BODY;
-        lineSet(x, end, ef, maxW).forEach(l => { plan.push(['text', '#F2D27A', ef, l, y]); y += R(54); }); }
-      if (eng) { y += R(12); const ef = 'italic 500 ' + R(31) + 'px ' + F_EN;
-        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['text', '#FFFFFF', ef, l, y]); y += R(42); }); }
+      const bf = (en ? '500 ' : '600 ') + R(46) + 'px ' + F_BODY;
+      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push(['text', SANDAL, bf, l, y]); y += R(62); }); });
+      if (punch) { y += R(30); const pf = '800 ' + R(54) + 'px ' + F_BODY;
+        lineSet(x, punch, pf, maxW - R(40)).forEach(l => { plan.push(['punch', pf, l, y]); y += R(82); }); y += R(6); }
+      if (quote) { y += R(22); const qf = '700 ' + R(42) + 'px ' + F_BODY;
+        const ql = lineSet(x, '“' + quote + '”', qf, maxW - R(70)); plan.push(['quote', qf, ql, y, R(56)]); y += ql.length * R(56) + R(104); }
+      if (end) { y += R(10); const ef = '700 ' + R(48) + 'px ' + F_BODY;
+        lineSet(x, end, ef, maxW).forEach(l => { plan.push(['text', '#F2D27A', ef, l, y]); y += R(62); }); }
+      if (eng) { y += R(14); const ef = 'italic 500 ' + R(34) + 'px ' + F_EN;
+        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['text', '#FFFFFF', ef, l, y]); y += R(46); }); }
       if (from) { y += R(18); const ff = '600 ' + R(28) + 'px ' + F_EN;
         lineSet(x, from, ff, maxW).forEach(l => { plan.push(['text', GOLD, ff, l, y]); y += R(38); }); }
       if (y <= bottom) break;
@@ -551,7 +551,7 @@
     plan.forEach(p => {
       if (p[0] === 'rule') {
         x.shadowBlur = 0; x.fillStyle = GOLD; x.fillRect(X0, p[1], 70, 3);
-        x.beginPath(); x.arc(X0 + 86, p[1] + 1.5, 5, 0, Math.PI * 2); x.fill(); x.fillRect(X0 + 102, p[1], 70, 3); x.shadowBlur = 8; return;
+        x.beginPath(); x.arc(X0 + 86, p[1] + 1.5, 5, 0, Math.PI * 2); x.fill(); x.fillRect(X0 + 102, p[1], 70, 3); x.shadowBlur = 14; return;
       }
       if (p[0] === 'punch') {
         // yellow brush highlight behind dark words
@@ -559,7 +559,7 @@
         x.shadowBlur = 0; x.save(); x.translate(X0 - 14, p[3] - fs * 0.92); x.rotate(-0.012);
         x.fillStyle = '#F2C94C'; rrect(x, 0, 0, w + 34, fs * 1.32, 8); x.fill();
         x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(6, 4, w + 22, fs * 0.18); x.restore();
-        x.fillStyle = '#3E0D0D'; x.fillText(p[2], X0 + 3, p[3]); x.shadowBlur = 8; return;
+        x.fillStyle = '#3E0D0D'; x.fillText(p[2], X0 + 3, p[3]); x.shadowBlur = 14; return;
       }
       if (p[0] === 'quote') {
         // speech bubble with little dots, like a child thinking
@@ -571,7 +571,7 @@
         x.beginPath(); x.arc(bx + w - 8, by + h + 34, 7, 0, Math.PI * 2); x.fill();
         x.shadowBlur = 0; x.fillStyle = MAROON;
         lines.forEach((l, i) => x.fillText(l, bx + 32, p[3] + 14 + i * lh));
-        x.shadowBlur = 8; return;
+        x.shadowBlur = 14; return;
       }
       x.fillStyle = p[1]; x.font = p[2]; x.fillText(p[3], X0, p[4]);
     });

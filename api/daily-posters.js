@@ -399,12 +399,12 @@ async function writeMessage(schoolName, theme, language, history) {
   if (!apiKey) throw new Error('AI writing is not set up (ANTHROPIC_API_KEY missing in Vercel).');
   const recent = (history.items || []).slice(0, 30).map(it => '- ' + it.title).join('\n') || '(none yet)';
   const L = language === 'en' ? 'en' : 'ta', lang = L === 'en' ? 'English' : 'Tamil';
-  const want = '"title_' + L + '": the HOOK — a short, striking ' + lang + ' opening line or question that stops a parent scrolling (2–6 words), '
-    + '"body_' + L + '": 2–3 very short ' + lang + ' lines that tell the little story or moment (each under 8 words), '
-    + '"punch_' + L + '": ONE short ' + lang + ' punch line (2–5 words) that hits the heart — it will be highlighted, '
-    + '"quote_' + L + '": a short ' + lang + ' quote a child or parent would say in this moment (under 8 words, in their own voice), or "" if it does not fit, '
-    + '"end_' + L + '": ONE warm ' + lang + ' closing line (under 9 words) that gives the meaning'
-    + (language === 'both' ? ', "line_en": ONE short English line (under 12 words) that sums it up' : '');
+  const want = '"title_' + L + '": the HOOK — a short, striking ' + lang + ' opening line or question that stops a parent scrolling (2–5 words), '
+    + '"body_' + L + '": EXACTLY 2 very short ' + lang + ' lines that tell the little story or moment (each under 6 words), '
+    + '"punch_' + L + '": ONE short ' + lang + ' punch line (2–4 words) that hits the heart — it will be highlighted, and it MUST make full sense even when read alone, without the lines before it, '
+    + '"quote_' + L + '": a short ' + lang + ' quote a child or parent would say in this moment (under 6 words, in their own voice), or "" if it does not fit, '
+    + '"end_' + L + '": ONE warm ' + lang + ' closing line (under 7 words) that gives the meaning'
+    + (language === 'both' ? ', "line_en": ONE short English line (under 10 words) that sums it up' : '');
   const prompt = 'You write daily social media posters for an Indian school in Tamil Nadu, "' + schoolName + '". '
     + 'Parents follow the school page. The posters are warm, emotional and positive, like the best Tamil school posts that parents love to share. '
     + 'Each poster tells ONE small, real-feeling moment as a story — a hook, a few short lines, a punch line, maybe a child\'s words, and a meaningful ending — not a list of advice.\n\n'
@@ -413,6 +413,7 @@ async function writeMessage(schoolName, theme, language, history) {
     + '- Write something NEW and original. Do not copy lines from any other page, film, song or poem.\n'
     + '- Tamil must be natural spoken-style Tamil that a Tamil Nadu parent uses, correctly spelled, not a word-for-word translation. A few common English words (Teacher, School, Notebook, Exam) are fine inside Tamil, as people speak.\n'
     + '- Simple words. No difficult literary Tamil. No hashtags, emojis, phone numbers, fees or dates on the poster.\n'
+    + '- FEWER WORDS = BIGGER LETTERS. Keep the whole poster (hook + lines + punch + quote + ending) under 28 words in total, like the best poster pages do.\n'
     + '- Never name or criticise another school. Nothing about religion, caste or politics.\n'
     + '- Do not repeat these recent headings:\n' + recent + '\n\n'
     + 'Reply with JSON only, no other text, with: ' + want
@@ -432,8 +433,8 @@ async function writeMessage(schoolName, theme, language, history) {
   if (!t) throw new Error('AI wrote something unreadable. Please press "New message".');
   const lines = (v, n, m) => (Array.isArray(v) ? v : String(v || '').split('\n')).map(x => str(x, m)).filter(Boolean).slice(0, n);
   return {
-    title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 4, 90), line_en: str(t.line_en, 120),
-    title_en: str(t.title_en, 80), body_en: lines(t.body_en, 3, 120),
+    title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 2, 90), line_en: str(t.line_en, 120),
+    title_en: str(t.title_en, 80), body_en: lines(t.body_en, 2, 120),
     punch_ta: str(t.punch_ta, 60), quote_ta: str(t.quote_ta, 90), end_ta: str(t.end_ta, 90),
     punch_en: str(t.punch_en, 60), quote_en: str(t.quote_en, 90), end_en: str(t.end_en, 90),
     series_ta: SERIES[theme].ta, series_en: SERIES[theme].en,
