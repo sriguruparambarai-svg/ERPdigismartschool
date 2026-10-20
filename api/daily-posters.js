@@ -133,7 +133,11 @@ async function readSettings(sid) {
 // ════════════ Step 2: the poster maker ════════════
 const OPENAI_MODEL = process.env.DAILY_IMAGE_MODEL || process.env.FESTIVAL_IMAGE_MODEL || 'gpt-image-2';
 const IMAGE_QUALITY = process.env.DAILY_IMAGE_QUALITY || 'medium';
-const TEXT_MODEL = process.env.DAILY_TEXT_MODEL || 'claude-sonnet-4-5';
+const TEXT_MODEL = process.env.DAILY_TEXT_MODEL || 'claude-sonnet-5-5';
+// Oct 2026: the strongest model does the Tamil editor check only (one short call per message) — it knows Tamil
+// words and their shades of meaning far better. If a model is not available on the account, the next one is used.
+const EDITOR_MODEL = process.env.DAILY_EDITOR_MODEL || 'claude-opus-5-5';
+const FALLBACK_MODEL = 'claude-sonnet-4-5';
 const ART_FOLDER = 'daily-art';
 const MAX_VARIANTS = 4;          // picture versions per theme
 const PAINTED_PER_WEEK = 8;      // new painted pictures per school per week (3 posters + remakes)
@@ -410,7 +414,7 @@ async function writeMessage(schoolName, theme, language, history) {
   const recent = (history.items || []).slice(0, 30).map(it => '- ' + it.title).join('\n') || '(none yet)';
   const L = language === 'en' ? 'en' : 'ta', lang = L === 'en' ? 'English' : 'Tamil';
   const want = '"title_' + L + '": the HOOK — a striking ' + lang + ' opening line or question that stops a parent scrolling (3–7 words), '
-    + '"body_' + L + '": EXACTLY 2 ' + lang + ' lines that tell the moment — each a complete, flowing sentence (5–9 words each), the second line leading into the punch line, '
+    + '"body_' + L + '": EXACTLY 2 ' + lang + ' lines that tell the moment — each a complete, flowing sentence (4–7 words each), the second line leading into the punch line, '
     + '"punch_' + L + '": the PUNCH LINE (2–5 words) — a short, complete statement that makes full sense alone, it will be highlighted, '
     + '"quote_' + L + '": what a child or parent would say in that moment, in their own spoken voice (under 7 words), or "" if it does not fit, '
     + '"end_' + L + '": the CLOSING SAYING — ONE memorable, quotable line (6–12 words), like a wise saying a parent would want to share or remember'
@@ -441,13 +445,20 @@ async function writeMessage(schoolName, theme, language, history) {
     + 'Reply with JSON only, no other text, with: ' + want
     + ', plus "caption_en": a 2–3 sentence English caption for Facebook/Instagram, "caption_ta": the same caption in natural Tamil, '
     + '"hashtags": 4–6 hashtags separated by spaces, and "title": a short English label for this poster (under 8 words).';
-  const ask = async (content, maxTokens) => {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: TEXT_MODEL, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
-    });
-    const raw = await r.text();
+  const ask = async (content, maxTokens, model) => {
+    const models = Array.from(new Set([model || TEXT_MODEL, TEXT_MODEL, FALLBACK_MODEL]));
+    let r, raw = '';
+    for (const m of models) {
+      r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: m, max_tokens: maxTokens, messages: [{ role: 'user', content }] })
+      });
+      raw = await r.text();
+      // model not found on this account → try the next one
+      if (r.status === 404 || (r.status === 400 && /model/i.test(raw) && /not.?found|invalid|does not exist/i.test(raw))) continue;
+      break;
+    }
     if (!r.ok) throw new Error('AI could not write the message right now (' + r.status + '). Please try again.');
     let reply = '';
     try { reply = (JSON.parse(raw).content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim(); } catch (e) {}
@@ -462,11 +473,12 @@ async function writeMessage(schoolName, theme, language, history) {
     const fixed = await ask('You are a senior Tamil editor and poet who writes posters for a respected Tamil Nadu school. '
       + 'Polish this Tamil poster text. Keep the same story, meaning and JSON keys. '
       + 'Rules: correct every grammar, spelling and புணர்ச்சி (sandhi) mistake; turn any clipped or word-by-word-translated line into a complete, natural, flowing sentence in clear written Tamil; '
-      + 'title_ta 3–7 words, body_ta exactly 2 lines of 5–9 words, punch_ta 2–5 words and must make sense alone; '
+      + 'title_ta 3–7 words, body_ta exactly 2 lines of 4–7 words (shorten long lines — big letters matter), punch_ta 2–5 words and must make sense alone; '
+      + 'check the exact meaning of every word and use the right one (for example சிறுமை means pettiness or disgrace — never use it for "small things"; use சிறிய / சிறு); '
       + 'end_ta must read like a பொன்மொழி — memorable, balanced, with a turn or contrast; '
       + 'read every line once more as a parent would: no line may carry an unintended or negative meaning (for example "வீட்டை விட்டு ஓடியது" reads as running away from home) — rephrase any such line; '
       + 'quote_ta stays in natural spoken Tamil (or stays "" if empty); caption_ta natural Tamil. Avoid English words unless no common Tamil word exists. '
-      + 'Reply with JSON only, same keys:\n' + JSON.stringify(draft), 1200).catch(() => null);
+      + 'Reply with JSON only, same keys:\n' + JSON.stringify(draft), 1200, EDITOR_MODEL).catch(() => null);
     if (fixed) keys.forEach(k => { if (fixed[k] !== undefined && (Array.isArray(fixed[k]) ? fixed[k].length : String(fixed[k] || '').trim() || k === 'quote_ta')) t[k] = fixed[k]; });
   }
   const lines = (v, n, m) => (Array.isArray(v) ? v : String(v || '').split('\n')).map(x => str(x, m)).filter(Boolean).slice(0, n);
