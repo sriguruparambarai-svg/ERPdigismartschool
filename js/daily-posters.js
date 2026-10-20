@@ -266,17 +266,57 @@
       : 'One AI picture, made once from the photo (about 1 minute). It is also made automatically with the first weekly posters.';
   }
   // If the AI could not give a see-through background, soften the edges so it still blends in
+  // If the AI could not give a see-through background, remove the plain background here:
+  // start from the picture's edges and clear every connected pixel close to the background colour
+  // (like Photoshop's background eraser), then soften the outline by a pixel or two.
   function prepareCut(img) {
     const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
     const x = c.getContext('2d'); x.drawImage(img, 0, 0);
-    let clear = false;
-    try { clear = x.getImageData(4, 4, 1, 1).data[3] < 20 && x.getImageData(img.width - 5, 4, 1, 1).data[3] < 20; } catch (e) {}
-    if (clear) return c;
-    x.globalCompositeOperation = 'destination-in';
-    x.save(); x.translate(img.width / 2, img.height * 0.62); x.scale(1, img.height / img.width * 1.15);
-    const g = x.createRadialGradient(0, 0, 0, 0, 0, img.width * 0.56);
-    g.addColorStop(0.55, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-    x.fillStyle = g; x.fillRect(-img.width, -img.height, img.width * 2, img.height * 2); x.restore();
+    let data;
+    try { data = x.getImageData(0, 0, c.width, c.height); } catch (e) { return c; }
+    const W = c.width, H = c.height, px = data.data;
+    if (px[3 + 4 * (4 * W + 4)] < 20 && px[3 + 4 * (4 * W + W - 5)] < 20) return c;   // already see-through
+    // background colour: the most common colour along the top and side edges
+    const counts = {};
+    const sample = (i) => { const k = (px[i] >> 4) + ',' + (px[i + 1] >> 4) + ',' + (px[i + 2] >> 4); counts[k] = (counts[k] || 0) + 1; };
+    for (let xx = 0; xx < W; xx += 3) sample(4 * xx);
+    for (let yy = 0; yy < H * 0.7; yy += 3) { sample(4 * (yy * W)); sample(4 * (yy * W + W - 1)); }
+    const top = Object.keys(counts).sort((p1, p2) => counts[p2] - counts[p1])[0].split(',').map(v => v * 16 + 8);
+    const TOL = 52, tol2 = TOL * TOL;
+    const near = (i) => { const dr = px[i] - top[0], dg = px[i + 1] - top[1], db = px[i + 2] - top[2]; return dr * dr + dg * dg + db * db < tol2; };
+    // flood fill from all edges
+    const bg = new Uint8Array(W * H), stack = [];
+    const seed = (n) => { if (!bg[n] && near(4 * n)) { bg[n] = 1; stack.push(n); } };
+    for (let xx = 0; xx < W; xx++) { seed(xx); seed((H - 1) * W + xx); }
+    for (let yy = 0; yy < H; yy++) { seed(yy * W); seed(yy * W + W - 1); }
+    while (stack.length) {
+      const n = stack.pop(), xx = n % W, yy = (n - xx) / W;
+      if (xx > 0) seed(n - 1); if (xx < W - 1) seed(n + 1);
+      if (yy > 0) seed(n - W); if (yy < H - 1) seed(n + W);
+    }
+    let cleared = 0; for (let n = 0; n < W * H; n++) cleared += bg[n];
+    if (cleared < W * H * 0.08) {
+      // the background was not plain (nothing to remove) — fall back to softening the edges
+      x.globalCompositeOperation = 'destination-in';
+      x.save(); x.translate(W / 2, H * 0.62); x.scale(1, H / W * 1.15);
+      const g = x.createRadialGradient(0, 0, 0, 0, 0, W * 0.56);
+      g.addColorStop(0.55, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g; x.fillRect(-W, -H, W * 2, H * 2); x.restore();
+      return c;
+    }
+    // mask → soften by blurring it slightly → apply
+    const m = document.createElement('canvas'); m.width = W; m.height = H;
+    const mx = m.getContext('2d'), md = mx.createImageData(W, H);
+    for (let n = 0; n < W * H; n++) { md.data[4 * n + 3] = bg[n] ? 0 : 255; }
+    mx.putImageData(md, 0, 0);
+    const m2 = document.createElement('canvas'); m2.width = W; m2.height = H;
+    const m2x = m2.getContext('2d'); m2x.filter = 'blur(' + Math.max(1, Math.round(W / 600)) + 'px)'; m2x.drawImage(m, 0, 0);
+    // pull the outline in by a hair, so no light fringe is left around hair and shoulders
+    const fd = m2x.getImageData(0, 0, W, H);
+    for (let n = 0; n < W * H; n++) { const a = fd.data[4 * n + 3]; fd.data[4 * n + 3] = a < 140 ? 0 : Math.min(255, (a - 140) * 2.2); }
+    m2x.putImageData(fd, 0, 0);
+    x.globalCompositeOperation = 'destination-in'; x.drawImage(m2, 0, 0);
+    x.globalCompositeOperation = 'source-over';
     return c;
   }
   async function setPortrait(url) {

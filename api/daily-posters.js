@@ -367,7 +367,7 @@ async function makePortrait(sid, gender, again) {
   const prompt = 'A high-quality professional studio portrait photograph of ' + who
     + 'with a warm, kind, confident smile, like a respected Indian school leader. Half-body (waist up), facing slightly towards the left, '
     + 'soft flattering studio light, sharp and natural. The person is centred and fills most of the frame, with the top of the head fully inside the picture. '
-    + 'Completely plain transparent background — only the person, nothing else. No text, no logo, no watermark.';
+    + 'Completely plain transparent background — or, if that is not possible, one flat, even, pure white background with no shadow, gradient or texture — only the person, nothing else. No text, no logo, no watermark.';
   let opts = { background: 'transparent', output_format: 'png', input_fidelity: 'high' };
   let out = null;
   for (let attempt = 0; attempt < 4 && !out; attempt++) {
