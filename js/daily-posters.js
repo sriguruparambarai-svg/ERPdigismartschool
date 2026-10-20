@@ -24,7 +24,7 @@
   let cfg = { logoUrl: '', school: { name: '' } };
   let built = false, logoImg = null;
   const st = {
-    settings: { enabled: false, style: 'placed', language: 'both', gender: 'sir', per_week: 3, from_line: '' },
+    settings: { enabled: false, style: 'placed', language: 'both', gender: 'sir', look: 'bright', per_week: 3, from_line: '' },
     person: null, personImg: null, personNew: '',
     portrait: null, portraitUrl: ''   // the big cut-out portrait (placed style), ready to draw
   };
@@ -129,6 +129,11 @@
       +     chip('language', 'ta', 'தமிழ் only', s.language === 'ta')
       +     chip('language', 'en', 'English only', s.language === 'en') + '</div>'
 
+      +   '<div class="lbl" style="margin-top:16px">Poster look</div>'
+      +   '<div class="style-row">'
+      +     chip('look', 'bright', '☀️ Bright (light, like admission ads)', (s.look || 'bright') === 'bright')
+      +     chip('look', 'dark', '🌙 Dark glow', s.look === 'dark') + '</div>'
+
       +   '<div class="lbl" style="margin-top:16px">4. Signed as (optional)</div>'
       +   '<input id="dp-from" class="form-control" maxlength="70" placeholder="e.g. — Correspondent, ARK Global School">'
 
@@ -169,7 +174,7 @@
 
   async function onChange(e) {
     const t = e.target;
-    if (t.name === 'dp-gender' || t.name === 'dp-style' || t.name === 'dp-language') {
+    if (t.name === 'dp-gender' || t.name === 'dp-style' || t.name === 'dp-language' || t.name === 'dp-look') {
       const g = t.name.slice(3);
       st.settings[g] = t.value; setChip(g, t.value);
       if (g === 'style') styleNote();
@@ -283,7 +288,14 @@
     for (let yy = 0; yy < H * 0.7; yy += 3) { sample(4 * (yy * W)); sample(4 * (yy * W + W - 1)); }
     const top = Object.keys(counts).sort((p1, p2) => counts[p2] - counts[p1])[0].split(',').map(v => v * 16 + 8);
     const TOL = 52, tol2 = TOL * TOL;
-    const near = (i) => { const dr = px[i] - top[0], dg = px[i + 1] - top[1], db = px[i + 2] - top[2]; return dr * dr + dg * dg + db * db < tol2; };
+    const bgSat = Math.max(top[0], top[1], top[2]) - Math.min(top[0], top[1], top[2]);
+    const near = (i) => {
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      const dr = r - top[0], dg = g - top[1], db = b - top[2];
+      if (dr * dr + dg * dg + db * db >= tol2) return false;
+      // a plain white / grey background has almost no colour; a light blue or cream shirt does — keep it
+      return bgSat > 30 || (Math.max(r, g, b) - Math.min(r, g, b)) < 20;
+    };
     // flood fill from all edges
     const bg = new Uint8Array(W * H), stack = [];
     const seed = (n) => { if (!bg[n] && near(4 * n)) { bg[n] = 1; stack.push(n); } };
@@ -498,19 +510,28 @@
     if (!c || !t) return;
     const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings;
     const placed = s.style === 'placed';
+    const bright = s.look !== 'dark';
+    // colours for the two looks
+    const P = bright
+      ? { base1: '#FFF8EE', base2: '#F3E6D2', shade: '255,250,241', shadeTop: '255,252,246', name: MAROON, series: '#9A7425', hook: MAROON,
+          body: '#3A2A20', end: '#1F6B3A', eng: '#5A4A40', from: '#9A7425', shadow: 'rgba(255,255,255,.0)', blur: 0,
+          bubble: MAROON, bubbleText: '#FFFFFF', punchBg: '#F6C744', punchText: '#3E0D0D', glow: '255,232,170' }
+      : { base1: '#24452F', base2: '#0E2017', shade: '12,28,20', shadeTop: '10,20,15', name: '#F2D27A', series: '#E8C96A', hook: '#FFFFFF',
+          body: SANDAL, end: '#F2D27A', eng: '#FFFFFF', from: GOLD, shadow: 'rgba(0,0,0,.85)', blur: 14,
+          bubble: '#FBEFE6', bubbleText: MAROON, punchBg: '#F2C94C', punchText: '#3E0D0D', glow: '242,210,122' };
     const en = s.language === 'en', L = en ? 'en' : 'ta';
     const F_HEAD = en ? '"Playfair Display", Georgia, serif' : F_TA, F_BODY = en ? F_EN : F_TA;
     // picture
     x.save();
-    x.fillStyle = '#16301F'; x.fillRect(0, 0, W, H);
+    x.fillStyle = P.base2; x.fillRect(0, 0, W, H);
     if (bg) cover(x, bg, 0, 0, W, H);
-    else { const g0 = x.createLinearGradient(0, 0, W, H); g0.addColorStop(0, '#24452F'); g0.addColorStop(1, '#0E2017'); x.fillStyle = g0; x.fillRect(0, 0, W, H); }
+    else { const g0 = x.createLinearGradient(0, 0, W, H); g0.addColorStop(0, P.base1); g0.addColorStop(1, P.base2); x.fillStyle = g0; x.fillRect(0, 0, W, H); }
     // shade so the words read clearly
     let g = x.createLinearGradient(0, 0, W, 0);
-    g.addColorStop(0, 'rgba(12,28,20,.80)'); g.addColorStop(0.36, 'rgba(12,28,20,.58)'); g.addColorStop(0.6, 'rgba(12,28,20,0)'); g.addColorStop(1, 'rgba(12,28,20,0)');
+    g.addColorStop(0, 'rgba(' + P.shade + ',' + (bright ? .9 : .8) + ')'); g.addColorStop(0.4, 'rgba(' + P.shade + ',' + (bright ? .72 : .58) + ')'); g.addColorStop(0.62, 'rgba(' + P.shade + ',0)'); g.addColorStop(1, 'rgba(' + P.shade + ',0)');
     x.fillStyle = g; x.fillRect(0, 0, W, H);
     g = x.createLinearGradient(0, 0, 0, 250);
-    g.addColorStop(0, 'rgba(10,20,15,.80)'); g.addColorStop(1, 'rgba(10,20,15,0)');
+    g.addColorStop(0, 'rgba(' + P.shadeTop + ',' + (bright ? .9 : .8) + ')'); g.addColorStop(1, 'rgba(' + P.shadeTop + ',0)');
     x.fillStyle = g; x.fillRect(0, 0, W, 230);
 
     // the person on the right
@@ -521,7 +542,7 @@
       const px = W - pw * 0.92, py = H - 64 - ph;
       // soft glow behind the person
       const gl = x.createRadialGradient(px + pw / 2, py + ph * 0.4, 10, px + pw / 2, py + ph * 0.4, pw * 0.7);
-      gl.addColorStop(0, 'rgba(242,210,122,.30)'); gl.addColorStop(1, 'rgba(242,210,122,0)');
+      gl.addColorStop(0, 'rgba(' + P.glow + ',' + (bright ? .45 : .30) + ')'); gl.addColorStop(1, 'rgba(' + P.glow + ',0)');
       x.fillStyle = gl; x.fillRect(px - 100, py - 100, pw + 200, ph + 100);
       x.drawImage(st.portrait, px, py, pw, ph);
       tagX = px + pw * 0.5; tagY = H - 64 - 26;
@@ -532,8 +553,8 @@
       x.lineWidth = 10; x.strokeStyle = GOLD; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
       tagX = cx; tagY = cy + r + 60;
     } else if (!placed && sample) {
-      x.fillStyle = 'rgba(255,255,255,.07)'; x.fillRect(W * 0.58, 300, W * 0.42, H - 364);
-      x.fillStyle = 'rgba(255,255,255,.75)'; x.font = '600 26px ' + F_EN; x.textAlign = 'center';
+      x.fillStyle = bright ? 'rgba(107,26,26,.06)' : 'rgba(255,255,255,.07)'; x.fillRect(W * 0.58, 300, W * 0.42, H - 364);
+      x.fillStyle = bright ? 'rgba(107,26,26,.7)' : 'rgba(255,255,255,.75)'; x.font = '600 26px ' + F_EN; x.textAlign = 'center';
       x.fillText('AI paints the person here', W * 0.79, H * 0.6); x.textAlign = 'left';
     }
     if (tagX && nmTxt.length) {
@@ -551,9 +572,9 @@
     // logo + school name
     if (logoImg) { x.save(); x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); x.clip(); x.drawImage(logoImg, 44, 42, 132, 132); x.restore();
       x.lineWidth = 5; x.strokeStyle = GOLD; x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.stroke(); }
-    x.textAlign = 'left'; x.fillStyle = '#F2D27A';
+    x.textAlign = 'left'; x.fillStyle = P.name;
     const nm = lineSet(x, cfg.school.name || '', '700 44px ' + F_EN, W - 260).slice(0, 2);
-    x.shadowColor = 'rgba(0,0,0,.85)'; x.shadowBlur = 14;   // stronger shadow, since the shading is lighter now
+    x.shadowColor = P.shadow; x.shadowBlur = P.blur;   // dark look: soft shadow behind the words · bright look: none
     nm.forEach((l, i) => x.fillText(l, 205, (nm.length > 1 ? 92 : 120) + i * 52));
 
     // the words — plan them, shrinking until they fit
@@ -569,49 +590,49 @@
       plan = []; let y = top;
       const R = (n) => Math.round(n * k);
       if (series) { const f = (en ? 'italic 600 ' : '600 ') + R(36) + 'px ' + (en ? F_EN : F_TA);
-        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { plan.push(['text', '#E8C96A', f, l, y]); y += R(48); });
+        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { plan.push(['text', P.series, f, l, y]); y += R(48); });
         plan.push(['rule', y - R(18)]); y += R(40); }
       const tf = '700 ' + R(en ? 86 : 80) + 'px ' + F_HEAD;
-      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['text', '#FFFFFF', tf, l, y + R(26)]); y += R(100); });
+      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['text', P.hook, tf, l, y + R(26)]); y += R(100); });
       y += R(14);
       const bf = (en ? '500 ' : '600 ') + R(46) + 'px ' + F_BODY;
-      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push(['text', SANDAL, bf, l, y]); y += R(62); }); });
+      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push(['text', P.body, bf, l, y]); y += R(62); }); });
       if (punch) { y += R(30); const pf = '800 ' + R(54) + 'px ' + F_BODY;
         lineSet(x, punch, pf, maxW - R(40)).forEach(l => { plan.push(['punch', pf, l, y]); y += R(82); }); y += R(6); }
       if (quote) { y += R(22); const qf = '700 ' + R(42) + 'px ' + F_BODY;
         const ql = lineSet(x, '“' + quote + '”', qf, maxW - R(70)); plan.push(['quote', qf, ql, y, R(56)]); y += ql.length * R(56) + R(104); }
       if (end) { y += R(10); const ef = '700 ' + R(48) + 'px ' + F_BODY;
-        lineSet(x, end, ef, maxW).forEach(l => { plan.push(['text', '#F2D27A', ef, l, y]); y += R(62); }); }
+        lineSet(x, end, ef, maxW).forEach(l => { plan.push(['text', P.end, ef, l, y]); y += R(62); }); }
       if (eng) { y += R(14); const ef = 'italic 500 ' + R(34) + 'px ' + F_EN;
-        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['text', '#FFFFFF', ef, l, y]); y += R(46); }); }
+        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['text', P.eng, ef, l, y]); y += R(46); }); }
       if (from) { y += R(18); const ff = '600 ' + R(28) + 'px ' + F_EN;
-        lineSet(x, from, ff, maxW).forEach(l => { plan.push(['text', GOLD, ff, l, y]); y += R(38); }); }
+        lineSet(x, from, ff, maxW).forEach(l => { plan.push(['text', P.from, ff, l, y]); y += R(38); }); }
       if (y <= bottom) break;
     }
     plan.forEach(p => {
       if (p[0] === 'rule') {
-        x.shadowBlur = 0; x.fillStyle = GOLD; x.fillRect(X0, p[1], 70, 3);
-        x.beginPath(); x.arc(X0 + 86, p[1] + 1.5, 5, 0, Math.PI * 2); x.fill(); x.fillRect(X0 + 102, p[1], 70, 3); x.shadowBlur = 14; return;
+        x.shadowBlur = 0; x.fillStyle = bright ? '#C9A84C' : GOLD; x.fillRect(X0, p[1], 70, 3);
+        x.beginPath(); x.arc(X0 + 86, p[1] + 1.5, 5, 0, Math.PI * 2); x.fill(); x.fillRect(X0 + 102, p[1], 70, 3); x.shadowBlur = P.blur; return;
       }
       if (p[0] === 'punch') {
         // yellow brush highlight behind dark words
         x.font = p[1]; const w = x.measureText(p[2]).width, fs = parseInt(p[1].split(' ')[1], 10);
         x.shadowBlur = 0; x.save(); x.translate(X0 - 14, p[3] - fs * 0.92); x.rotate(-0.012);
-        x.fillStyle = '#F2C94C'; rrect(x, 0, 0, w + 34, fs * 1.32, 8); x.fill();
+        x.fillStyle = P.punchBg; rrect(x, 0, 0, w + 34, fs * 1.32, 8); x.fill();
         x.fillStyle = 'rgba(255,255,255,.25)'; x.fillRect(6, 4, w + 22, fs * 0.18); x.restore();
-        x.fillStyle = '#3E0D0D'; x.fillText(p[2], X0 + 3, p[3]); x.shadowBlur = 14; return;
+        x.fillStyle = P.punchText; x.fillText(p[2], X0 + 3, p[3]); x.shadowBlur = P.blur; return;
       }
       if (p[0] === 'quote') {
         // speech bubble with little dots, like a child thinking
         x.font = p[1]; const lh = p[4], lines = p[2];
         const w = Math.max.apply(null, lines.map(l => x.measureText(l).width)) + 64, h = lines.length * lh + 34;
         const bx = X0 - 6, by = p[3] - lh + 2;
-        x.shadowBlur = 12; x.fillStyle = '#FBEFE6'; rrect(x, bx, by, w, h, h / 2.4); x.fill();
+        x.shadowColor = 'rgba(0,0,0,.25)'; x.shadowBlur = 12; x.fillStyle = P.bubble; rrect(x, bx, by, w, h, h / 2.4); x.fill();
         x.beginPath(); x.arc(bx + w - 30, by + h + 14, 11, 0, Math.PI * 2); x.fill();
         x.beginPath(); x.arc(bx + w - 8, by + h + 34, 7, 0, Math.PI * 2); x.fill();
-        x.shadowBlur = 0; x.fillStyle = MAROON;
+        x.shadowBlur = 0; x.shadowColor = P.shadow; x.fillStyle = P.bubbleText;
         lines.forEach((l, i) => x.fillText(l, bx + 32, p[3] + 14 + i * lh));
-        x.shadowBlur = 14; return;
+        x.shadowBlur = P.blur; return;
       }
       x.fillStyle = p[1]; x.font = p[2]; x.fillText(p[3], X0, p[4]);
     });

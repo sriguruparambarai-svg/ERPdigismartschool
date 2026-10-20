@@ -54,9 +54,10 @@ const CHOICES = {
   style: ['painted', 'placed'],       // painted = AI paints the person into the scene · placed = real photo on a shared background
   language: ['both', 'ta', 'en'],     // both = Tamil + one English line
   gender: ['sir', 'madam'],           // who is in the saved photo (so the AI draws the right person)
+  look: ['bright', 'dark'],           // bright = light daylight look (default, Oct 2026) · dark = the first dark-glow look
   per_week: [3]                       // fixed at 3 for now (decided Oct 2026)
 };
-const DEFAULTS = { enabled: false, style: 'placed', language: 'both', gender: 'sir', per_week: 3, from_line: '' };
+const DEFAULTS = { enabled: false, style: 'placed', language: 'both', gender: 'sir', look: 'bright', per_week: 3, from_line: '' };
 
 function getServiceKey() {
   return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -116,7 +117,7 @@ function clean(s) {
   s = s || {};
   const out = Object.assign({}, DEFAULTS);
   out.enabled = s.enabled === true;
-  for (const k of ['style', 'language', 'gender']) if (CHOICES[k].indexOf(s[k]) !== -1) out[k] = s[k];
+  for (const k of ['style', 'language', 'gender', 'look']) if (CHOICES[k].indexOf(s[k]) !== -1) out[k] = s[k];
   out.from_line = str(s.from_line, 70);
   return out;
 }
@@ -196,6 +197,12 @@ const LOOK = 'A beautiful, warm, realistic, high-quality photograph-style pictur
   + 'Soft natural light, rich but gentle colours, emotional and respectful, suitable for children and families. '
   + 'Tall vertical composition. Keep the LEFT HALF of the picture calm, softly blurred and slightly darker with no important details and no faces, '
   + 'because words will be placed there later. ';
+// Bright look (Oct 2026): like the admission ads parents see — airy daylight, white and cream, fresh colours
+const LOOK_BRIGHT = 'A bright, airy, cheerful, realistic, high-quality photograph-style picture for an Indian school\'s social media poster, '
+  + 'like a premium school admission advertisement. Clear soft daylight, white, cream and light warm tones with fresh touches of green plants and natural wood, '
+  + 'clean and uncluttered, emotional and respectful, suitable for children and families. Never dark, gloomy, night-time or moody. '
+  + 'Tall vertical composition. Keep the LEFT HALF of the picture very light, plain and softly blurred (light cream or white wall), with no important details and no faces, '
+  + 'because words will be placed there later. ';
 const NO_TEXT = ' Absolutely no text, letters, numbers, words, logos, signatures or watermarks anywhere in the picture.';
 
 function personLine(gender) {
@@ -205,10 +212,10 @@ function personLine(gender) {
     : 'Include the man from the reference photo: keep his face, features, skin tone, hairstyle, moustache and glasses (if any) exactly the same so he is clearly recognisable. '
       + 'Show him as a dignified half-body portrait on the RIGHT side of the picture, wearing a neat formal shirt, a warm kind smile, like a respected school leader, ';
 }
-function scenePrompt(theme, variant, painted, gender) {
+function scenePrompt(theme, variant, painted, gender, look) {
   const t = THEMES[theme];
   const scene = t.scenes[(variant - 1) % t.scenes.length];
-  return LOOK + 'Scene: ' + scene + ' '
+  return (look === 'dark' ? LOOK : LOOK_BRIGHT) + 'Scene: ' + scene + ' '
     + (painted
       ? personLine(gender) + 'lit by the same light as the scene and blended in naturally, not cut out. '
       : 'Keep the RIGHT side soft and simple too, with no people or faces, because a person\'s portrait will be placed there. ')
@@ -281,7 +288,9 @@ async function posterPicture(sid, settings, theme, variant) {
     const base = sid + '/festival/person';
     if (!(await exists(base + '.jpg'))) throw new Error('Please save the correspondent / principal photo first.');
     const info = await readJson(base + '.json', {});
-    const h = crypto.createHash('sha256').update(['d1', theme, settings.gender, info.v || 1].join('|')).digest('hex').slice(0, 12);
+    const parts = ['d1', theme, settings.gender, info.v || 1];
+    if (settings.look !== 'dark') parts.push('bright');   // dark pictures keep their old place
+    const h = crypto.createHash('sha256').update(parts.join('|')).digest('hex').slice(0, 12);
     const path = sid + '/daily/ai-' + theme + '-' + h + '-v' + variant + '.jpg';
     if (await exists(path)) return { url: publicUrl(path), made: false };
     // weekly limit, so the cost can never run away
@@ -292,15 +301,15 @@ async function posterPicture(sid, settings, theme, variant) {
     if (count >= PAINTED_PER_WEEK) throw new Error('This week\'s limit of ' + PAINTED_PER_WEEK + ' new AI pictures is used up. Please pick from the pictures already made, or try again next Monday.');
     const pr = await fetch(publicUrl(base + '.jpg') + '?t=' + Date.now());
     if (!pr.ok) throw new Error('Could not read the saved photo. Please save it again.');
-    const out = await makePicture(scenePrompt(theme, variant, true, settings.gender), Buffer.from(await pr.arrayBuffer()));
+    const out = await makePicture(scenePrompt(theme, variant, true, settings.gender, settings.look), Buffer.from(await pr.arrayBuffer()));
     await storeFile(out.buf, path, out.jpeg ? 'image/jpeg' : 'image/png');
     await storeFile(Buffer.from(JSON.stringify({ week: wk, count: count + 1 })), usePath, 'application/json');
     return { url: publicUrl(path), made: true };
   }
   // placed: shared by every school
-  const path = ART_FOLDER + '/p2-' + theme + '-v' + variant + '.jpg';   // p2 = pictures made for the big portrait
+  const path = ART_FOLDER + (settings.look === 'dark' ? '/p2-' : '/p3-') + theme + '-v' + variant + '.jpg';   // p2 = dark, p3 = bright (both made for the big portrait)
   if (await exists(path)) return { url: publicUrl(path), made: false };
-  const out = await makePicture(scenePrompt(theme, variant, false), null);
+  const out = await makePicture(scenePrompt(theme, variant, false, '', settings.look), null);
   await storeFile(out.buf, path, out.jpeg ? 'image/jpeg' : 'image/png');
   return { url: publicUrl(path), made: true };
 }
