@@ -3,7 +3,8 @@
 // how they appear in the posters, the poster language, and the on/off switch.
 // Step 2: the poster maker — AI writes the message, makes the picture; the words, logo, name and
 //         (placed) photo are drawn on top here, so Tamil letters are always clean.
-// Later steps add: "This week's posters" and the Monday auto-prepare.
+// Step 3: "This week's posters" — the week's 3 posters as tiles: add to Ready to Post, check & edit, skip.
+// Step 4 adds the Monday auto-prepare.
 //
 // Used by pages/social-posts.html:
 //   DP.init({ logoUrl, school })   after the page's "info" call
@@ -27,7 +28,9 @@
     person: null, personImg: null, personNew: ''
   };
   // Step 2: the poster being made
-  const mk = { theme: 'auto', made: null, text: null, variant: 1, bg: null, busy: false };
+  const mk = { theme: 'auto', made: null, text: null, variant: 1, bg: null, busy: false, itemId: '' };
+  // Step 3: this week's posters
+  const wk = { week: null, imgs: {}, busy: false };
 
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -86,8 +89,9 @@
       + '<div class="card-title">🗓 Daily Posters — what this is</div>'
       + '<div class="help" style="margin-top:6px">Every Monday, 3 ready posters for your school page: teachers\' love, school memories, parenting tips, exam tips, values, and admission messages in admission season. '
       + 'Each poster has your correspondent / principal, school logo and name. You check them, then share with one tap — like a social media agency, without the monthly bill.<br>'
-      + '<b>Step 1 is this setup.</b> The weekly posters will appear here once the next steps are ready.</div>'
+      + 'Set up once below, then use <b>This week\'s posters</b>, or make one any time with <b>Make a poster now</b>.</div>'
       + '</div>'
+      + weekHtml()
       + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start">'
       + '<div class="card">'
       +   '<div class="card-title">⚙️ Setup</div>'
@@ -143,6 +147,7 @@
     $('dp-psave').onclick = savePerson;
     $('dp-pdel').onclick = removePerson;
     $('dp-save').onclick = saveSettings;
+    $('dp-wk-again').onclick = () => prepareWeek(true);
     wireMaker(box);
     styleNote();
   }
@@ -316,7 +321,8 @@
       +     '<div class="help" style="margin-top:6px">Please read the Tamil once before sharing.</div>'
       +     '<div class="actions" style="margin-top:10px;flex-wrap:wrap">'
       +       '<button class="btn btn-secondary btn-sm" id="dp-mk-text">📝 New message</button>'
-      +       '<button class="btn btn-secondary btn-sm" id="dp-mk-pic">🖼 Another picture</button></div>'
+      +       '<button class="btn btn-secondary btn-sm" id="dp-mk-pic">🖼 Another picture</button>'
+      +       '<button class="btn btn-gold btn-sm hidden" id="dp-mk-save">💾 Save changes to this week\'s poster</button></div>'
       +   '</div>'
       + '</div>'
       + '<div class="card" style="text-align:center">'
@@ -333,11 +339,12 @@
     $('dp-mk-pic').onclick = () => newPicture();
     $('dp-mk-add').onclick = () => addToReady();
     $('dp-mk-dl').onclick = () => download();
+    $('dp-mk-save').onclick = () => saveItem(true);
     box.addEventListener('input', (e) => { if (/^dp-mk-(title|body|en)$/.test(e.target.id)) { readEdits(); drawMade(); } });
   }
   function mkStatus(t) { const s = $('dp-mk-status'); if (s) s.innerHTML = t; }
   function mkButtons() {
-    ['dp-mk-go', 'dp-mk-text', 'dp-mk-pic'].forEach(id => { if ($(id)) $(id).disabled = mk.busy; });
+    ['dp-mk-go', 'dp-mk-text', 'dp-mk-pic', 'dp-mk-save'].forEach(id => { if ($(id)) $(id).disabled = mk.busy; });
     const ready = !mk.busy && mk.text && mk.bg;
     ['dp-mk-add', 'dp-mk-dl'].forEach(id => { if ($(id)) $(id).disabled = !ready; });
   }
@@ -375,7 +382,7 @@
     try {
       mkStatus('✍️ AI is writing the message…');
       const d = await post(API, 'write', { theme: $('dp-mk-theme').value });
-      mk.text = d.text; mk.theme = d.theme; mk.variant = rememberedVariant(d.theme); mk.bg = null;
+      mk.text = d.text; mk.theme = d.theme; mk.variant = rememberedVariant(d.theme); mk.bg = null; editingItem('');
       fillEdits(); drawMade();
       mkStatus('🖼 Getting the picture for <b>' + esc(d.theme_name) + '</b>… (the first one of a theme takes 1–2 minutes)');
       await loadPicture();
@@ -390,7 +397,9 @@
     try {
       mkStatus('✍️ Writing a new message…');
       const d = await post(API, 'write', { theme: mk.theme });
-      mk.text = d.text; fillEdits(); drawMade(); mkStatus('✓ New message ready.');
+      mk.text = d.text; fillEdits(); drawMade();
+      if (mk.itemId) await saveItem(false);
+      mkStatus('✓ New message ready.');
     } catch (e) { mkStatus('⚠️ ' + esc(e.message)); }
     mk.busy = false; mkButtons();
   }
@@ -401,20 +410,26 @@
     try {
       mk.variant = (mk.variant % (mk.max || 4)) + 1;
       mkStatus('🖼 Getting another picture… (a new one takes 1–2 minutes)');
-      await loadPicture(); drawMade(); mkStatus('✓ Picture ' + mk.variant + ' of ' + (mk.max || 4) + '.');
+      if (mk.itemId) {
+        const d = await post(API, 'week_update', { id: mk.itemId, variant: mk.variant });
+        mk.bg = await loadImg(d.item.url); wk.imgs[mk.itemId] = mk.bg; mk.max = mk.max || 4;
+        updateWeekItem(d.item);
+      } else await loadPicture();
+      drawMade(); mkStatus('✓ Picture ' + mk.variant + ' of ' + (mk.max || 4) + '.');
     } catch (e) { mk.variant = keep; mkStatus('⚠️ ' + esc(e.message)); }
     mk.busy = false; mkButtons();
   }
 
   // ── drawing the finished poster ──
   function lineSet(x, text, font, maxW) { x.font = font; return wrap(x, text, maxW); }
-  function drawMade() {
-    const c = $('dp-mk-canvas'); if (!c || !mk.text) return;
-    const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings, t = mk.text;
+  function drawMade() { drawOn($('dp-mk-canvas'), mk.text, mk.bg); }
+  function drawOn(c, t, bg) {
+    if (!c || !t) return;
+    const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings;
     const placed = s.style === 'placed';
     // picture
     x.fillStyle = '#16301F'; x.fillRect(0, 0, W, H);
-    if (mk.bg) cover(x, mk.bg, 0, 0, W, H);
+    if (bg) cover(x, bg, 0, 0, W, H);
     // shade the left side and the top so the words read clearly
     let g = x.createLinearGradient(0, 0, W, 0);
     g.addColorStop(0, 'rgba(12,28,20,.90)'); g.addColorStop(0.48, 'rgba(12,28,20,.72)'); g.addColorStop(0.72, 'rgba(12,28,20,0)');
@@ -493,6 +508,7 @@
       if (typeof showLoading === 'function') showLoading('Adding to Ready to Post…');
       const t = mk.text;
       await post(API, 'post', { data_url: toJpeg($('dp-mk-canvas')), title: t.title, caption_en: t.caption_en, caption_ta: t.caption_ta, hashtags: t.hashtags });
+      if (mk.itemId) { try { const d = await post(API, 'week_update', { id: mk.itemId, text: t, status: 'added' }); updateWeekItem(d.item); } catch (e) {} }
       if (typeof hideLoading === 'function') hideLoading();
       toast('✓ Added to "Ready to Post".');
       if (typeof loadPosts === 'function') await loadPosts();
@@ -502,6 +518,138 @@
       toast('⚠️ ' + e.message, 'error');
     }
     mk.busy = false; mkButtons();
+  }
+
+  // ════════════ Step 3: this week's posters ════════════
+  function weekHtml() {
+    return '<div class="card" style="margin-bottom:16px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'
+      +   '<div class="card-title">📅 This week\'s posters</div>'
+      +   '<button class="btn btn-secondary btn-sm hidden" id="dp-wk-again">🔄 Make a fresh set</button></div>'
+      + '<div class="help" id="dp-wk-status" style="margin-top:6px">Loading…</div>'
+      + '<div id="dp-wk-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:12px"></div>'
+      + '</div>';
+  }
+  function badge(s) {
+    return s === 'added' ? '<span style="color:#1E7B34;font-weight:700">✓ Added to Ready to Post</span>'
+      : s === 'skipped' ? '<span style="color:#888;font-weight:700">Skipped</span>'
+      : '<span style="color:' + MAROON + ';font-weight:700">Waiting for you</span>';
+  }
+  function tile(it, i) {
+    const done = it.status !== 'ready';
+    return '<div style="border:1px solid var(--border);border-radius:12px;padding:10px;background:#FDF8F0' + (it.status === 'skipped' ? ';opacity:.6' : '') + '">'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px"><b>' + (i + 1) + '. ' + esc(it.theme_name) + '</b>' + badge(it.status) + '</div>'
+      + '<canvas id="dp-wk-c-' + it.id + '" width="1080" height="1350" style="width:100%;border-radius:8px;background:' + MAROON_DARK + '"></canvas>'
+      + (it.error ? '<div class="help" style="color:#B3261E;margin-top:4px">Picture not ready: ' + esc(it.error) + ' Press ✏️ Check & edit, then 🖼 Another picture.</div>' : '')
+      + '<div class="actions" style="margin-top:8px;flex-wrap:wrap;gap:6px">'
+      +   (done ? '' : '<button class="btn btn-primary btn-sm" data-wk="add" data-id="' + it.id + '"' + (it.url ? '' : ' disabled') + '>✅ Add</button>')
+      +   '<button class="btn btn-secondary btn-sm" data-wk="edit" data-id="' + it.id + '">✏️ Check & edit</button>'
+      +   '<button class="btn btn-secondary btn-sm" data-wk="dl" data-id="' + it.id + '"' + (it.url ? '' : ' disabled') + '>⬇</button>'
+      +   (it.status === 'ready' ? '<button class="btn btn-secondary btn-sm" data-wk="skip" data-id="' + it.id + '">Skip</button>'
+        : it.status === 'skipped' ? '<button class="btn btn-secondary btn-sm" data-wk="undo" data-id="' + it.id + '">Bring back</button>' : '')
+      + '</div></div>';
+  }
+  function wkStatus(t) { const s = $('dp-wk-status'); if (s) s.innerHTML = t; }
+  async function loadWeek() {
+    try { const d = await post(API, 'week_get'); wk.week = d.week; } catch (e) { wkStatus('⚠️ ' + esc(e.message)); return; }
+    renderWeek();
+  }
+  function renderWeek() {
+    const list = $('dp-wk-list'); if (!list) return;
+    const w = wk.week;
+    $('dp-wk-again').classList.toggle('hidden', !w);
+    if (!w || !(w.items || []).length) {
+      list.innerHTML = '';
+      wkStatus('This week\'s posters are not made yet. '
+        + (st.settings.enabled ? 'They will be made every Monday morning. ' : 'Tick "Make 3 posters for us every Monday" in Setup to get them every week. ')
+        + '<br><button class="btn btn-primary btn-sm" id="dp-wk-make" style="margin-top:8px">✨ Make this week\'s 3 posters now</button>');
+      $('dp-wk-make').onclick = () => prepareWeek(false);
+      return;
+    }
+    const left = w.items.filter(i => i.status === 'ready').length;
+    wkStatus('Made on ' + new Date(w.made_at).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }) + '. '
+      + (left ? left + ' waiting for you. Read the Tamil once, then press ✅ Add — or ✏️ Check & edit to change the words or picture.' : 'All done for this week. 🎉'));
+    list.innerHTML = w.items.map(tile).join('');
+    list.onclick = onTile;
+    w.items.forEach(drawTile);
+  }
+  async function drawTile(it) {
+    let img = wk.imgs[it.id];
+    if (!img && it.url) { try { img = await loadImg(it.url); wk.imgs[it.id] = img; } catch (e) { img = null; } }
+    drawOn($('dp-wk-c-' + it.id), it.text, img);
+  }
+  function updateWeekItem(item) {
+    if (!wk.week) return;
+    const i = wk.week.items.findIndex(x => x.id === item.id);
+    if (i !== -1) { wk.week.items[i] = item; renderWeek(); }
+  }
+  async function prepareWeek(again) {
+    if (wk.busy) return;
+    if (again && !window.confirm('Make 3 new posters for this week? The current ones will be replaced (ones already added to Ready to Post stay there).')) return;
+    if (st.settings.style === 'painted' && !st.person) { toast('⚠️ Please save the correspondent / principal photo in Setup first.', 'error'); return; }
+    wk.busy = true;
+    if ($('dp-wk-make')) $('dp-wk-make').disabled = true;
+    $('dp-wk-again').disabled = true;
+    wkStatus('✍️ AI is writing 3 messages and getting the pictures… this can take 2–3 minutes the first time. Please keep this page open.');
+    try {
+      const d = await post(API, 'week_prepare', { again: !!again });
+      wk.week = d.week; wk.imgs = {};
+      renderWeek();
+    } catch (e) { wkStatus('⚠️ ' + esc(e.message)); if ($('dp-wk-make')) $('dp-wk-make').disabled = false; }
+    $('dp-wk-again').disabled = false;
+    wk.busy = false;
+  }
+  function itemOf(id) { return wk.week && wk.week.items.find(x => x.id === id); }
+  async function onTile(e) {
+    const b = e.target.closest('button[data-wk]'); if (!b || wk.busy) return;
+    const it = itemOf(b.dataset.id); if (!it) return;
+    const act = b.dataset.wk;
+    if (act === 'edit') return editItem(it);
+    if (act === 'dl') {
+      const a = document.createElement('a'); a.href = toJpeg($('dp-wk-c-' + it.id));
+      a.download = 'daily-poster-' + it.theme + '-' + new Date().toISOString().slice(0, 10) + '.jpg'; a.click(); return;
+    }
+    if (act === 'skip' || act === 'undo') {
+      try { const d = await post(API, 'week_update', { id: it.id, status: act === 'skip' ? 'skipped' : 'ready' }); updateWeekItem(d.item); }
+      catch (err) { toast('⚠️ ' + err.message, 'error'); }
+      return;
+    }
+    if (act === 'add') {
+      wk.busy = true; b.disabled = true;
+      try {
+        if (typeof showLoading === 'function') showLoading('Adding to Ready to Post…');
+        const t = it.text;
+        await post(API, 'post', { data_url: toJpeg($('dp-wk-c-' + it.id)), title: t.title, caption_en: t.caption_en, caption_ta: t.caption_ta, hashtags: t.hashtags });
+        const d = await post(API, 'week_update', { id: it.id, status: 'added' });
+        updateWeekItem(d.item);
+        if (typeof loadPosts === 'function') await loadPosts();
+        toast('✓ Added to "Ready to Post".');
+      } catch (err) { toast('⚠️ ' + err.message, 'error'); b.disabled = false; }
+      if (typeof hideLoading === 'function') hideLoading();
+      wk.busy = false;
+    }
+  }
+  function editingItem(id) {
+    mk.itemId = id || '';
+    const s = $('dp-mk-save'); if (s) s.classList.toggle('hidden', !mk.itemId);
+  }
+  function editItem(it) {
+    mk.text = JSON.parse(JSON.stringify(it.text)); mk.theme = it.theme; mk.variant = it.variant || 1;
+    mk.bg = wk.imgs[it.id] || null; mk.max = 4;
+    editingItem(it.id);
+    if ($('dp-mk-theme')) $('dp-mk-theme').value = it.theme;
+    fillEdits(); drawMade(); mkButtons();
+    mkStatus('✏️ Editing this week\'s poster: <b>' + esc(it.theme_name) + '</b>. Change the words or picture, then press 💾 Save changes or ✅ Add to Ready to Post.');
+    $('dp-mk-canvas').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  async function saveItem(tell) {
+    if (!mk.itemId || !mk.text) return;
+    readEdits();
+    try {
+      const d = await post(API, 'week_update', { id: mk.itemId, text: mk.text });
+      updateWeekItem(d.item);
+      if (tell) toast('✓ Saved.');
+    } catch (e) { toast('⚠️ ' + e.message, 'error'); }
   }
 
   window.DP = {
@@ -517,6 +665,8 @@
         await loadSettings();
         build();
         await loadPerson();
+        await redraw();
+        loadWeek();
         if (!document.getElementById('fw-fonts')) {   // same Tamil font link as Festival Wishes
           const l = document.createElement('link');
           l.id = 'fw-fonts'; l.rel = 'stylesheet';

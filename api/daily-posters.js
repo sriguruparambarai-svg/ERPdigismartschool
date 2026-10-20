@@ -19,6 +19,12 @@
 //            painted = this school's correspondent painted in, made per school (at most 8 new a week)
 //   post    { data_url, title, caption_en, caption_ta, hashtags } → finished poster into "Ready to Post"
 // The browser (js/daily-posters.js) puts the words, logo, name and (placed) photo on top.
+//
+// Step 3 ("This week's posters"):
+//   week_get     {}                                   → { ok, week }  this week's 3 posters (null if not made yet)
+//   week_prepare {}                                   → { ok, week }  make this week's 3 posters now (themes in turn)
+//   week_update  { id, text?, variant?, status? }     → { ok, item }  save edits / another picture / added / skipped
+// Stored as a small file: <school>/daily/week-<Monday's date>.json
 // Env: ANTHROPIC_API_KEY (message writing) · OPENAI_API_KEY (pictures)
 //
 // Same rules as Social Media Posts: has_social must be on, and only the owner / full-access
@@ -338,6 +344,37 @@ async function writeMessage(schoolName, theme, language, history) {
   };
 }
 
+// ════════════ Step 3: this week's posters ════════════
+const WEEK_COUNT = 3;
+function weekPath(sid, wk) { return sid + '/daily/week-' + (wk || weekKey()) + '.json'; }
+async function saveWeek(sid, week) { await storeFile(Buffer.from(JSON.stringify(week)), weekPath(sid, week.week), 'application/json'); }
+async function addHistory(sid, theme, text) {
+  const histPath = sid + '/daily/history.json';
+  const history = await readJson(histPath, { items: [] });
+  const items = [{ theme, title: text.title_ta || text.title_en || text.title, at: new Date().toISOString() }].concat(history.items || []).slice(0, 60);
+  await storeFile(Buffer.from(JSON.stringify({ items })), histPath, 'application/json');
+  return { items };
+}
+// Make the week's posters: 3 different themes in turn, words first, then the pictures together
+async function prepareWeek(sid, schoolName) {
+  const settings = await readSettings(sid);
+  let history = await readJson(sid + '/daily/history.json', { items: [] });
+  const items = [];
+  for (let i = 0; i < WEEK_COUNT; i++) {
+    const theme = nextTheme(history);
+    const text = await writeMessage(schoolName, theme, settings.language, history);
+    history = await addHistory(sid, theme, text);
+    items.push({ id: crypto.randomUUID().slice(0, 8), theme, theme_name: THEMES[theme].name, variant: 1, text, url: '', status: 'ready', error: '' });
+  }
+  await Promise.all(items.map(async it => {
+    try { it.url = (await posterPicture(sid, settings, it.theme, it.variant)).url; }
+    catch (e) { it.error = e.message; }
+  }));
+  const week = { week: weekKey(), made_at: new Date().toISOString(), style: settings.style, language: settings.language, items };
+  await saveWeek(sid, week);
+  return week;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   if (!getServiceKey()) return res.status(500).json({ ok: false, error: 'Server key not configured.' });
@@ -389,6 +426,43 @@ module.exports = async (req, res) => {
       const settings = await readSettings(sid);
       const r = await posterPicture(sid, settings, theme, v);
       return res.status(200).json({ ok: true, url: r.url, made: r.made, style: settings.style, variant: v, max: MAX_VARIANTS });
+    }
+
+    // ── Step 3: this week's posters ──
+    if (action === 'week_get') {
+      return res.status(200).json({ ok: true, week: await readJson(weekPath(sid), null), this_week: weekKey() });
+    }
+    if (action === 'week_prepare') {
+      const settings = await readSettings(sid);
+      if (settings.style === 'painted' && !(await exists(sid + '/festival/person.jpg'))) {
+        return res.status(400).json({ ok: false, error: 'Please save the correspondent / principal photo in Setup first.' });
+      }
+      const old = await readJson(weekPath(sid), null);
+      if (old && (old.items || []).length && body.again !== true) return res.status(200).json({ ok: true, week: old });
+      const name = ((await sb('GET', 'schools?school_id=eq.' + encodeURIComponent(sid) + '&select=name&limit=1')) || [])[0];
+      return res.status(200).json({ ok: true, week: await prepareWeek(sid, str(name && name.name, 80) || 'our school') });
+    }
+    if (action === 'week_update') {
+      const week = await readJson(weekPath(sid), null);
+      const it = week && (week.items || []).find(x => x.id === String(body.id || ''));
+      if (!it) return res.status(404).json({ ok: false, error: 'That poster is no longer in this week\'s list. Please refresh.' });
+      if (body.text && typeof body.text === 'object') {
+        const t = body.text, lines = (v, n, m) => (Array.isArray(v) ? v : []).map(x => str(x, m)).filter(Boolean).slice(0, n);
+        it.text = Object.assign({}, it.text, {
+          title_ta: str(t.title_ta, 80), body_ta: lines(t.body_ta, 5, 90), line_en: str(t.line_en, 120),
+          title_en: str(t.title_en, 80), body_en: lines(t.body_en, 5, 120),
+          caption_en: str(t.caption_en, 1200), caption_ta: str(t.caption_ta, 1600), hashtags: str(t.hashtags, 300), title: str(t.title, 80)
+        });
+      }
+      if (body.variant !== undefined) {
+        const v = Math.min(MAX_VARIANTS, Math.max(1, parseInt(body.variant, 10) || 1));
+        const settings = await readSettings(sid);
+        it.url = (await posterPicture(sid, settings, it.theme, v)).url;
+        it.variant = v; it.error = '';
+      }
+      if (['ready', 'added', 'skipped'].indexOf(body.status) !== -1) it.status = body.status;
+      await saveWeek(sid, week);
+      return res.status(200).json({ ok: true, item: it });
     }
 
     // ── Step 2: finished poster → "Ready to Post" ──
