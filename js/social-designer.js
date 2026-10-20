@@ -5,6 +5,7 @@
 //   SD.reel(urls, opts)              → MP4 Blob, 720×1280 Reel with music (H.264 + AAC)
 //   SD.reelSupport()                 → { ok, reason }
 //   SD.clip(file, opts)              → a teacher's class video, shrunk to Reel size with the school logo (H.264 + AAC)
+//   SD.frames(seconds, draw, opts)   → MP4 Blob, 720×1280 Reel drawn frame by frame by the caller (Daily Posters), with music
 // Needs: mp4-muxer (window.Mp4Muxer) for Reels. Brand colours: maroon, gold, sandal.
 
 (function () {
@@ -609,9 +610,65 @@
     } finally { closeVideo(o); }
   }
 
+  // ── 5. A Reel drawn by the caller, frame by frame (used by Daily Posters' animated poster) ──
+  //    draw(ctx, t) paints one 720×1280 frame at time t (seconds). Same encoder and music as SD.reel.
+  async function frames(seconds, draw, opts) {
+    opts = opts || {};
+    const withMusic = !!opts.music;
+    const sup = await reelSupport(withMusic);
+    if (!sup.ok) throw new Error(sup.reason);
+    const onProgress = opts.onProgress || function () {};
+    const total = Math.round(seconds * FPS);
+    const canvas = document.createElement('canvas'); canvas.width = RW; canvas.height = RH;
+    const x = canvas.getContext('2d');
+    const vcodec = await pickVideoCodec();
+    const acodec = withMusic ? await pickAudioCodec() : null;
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: vcodec.startsWith('avc') ? 'avc' : 'vp9', width: RW, height: RH, frameRate: FPS },
+      audio: acodec ? { codec: acodec.startsWith('mp4a') ? 'aac' : 'opus', numberOfChannels: 2, sampleRate: 44100 } : undefined,
+      fastStart: 'in-memory',
+      firstTimestampBehavior: 'offset'
+    });
+    let encErr = null;
+    const venc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encErr = e; } });
+    venc.configure({ codec: vcodec, width: RW, height: RH, bitrate: 2500000, framerate: FPS,
+      ...(vcodec.startsWith('avc') ? { avc: { format: 'avc' } } : {}) });
+    for (let f = 0; f < total; f++) {
+      if (encErr) throw new Error('Video making failed: ' + encErr.message);
+      x.save(); draw(x, f / FPS); x.restore();
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+      venc.encode(frame, { keyFrame: f % (FPS * 2) === 0 });
+      frame.close();
+      while (venc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));
+      if (f % 15 === 0) { onProgress(Math.round(f / total * 85), 'Making the Reel… ' + Math.round(f / total * 100) + '%'); await new Promise(r => setTimeout(r, 0)); }
+    }
+    await venc.flush(); venc.close();
+    if (acodec) {
+      onProgress(88, 'Adding music…');
+      const audio = await decodeMusic(opts.music, seconds);
+      const aenc = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: e => { encErr = e; } });
+      aenc.configure({ codec: acodec, sampleRate: 44100, numberOfChannels: 2, bitrate: 128000 });
+      const L = audio.getChannelData(0), R = audio.getChannelData(1);
+      const N = 1024;
+      for (let i = 0; i < audio.length; i += N) {
+        const n = Math.min(N, audio.length - i);
+        const data = new Float32Array(n * 2);
+        data.set(L.subarray(i, i + n), 0); data.set(R.subarray(i, i + n), n);
+        const ad = new AudioData({ format: 'f32-planar', sampleRate: 44100, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(i * 1e6 / 44100), data });
+        aenc.encode(ad); ad.close();
+      }
+      await aenc.flush(); aenc.close();
+      if (encErr) throw new Error('Adding music failed: ' + encErr.message);
+    }
+    muxer.finalize();
+    onProgress(100, 'Reel ready');
+    return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  }
+
   window.SD = {
     init(o) { cfg = Object.assign(cfg, o || {}); if (o && 'logoUrl' in o) logoImg = null; },
-    framed, collage, reel, reelSupport, clip, CLIP_MAX_SECONDS,
+    framed, collage, reel, reelSupport, clip, CLIP_MAX_SECONDS, frames, REEL_W: RW, REEL_H: RH,
     MUSIC: [
       { id: 'happy-morning', name: '☀️ Happy Morning (upbeat)' },
       { id: 'festival-joy', name: '🪔 Festival Joy (Indian festive)' },

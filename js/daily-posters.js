@@ -407,6 +407,20 @@
       +     '<button class="btn btn-primary btn-sm" id="dp-mk-add" disabled>✅ Add to Ready to Post</button>'
       +     '<button class="btn btn-secondary btn-sm" id="dp-mk-dl" disabled>⬇ Download</button></div>'
       +   '<div class="help" style="margin-top:8px">"Ready to Post" lets you post to Facebook / Instagram, send to WhatsApp, or put it in the Parent Gallery.</div>'
+      +   '<div class="style-row" style="justify-content:center;margin-top:12px"><b style="font-size:12px">🎬 Reel</b>'
+      +     '<span class="help">Phone-size video: the words appear one by one with soft music — Reels reach far more parents.</span>'
+      +     '<div style="width:100%;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:6px">'
+      +       '<select id="dp-reel-music" class="form-control" style="width:auto;padding:5px 8px">'
+      +         (window.SD && SD.MUSIC ? SD.MUSIC.map(m => '<option value="' + m.id + '"' + (m.id === 'calm-learning' ? ' selected' : '') + '>' + esc(m.name) + '</option>').join('') : '')
+      +         '<option value="none">🔇 No music</option></select>'
+      +       '<button class="btn btn-gold btn-sm" id="dp-reel-go" disabled>🎬 Make Reel</button></div>'
+      +     '<div class="help" id="dp-reel-status" style="width:100%;text-align:center"></div>'
+      +     '<div id="dp-reel-box" class="hidden" style="width:100%;text-align:center;margin-top:8px">'
+      +       '<video id="dp-reel-video" controls playsinline style="width:100%;max-width:240px;border-radius:10px;background:#000"></video>'
+      +       '<div class="actions" style="justify-content:center;margin-top:8px">'
+      +         '<button class="btn btn-primary btn-sm" id="dp-reel-add">✅ Add Reel to Ready to Post</button>'
+      +         '<button class="btn btn-secondary btn-sm" id="dp-reel-dl">⬇ Download Reel</button></div></div>'
+      +   '</div>'
       + '</div></div>';
   }
   function wireMaker(box) {
@@ -416,13 +430,16 @@
     $('dp-mk-add').onclick = () => addToReady();
     $('dp-mk-dl').onclick = () => download();
     $('dp-mk-save').onclick = () => saveItem(true);
+    $('dp-reel-go').onclick = () => makeReel();
+    $('dp-reel-add').onclick = () => addReel();
+    $('dp-reel-dl').onclick = () => { if (reel.url) { const a = document.createElement('a'); a.href = reel.url; a.download = fileName().replace('.jpg', '-reel.mp4'); a.click(); } };
     box.addEventListener('input', (e) => { if (/^dp-mk-(title|body|en|punch|quote|end)$/.test(e.target.id)) { readEdits(); drawMade(); } });
   }
   function mkStatus(t) { const s = $('dp-mk-status'); if (s) s.innerHTML = t; }
   function mkButtons() {
     ['dp-mk-go', 'dp-mk-text', 'dp-mk-pic', 'dp-mk-save'].forEach(id => { if ($(id)) $(id).disabled = mk.busy; });
     const ready = !mk.busy && mk.text && mk.bg;
-    ['dp-mk-add', 'dp-mk-dl'].forEach(id => { if ($(id)) $(id).disabled = !ready; });
+    ['dp-mk-add', 'dp-mk-dl', 'dp-reel-go'].forEach(id => { if ($(id)) $(id).disabled = !ready || reel.busy; });
   }
   function rememberedVariant(theme) { try { return parseInt(localStorage.getItem('dp_v_' + st.settings.style + '_' + theme), 10) || 1; } catch (e) { return 1; } }
   function rememberVariant(theme, v) { try { localStorage.setItem('dp_v_' + st.settings.style + '_' + theme, String(v)); } catch (e) {} }
@@ -502,13 +519,17 @@
 
   // ── drawing the finished poster ──
   function lineSet(x, text, font, maxW) { x.font = font; return wrap(x, text, maxW); }
-  function drawMade() { drawOn($('dp-mk-canvas'), mk.text, mk.bg); }
+  function drawMade() { drawOn($('dp-mk-canvas'), mk.text, mk.bg); clearReel(); }
   // Story-style poster: series title, hook, lines, highlighted punch line, quote bubble, ending,
   // with the big portrait (placed) or the painted person (in the picture) on the right.
   function rrect(x, X, Y, W, H, R) { x.beginPath(); x.moveTo(X + R, Y); x.arcTo(X + W, Y, X + W, Y + H, R); x.arcTo(X + W, Y + H, X, Y + H, R); x.arcTo(X, Y + H, X, Y, R); x.arcTo(X, Y, X + W, Y, R); x.closePath(); }
-  function drawOn(c, t, bg, sample) {
+  // anim (Reel only): { stage: 0…6 words shown so far, zoom: picture zoom, pin: 0…1 portrait slide-in }
+  function drawOn(c, t, bg, sample, anim) {
     if (!c || !t) return;
     const x = c.getContext('2d'), W = c.width, H = c.height, s = st.settings;
+    const tall = H > W * 1.5;                // the Reel frame (9:16): keep clear of the phone's top and bottom buttons
+    const TOPX = tall ? 150 : 0;
+    const ease = (v) => v <= 0 ? 0 : v >= 1 ? 1 : 1 - Math.pow(1 - v, 3);
     const placed = s.style === 'placed';
     const bright = s.look !== 'dark';
     // colours for the two looks
@@ -524,7 +545,10 @@
     // picture
     x.save();
     x.fillStyle = P.base2; x.fillRect(0, 0, W, H);
-    if (bg) cover(x, bg, 0, 0, W, H);
+    if (bg) {
+      const z = anim ? anim.zoom || 1 : 1;
+      x.save(); x.translate(W / 2, H / 2); x.scale(z, z); x.translate(-W / 2, -H / 2); cover(x, bg, 0, 0, W, H); x.restore();
+    }
     else { const g0 = x.createLinearGradient(0, 0, W, H); g0.addColorStop(0, P.base1); g0.addColorStop(1, P.base2); x.fillStyle = g0; x.fillRect(0, 0, W, H); }
     // shade so the words read clearly
     let g = x.createLinearGradient(0, 0, W, 0);
@@ -538,14 +562,17 @@
     const nmTxt = [$('dp-pname') ? $('dp-pname').value.trim() : '', $('dp-prole') ? $('dp-prole').value.trim() : ''].filter(Boolean);
     let tagX = 0, tagY = 0;
     if (placed && st.portrait) {
-      const ph = H * 0.66, pw = ph * st.portrait.width / st.portrait.height;
-      const px = W - pw * 0.92, py = H - 64 - ph;
+      const ph = tall ? Math.min(H * 0.6, W * 1.05) : H * 0.66, pw = ph * st.portrait.width / st.portrait.height;
+      const slide = anim ? 1 - ease(anim.pin) : 0;
+      const px = W - pw * 0.92 + slide * pw * 0.35, py = H - 64 - ph;
+      if (anim) x.globalAlpha = ease(anim.pin);
       // soft glow behind the person
       const gl = x.createRadialGradient(px + pw / 2, py + ph * 0.4, 10, px + pw / 2, py + ph * 0.4, pw * 0.7);
       gl.addColorStop(0, 'rgba(' + P.glow + ',' + (bright ? .45 : .30) + ')'); gl.addColorStop(1, 'rgba(' + P.glow + ',0)');
       x.fillStyle = gl; x.fillRect(px - 100, py - 100, pw + 200, ph + 100);
       x.drawImage(st.portrait, px, py, pw, ph);
-      tagX = px + pw * 0.5; tagY = H - 64 - 26;
+      x.globalAlpha = 1;
+      tagX = px + pw * 0.5; tagY = tall ? H - 340 : H - 64 - 26;   // Reel: above the phone's caption area
     } else if (placed && st.personImg) {
       const r = 150, cx = W - 200, cy = H - 380;
       x.save(); x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.closePath(); x.clip();
@@ -570,12 +597,12 @@
     }
 
     // logo + school name
-    if (logoImg) { x.save(); x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); x.clip(); x.drawImage(logoImg, 44, 42, 132, 132); x.restore();
-      x.lineWidth = 5; x.strokeStyle = GOLD; x.beginPath(); x.arc(110, 108, 66, 0, Math.PI * 2); x.stroke(); }
+    if (logoImg) { x.save(); x.beginPath(); x.arc(110, 108 + TOPX, 66, 0, Math.PI * 2); x.fillStyle = '#fff'; x.fill(); x.clip(); x.drawImage(logoImg, 44, 42 + TOPX, 132, 132); x.restore();
+      x.lineWidth = 5; x.strokeStyle = GOLD; x.beginPath(); x.arc(110, 108 + TOPX, 66, 0, Math.PI * 2); x.stroke(); }
     x.textAlign = 'left'; x.fillStyle = P.name;
     const nm = lineSet(x, cfg.school.name || '', '700 44px ' + F_EN, W - 260).slice(0, 2);
     x.shadowColor = P.shadow; x.shadowBlur = P.blur;   // dark look: soft shadow behind the words · bright look: none
-    nm.forEach((l, i) => x.fillText(l, 205, (nm.length > 1 ? 92 : 120) + i * 52));
+    nm.forEach((l, i) => x.fillText(l, 205, (nm.length > 1 ? 92 : 120) + i * 52 + TOPX));
 
     // the words — plan them, shrinking until they fit
     const series = en ? t.series_en : t.series_ta;
@@ -584,32 +611,37 @@
     const punch = t['punch_' + L] || '', quote = t['quote_' + L] || '', end = t['end_' + L] || '';
     const eng = s.language === 'both' ? t.line_en : '';
     const from = (st.settings.from_line || '').trim();
-    const maxW = W * ((placed && (st.portrait || st.personImg)) || !placed ? 0.52 : 0.6), X0 = 64, top = 300, bottom = H - 110;
+    const maxW = W * ((placed && (st.portrait || st.personImg)) || !placed ? 0.52 : 0.6), X0 = 64, top = tall ? 300 + TOPX + 40 : 300, bottom = tall ? H - 330 : H - 110;
     let k = 1, plan;
     for (; k >= 0.55; k -= 0.05) {
-      plan = []; let y = top;
+      plan = []; let y = top, stg = 1;
+      const add = (it) => { it.s = stg; plan.push(it); };
       const R = (n) => Math.round(n * k);
       if (series) { const f = (en ? 'italic 600 ' : '600 ') + R(36) + 'px ' + (en ? F_EN : F_TA);
-        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { plan.push(['text', P.series, f, l, y]); y += R(48); });
-        plan.push(['rule', y - R(18)]); y += R(40); }
+        lineSet(x, series, f, maxW).slice(0, 2).forEach(l => { add(['text', P.series, f, l, y]); y += R(48); });
+        add(['rule', y - R(18)]); y += R(40); }
       const tf = '700 ' + R(en ? 86 : 80) + 'px ' + F_HEAD;
-      lineSet(x, title || '', tf, maxW).forEach(l => { plan.push(['text', P.hook, tf, l, y + R(26)]); y += R(100); });
+      lineSet(x, title || '', tf, maxW).forEach(l => { add(['text', P.hook, tf, l, y + R(26)]); y += R(100); });
       y += R(14);
       const bf = (en ? '500 ' : '600 ') + R(46) + 'px ' + F_BODY;
-      body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { plan.push(['text', P.body, bf, l, y]); y += R(62); }); });
+      stg = 2; body.forEach(b => { lineSet(x, b, bf, maxW).forEach(l => { add(['text', P.body, bf, l, y]); y += R(62); }); });
+      stg = 3;
       if (punch) { y += R(30); const pf = '800 ' + R(54) + 'px ' + F_BODY;
-        lineSet(x, punch, pf, maxW - R(40)).forEach(l => { plan.push(['punch', pf, l, y]); y += R(82); }); y += R(6); }
+        lineSet(x, punch, pf, maxW - R(40)).forEach(l => { add(['punch', pf, l, y]); y += R(82); }); y += R(6); }
+      stg = 4;
       if (quote) { y += R(22); const qf = '700 ' + R(42) + 'px ' + F_BODY;
-        const ql = lineSet(x, '“' + quote + '”', qf, maxW - R(70)); plan.push(['quote', qf, ql, y, R(56)]); y += ql.length * R(56) + R(104); }
+        const ql = lineSet(x, '“' + quote + '”', qf, maxW - R(70)); add(['quote', qf, ql, y, R(56)]); y += ql.length * R(56) + R(104); }
+      stg = 5;
       if (end) { y += R(10); const ef = '700 ' + R(48) + 'px ' + F_BODY;
-        lineSet(x, end, ef, maxW).forEach(l => { plan.push(['text', P.end, ef, l, y]); y += R(62); }); }
+        lineSet(x, end, ef, maxW).forEach(l => { add(['text', P.end, ef, l, y]); y += R(62); }); }
+      stg = 6;
       if (eng) { y += R(14); const ef = 'italic 500 ' + R(34) + 'px ' + F_EN;
-        lineSet(x, eng, ef, maxW).forEach(l => { plan.push(['text', P.eng, ef, l, y]); y += R(46); }); }
+        lineSet(x, eng, ef, maxW).forEach(l => { add(['text', P.eng, ef, l, y]); y += R(46); }); }
       if (from) { y += R(18); const ff = '600 ' + R(28) + 'px ' + F_EN;
-        lineSet(x, from, ff, maxW).forEach(l => { plan.push(['text', P.from, ff, l, y]); y += R(38); }); }
+        lineSet(x, from, ff, maxW).forEach(l => { add(['text', P.from, ff, l, y]); y += R(38); }); }
       if (y <= bottom) break;
     }
-    plan.forEach(p => {
+    const drawItem = (p) => {
       if (p[0] === 'rule') {
         x.shadowBlur = 0; x.fillStyle = bright ? '#C9A84C' : GOLD; x.fillRect(X0, p[1], 70, 3);
         x.beginPath(); x.arc(X0 + 86, p[1] + 1.5, 5, 0, Math.PI * 2); x.fill(); x.fillRect(X0 + 102, p[1], 70, 3); x.shadowBlur = P.blur; return;
@@ -635,6 +667,12 @@
         x.shadowBlur = P.blur; return;
       }
       x.fillStyle = p[1]; x.font = p[2]; x.fillText(p[3], X0, p[4]);
+    };
+    plan.forEach(p => {
+      if (!anim) return drawItem(p);
+      const a = ease(anim.stage - (p.s - 1));
+      if (a <= 0) return;
+      x.save(); x.globalAlpha = a; x.translate(0, (1 - a) * 30); drawItem(p); x.restore();
     });
     x.shadowBlur = 0;
 
@@ -646,6 +684,64 @@
     x.textAlign = 'left';
     x.restore();
   }
+  // ════════════ Reel: the poster as a phone-size video ════════════
+  const reel = { blob: null, url: '', busy: false, seconds: 12 };
+  function clearReel() {
+    if (reel.busy) return;
+    if (reel.url) { try { URL.revokeObjectURL(reel.url); } catch (e) {} }
+    reel.blob = null; reel.url = '';
+    const b = $('dp-reel-box'); if (b) b.classList.add('hidden');
+    const s = $('dp-reel-status'); if (s) s.textContent = '';
+  }
+  async function makeReel() {
+    if (reel.busy || !mk.text || !mk.bg || !window.SD || !SD.frames) return;
+    readEdits();
+    const m = $('dp-reel-music').value;
+    const music = m === 'none' ? null : '../assets/music/' + m + '.mp3';
+    const sup = await SD.reelSupport(!!music);
+    if (!sup.ok) { $('dp-reel-status').textContent = '⚠️ ' + sup.reason; return; }
+    clearReel(); reel.busy = true; mkButtons();
+    const tall = document.createElement('canvas'); tall.width = 1080; tall.height = 1920;
+    const T = 12, starts = [0.4, 1.7, 3.0, 4.3, 5.6, 6.7];   // hook, lines, punch, quote, ending, English line
+    const stageAt = (t) => starts.reduce((s, st0) => s + Math.min(1, Math.max(0, (t - st0) / 0.8)), 0);
+    const text = mk.text, bg = mk.bg;
+    try {
+      const blob = await SD.frames(T, (x, t) => {
+        drawOn(tall, text, bg, false, { stage: stageAt(t), zoom: 1 + 0.08 * t / T, pin: t / 0.9 });
+        x.drawImage(tall, 0, 0, SD.REEL_W, SD.REEL_H);
+      }, { music, onProgress: (pc, msg) => { $('dp-reel-status').textContent = '🎬 ' + msg; } });
+      reel.blob = blob; reel.url = URL.createObjectURL(blob); reel.seconds = T;
+      $('dp-reel-video').src = reel.url;
+      $('dp-reel-box').classList.remove('hidden');
+      $('dp-reel-status').textContent = '✓ Reel ready (' + T + ' seconds, ' + (Math.round(blob.size / 104857.6) / 10) + ' MB). Play it to check.';
+    } catch (e) { $('dp-reel-status').textContent = '⚠️ ' + e.message; }
+    reel.busy = false; mkButtons();
+  }
+  async function addReel() {
+    if (reel.busy || !reel.blob || !mk.text) return;
+    reel.busy = true; mkButtons();
+    try {
+      if (typeof showLoading === 'function') showLoading('Uploading the Reel (' + (Math.round(reel.blob.size / 104857.6) / 10) + ' MB)…');
+      const u = await post('/api/social-posts', 'video_url');
+      const r = await fetch(u.upload_url, { method: 'PUT', headers: { 'Content-Type': 'video/mp4', 'x-upsert': 'true' }, body: reel.blob });
+      if (!r.ok) throw new Error('Could not upload the Reel (' + r.status + ').');
+      if (typeof showLoading === 'function') showLoading('Adding to Ready to Post…');
+      const t = mk.text;
+      await post(API, 'post', { data_url: toJpeg($('dp-mk-canvas')), title: t.title, caption_en: t.caption_en, caption_ta: t.caption_ta,
+        hashtags: t.hashtags, video: u.public_url, video_seconds: reel.seconds });
+      if (mk.itemId) { try { const d = await post(API, 'week_update', { id: mk.itemId, text: t, status: 'added' }); updateWeekItem(d.item); } catch (e) {} }
+      if (typeof hideLoading === 'function') hideLoading();
+      toast('✓ Reel added to "Ready to Post".');
+      reel.busy = false;
+      if (typeof loadPosts === 'function') await loadPosts();
+      if (typeof switchTab === 'function') switchTab('ready');
+    } catch (e) {
+      if (typeof hideLoading === 'function') hideLoading();
+      toast('⚠️ ' + e.message, 'error');
+    }
+    reel.busy = false; mkButtons();
+  }
+
   function toJpeg(c) {
     for (let q = 0.9; q >= 0.5; q -= 0.1) { const u = c.toDataURL('image/jpeg', q); if (u.length * 0.75 < 850 * 1024) return u; }
     return c.toDataURL('image/jpeg', 0.5);

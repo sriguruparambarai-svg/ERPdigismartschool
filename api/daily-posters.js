@@ -17,7 +17,8 @@
 //   picture { theme, variant }   → { ok, url, style }   the poster picture (no letters in it)
 //            placed  = a shared picture per theme, made once for ALL schools (at most 4 per theme)
 //            painted = this school's correspondent painted in, made per school (at most 8 new a week)
-//   post    { data_url, title, caption_en, caption_ta, hashtags } → finished poster into "Ready to Post"
+//   post    { data_url, title, caption_en, caption_ta, hashtags, video?, video_seconds? } → finished poster into "Ready to Post"
+//           video = the animated Reel the browser made and uploaded (via /api/social-posts video_url); the poster stays as its cover
 // The browser (js/daily-posters.js) puts the words, logo, name and (placed) photo on top.
 //
 // Step 3 ("This week's posters"):
@@ -640,6 +641,19 @@ module.exports = async (req, res) => {
         caption_en: str(body.caption_en, 1500), caption_ta: str(body.caption_ta, 2000), hashtags: tags,
         status: 'approved', created_by: by, checked_by: by, approved_by: by, approved_at: now
       };
+      // The animated Reel (optional): must be this school's own upload, a real file, not too big
+      if (body.video) {
+        const vu = String(body.video);
+        const pre = publicUrl(sid + '/');
+        if (vu.indexOf(pre) !== 0 || !/\/reel-[a-zA-Z0-9-]+\.mp4$/.test(vu)) return res.status(400).json({ ok: false, error: 'That Reel is not from this school.' });
+        const h = await fetch(vu, { method: 'HEAD' });
+        if (!h.ok) return res.status(400).json({ ok: false, error: 'The Reel did not finish uploading. Please try again.' });
+        if (Number(h.headers.get('content-length') || 0) > 40 * 1048576) return res.status(400).json({ ok: false, error: 'The Reel is too big.' });
+        row.own_video = vu;
+        const secs = Number(body.video_seconds);
+        if (secs > 0 && secs < 120) row.video_seconds = Math.round(secs * 10) / 10;
+        row.title = (row.title + ' (Reel)').slice(0, 80);
+      }
       const saved = ((await sbInsert('social_posts', row)) || [])[0];
       return res.status(200).json({ ok: true, row: saved });
     }
