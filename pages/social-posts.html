@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js"></script>
 <script src="../js/social-designer.js"></script>
 <script src="../js/festival-wishes.js"></script>
+<script src="../js/daily-posters.js"></script>
 <style>
 .btn-wa{background:#1E8E3E;color:#fff;border:0}.btn-wa:hover{background:#17752F}
 .style-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;background:#FDF8F0;border:1px solid var(--border);border-radius:10px}
@@ -83,6 +84,7 @@ textarea.form-control{font-family:inherit}
         <div class="tab-bar">
           <div class="tab active" data-tab="new" onclick="switchTab('new')" id="tab-new-label">➕ New Post</div>
           <div class="tab full-only" data-tab="festival" onclick="switchTab('festival')">🪔 Festival Wishes</div>
+          <div class="tab full-only" data-tab="daily" onclick="switchTab('daily')">🗓 Daily Posters</div>
           <div class="tab upload-only" data-tab="mine" onclick="switchTab('mine')">🗂 My Uploads</div>
           <div class="tab full-only" data-tab="photos" onclick="switchTab('photos')">📥 Photos from Teachers <span class="cnt" id="cnt-photos">0</span></div>
           <div class="tab full-only" data-tab="wait" onclick="switchTab('wait')">⏳ Check & Approve <span class="cnt" id="cnt-wait">0</span></div>
@@ -139,6 +141,9 @@ textarea.form-control{font-family:inherit}
 
         <!-- ══ FESTIVAL WISHES (principal) — built by js/festival-wishes.js ══ -->
         <div id="tab-festival" class="hidden"></div>
+
+        <!-- ══ DAILY POSTERS (principal) — built by js/daily-posters.js ══ -->
+        <div id="tab-daily" class="hidden"></div>
 
         <!-- ══ PHOTOS FROM TEACHERS (principal) ══ -->
         <div id="tab-photos" class="hidden">
@@ -280,9 +285,10 @@ async function call(action, extra) {
 
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['new','festival','mine','photos','wait','ready','done','settings'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== name));
+  ['new','festival','daily','mine','photos','wait','ready','done','settings'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== name));
   if (name === 'settings') loadStudents();
   if (name === 'festival' && window.FW) FW.open();
+  if (name === 'daily' && window.DP) DP.open();
 }
 
 function view(url) { document.getElementById('viewer-img').src = url; document.getElementById('viewer').style.display = 'flex'; }
@@ -1268,6 +1274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     logoUrl = info.logo_url || '';
     if (window.SD) SD.init({ logoUrl, school: info.school || {} });
     if (window.FW) FW.init({ logoUrl, school: info.school || {} });
+    if (window.DP) DP.init({ logoUrl, school: info.school || {} });
   } catch (e) {
     const box = document.getElementById('not-on');
     box.classList.remove('hidden');
