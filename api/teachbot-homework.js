@@ -59,7 +59,9 @@ module.exports = async (req, res) => {
   if (!message) return res.status(400).json({ ok: false, error: 'Homework text missing.' });
 
   try {
-    const sch = await sb('GET', 'schools?id=eq.' + enc(schoolId) + '&select=id&limit=1') || [];
+    // Oct 2026: ERP schools are known by their school_id / school_code (e.g. ark-global-school-mqp1gfuc),
+    // not the table's own uuid "id" — looking up "id" with that text failed ("invalid input syntax for type uuid").
+    const sch = await sb('GET', 'schools?or=(school_id.eq.' + enc(schoolId) + ',school_code.eq.' + enc(schoolId) + ')&select=school_id&limit=1') || [];
     if (!sch.length) return res.status(404).json({ ok: false, error: 'School ' + schoolId + ' not found in ERP. Check erp_school_id in TeachBot.' });
 
     const rows = await sb('POST', 'communications', [{
