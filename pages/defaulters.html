@@ -29,6 +29,10 @@
 .d-chip{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:10px;background:#F7EDE3;color:var(--maroon);font-weight:600}
 .d-chip.sent{background:#E6F2E8;color:#2D7A3A}
 .hidden{display:none}
+.dsc-items{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.dsc-items label{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:4px 8px;border:1px solid var(--border);border-radius:14px;background:#FDFAF4;cursor:pointer;user-select:none}
+.dsc-items label.on{background:#F7EDE3;border-color:var(--maroon);color:var(--maroon);font-weight:600}
+.dsc-items input{width:14px;height:14px;accent-color:#6B1A1A}
 table.d-t{width:100%;border-collapse:collapse;font-size:13px}
 table.d-t th,table.d-t td{padding:8px;border-bottom:1px solid #F0EDE8;text-align:left}
 table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
@@ -41,7 +45,7 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title">Homework & Test Defaulters</div>
-        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academics → HW & Test Defaulters</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academics → HW, Test & Discipline</div>
       </div>
       <div class="topbar-right">
         <div style="font-size:12px;color:#9B928A" id="today-date"></div>
@@ -65,11 +69,11 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
             <div><label class="form-label">Section</label>
               <select id="m-section" class="form-control" onchange="loadStudents()">
                 <option value="">All</option><option>A</option><option>B</option><option>C</option></select></div>
-            <div><label class="form-label">Date work was given</label>
+            <div><label class="form-label" id="m-date-label">Date work was given</label>
               <input id="m-date" type="date" class="form-control" onchange="loadDayList()"></div>
-            <div><label class="form-label">Subject</label>
+            <div id="subj-box"><label class="form-label">Subject</label>
               <select id="m-subject" class="form-control"><option value="">-- Select --</option></select></div>
-            <div style="grid-column:span 2"><label class="form-label">Lesson</label>
+            <div id="lesson-box" style="grid-column:span 2"><label class="form-label">Lesson</label>
               <input id="m-lesson" class="form-control" placeholder="e.g. Lesson 3 – The Little Bird"></div>
           </div>
 
@@ -79,6 +83,7 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
             <div class="d-kind" data-kind="test_not_written" onclick="pickKind('test_not_written')">📝 Test – not written / not prepared<small>Tick who did not write</small></div>
             <div class="d-kind" data-kind="test_absent" onclick="pickKind('test_absent')">🚫 Test – absent<small>Tick who was absent</small></div>
             <div class="d-kind" data-kind="test_low_marks" onclick="pickKind('test_low_marks')">📉 Test – low marks<small id="pass-hint">Enter marks; below 35% is flagged</small></div>
+            <div class="d-kind" data-kind="discipline" onclick="pickKind('discipline')">👔 Discipline<small>Uniform, shoes, nails, hair, books, ID card</small></div>
           </div>
         </div>
 
@@ -130,7 +135,9 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
 <script src="../js/sidebar.js"></script>
 <script>
 const API = '/api/defaulters';
-const KIND_NAMES = { homework: 'Homework not written', test_not_written: 'Test – not written', test_absent: 'Test – absent', test_low_marks: 'Test – low marks' };
+const KIND_NAMES = { homework: 'Homework not written', test_not_written: 'Test – not written', test_absent: 'Test – absent', test_low_marks: 'Test – low marks', discipline: 'Discipline' };
+// Discipline items (same codes as the server). One combined message per child per day.
+const DSC_ITEMS = [['uniform', 'Uniform'], ['shoes', 'Shoes / socks'], ['nails', 'Nails not cut'], ['hair', 'Hair not neat'], ['books', 'Books / notebooks'], ['idcard', 'ID card']];
 let kind = 'homework';
 let students = [];
 let passPercent = 35;
@@ -171,6 +178,13 @@ function pickKind(k) {
   kind = k;
   document.querySelectorAll('.d-kind').forEach(x => x.classList.toggle('on', x.dataset.kind === k));
   document.getElementById('total-box').classList.toggle('hidden', k !== 'test_low_marks');
+  // Discipline needs no subject or lesson, and is usually for today
+  const dsc = k === 'discipline';
+  document.getElementById('subj-box').classList.toggle('hidden', dsc);
+  document.getElementById('lesson-box').classList.toggle('hidden', dsc);
+  document.getElementById('m-date-label').textContent = dsc ? 'Date' : 'Date work was given';
+  const dateEl = document.getElementById('m-date');
+  if (dsc && dateEl.value !== istDate(0)) { dateEl.value = istDate(0); loadDayList(); }
   renderStudents();
 }
 
@@ -197,6 +211,16 @@ function renderStudents() {
   if (!document.getElementById('m-class').value) return;
   if (students.length === 0) { box.innerHTML = 'No active students found in this class.'; return; }
   const low = kind === 'test_low_marks';
+  if (kind === 'discipline') {
+    document.getElementById('list-title').textContent = '3. Students (' + students.length + ') — tick what each child missed';
+    box.innerHTML = students.map(s =>
+      '<div class="d-row" style="align-items:flex-start;flex-direction:column;gap:2px">'
+      + '<div class="nm">' + esc(s.full_name) + ' <span class="adm">' + esc(s.admission_no || '') + '</span></div>'
+      + '<div class="dsc-items">' + DSC_ITEMS.map(it =>
+          '<label><input type="checkbox" class="dsc" data-id="' + esc(s.id) + '" data-item="' + it[0] + '" onchange="this.parentNode.classList.toggle(\'on\', this.checked)">' + esc(it[1]) + '</label>').join('')
+      + '</div></div>').join('');
+    return;
+  }
   document.getElementById('list-title').textContent = '3. Students (' + students.length + ')'
     + (low ? ' — enter each mark' : ' — tick the defaulters');
   box.innerHTML = students.map(s =>
@@ -230,6 +254,26 @@ async function saveMarks() {
     staff_name: (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : ''
   };
   if (!payload.class) return showToast('⚠️ Please pick a class.', 'error');
+  if (kind === 'discipline') {
+    payload.items = {};
+    document.querySelectorAll('#stu-list input.dsc:checked').forEach(i => {
+      (payload.items[i.dataset.id] = payload.items[i.dataset.id] || []).push(i.dataset.item);
+    });
+    if (Object.keys(payload.items).length === 0) return showToast('⚠️ Nothing ticked.', 'error');
+    try {
+      showLoading('Saving...');
+      const res = await call('save', payload);
+      hideLoading();
+      if (res.note) { showToast(res.note, 'success'); return; }
+      showToast('Saved for ' + res.saved + ' child(ren).' + (res.already_sent ? ' ' + res.already_sent + ' already sent today — not changed.' : ''), 'success');
+      renderStudents();
+      loadDayList();
+    } catch (e) {
+      hideLoading();
+      showToast('⚠️ ' + e.message, 'error');
+    }
+    return;
+  }
   if (!payload.subject) return showToast('⚠️ Please pick the subject.', 'error');
   if (!payload.lesson) return showToast('⚠️ Please type the lesson name.', 'error');
 
@@ -276,7 +320,7 @@ function entryHtml(r) {
     + '<div class="nm"><b>' + esc(r.student_name) + '</b> '
     + '<span class="d-chip' + (sent ? ' sent' : '') + '">' + (sent ? 'Sent' : 'Waiting') + '</span> '
     + '<span class="d-chip">' + esc(KIND_NAMES[r.kind] || r.kind) + '</span>'
-    + '<div class="d-msg">' + esc(r.message) + '</div>'
+    + '<div class="d-msg" style="white-space:pre-line">' + esc(r.message) + '</div>'
     + '<div class="d-meta">' + esc(r.subject) + ' · ' + esc(r.work_date) + ' · marked by ' + esc(r.marked_by || '') + '</div></div>'
     + (sent ? '' : '<button class="btn btn-secondary btn-sm" onclick="removeEntry(\'' + esc(r.id) + '\')">✕ Remove</button>')
     + '</div>';
@@ -347,9 +391,9 @@ async function loadRepeat() {
     const res = await call('repeat', { month: document.getElementById('r-month').value });
     const rows = res.rows || [];
     if (rows.length === 0) { box.innerHTML = 'No defaulters recorded this month.'; return; }
-    box.innerHTML = '<div class="table-wrap"><table class="d-t"><tr><th>Student</th><th>Class</th><th>Homework</th><th>Test not written</th><th>Test absent</th><th>Low marks</th><th>Total</th></tr>'
+    box.innerHTML = '<div class="table-wrap"><table class="d-t"><tr><th>Student</th><th>Class</th><th>Homework</th><th>Test not written</th><th>Test absent</th><th>Low marks</th><th>Discipline</th><th>Total</th></tr>'
       + rows.map(r => '<tr><td><b>' + esc(r.student_name) + '</b></td><td>' + esc(r.class) + (r.section ? ' ' + esc(r.section) : '') + '</td>'
-        + '<td>' + r.homework + '</td><td>' + r.test_not_written + '</td><td>' + r.test_absent + '</td><td>' + r.test_low_marks + '</td>'
+        + '<td>' + r.homework + '</td><td>' + r.test_not_written + '</td><td>' + r.test_absent + '</td><td>' + r.test_low_marks + '</td><td>' + (r.discipline || 0) + '</td>'
         + '<td><b style="color:' + (r.total >= 3 ? '#A32D2D' : '#3B332C') + '">' + r.total + '</b></td></tr>').join('')
       + '</table></div><div class="d-meta" style="margin-top:8px">Red = 3 or more times this month.</div>';
   } catch (e) {

@@ -11,6 +11,9 @@
 // POST { token (staff),  action: 'notify_results', exam_id }  → results published
 // POST { token (staff),  action: 'notify_defaulters', ids }   → homework / class test messages
 // POST { token (staff),  action: 'stats' }                    → how many parents are on
+// POST { token (staff),  action: 'absent_now' }               → send today's absent alerts now
+//                                                                (this school only; never twice per child)
+// Oct 2026: schools with has_tamil_msgs = true get simple Tamil below the English.
 // GET  /api/push?job=absent    (Vercel cron, Bearer CRON_SECRET) → today's absent alerts
 // GET  /api/push?job=birthday  (Vercel cron, Bearer CRON_SECRET) → today's birthday wishes
 //
@@ -18,6 +21,7 @@
 // SUPABASE_SERVICE_KEY, CRON_SECRET).
 
 const crypto = require('crypto');
+const { both, absentTamil, birthdayTamil, resultsTamil } = require('./_tamil');
 
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 const BASE = 'https://erp.digismartschool.com';
@@ -184,6 +188,11 @@ async function childNames(studentIds) {
   }
   return map;
 }
+// Like short(), but keeps line breaks (English line, then the Tamil line)
+function shortLines(t, n) {
+  t = String(t || '').split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
+  return t.length > n ? t.slice(0, n - 1) + '…' : t;
+}
 function short(t, n) {
   t = String(t || '').replace(/\s+/g, ' ').trim();
   return t.length > n ? t.slice(0, n - 1) + '…' : t;
@@ -201,6 +210,14 @@ async function subsForClass(schoolId, cls, section) {
   const stu = await sb('GET', q) || [];
   const ids = new Set(stu.map(s => String(s.id)));
   return subs.filter(s => ids.has(String(s.student_id)));
+}
+
+// Schools that have "Tamil messages" switched on (none if the column is not there yet)
+async function tamilSchools() {
+  try {
+    const rows = await sb('GET', 'schools?has_tamil_msgs=is.true&select=school_id&limit=1000') || [];
+    return new Set(rows.map(r => String(r.school_id)));
+  } catch (e) { return new Set(); }
 }
 
 // ══ Birthday wishes (cron, morning) ══
@@ -231,13 +248,15 @@ async function runBirthdayJob() {
     subs = subs.concat(await sb('GET', 'push_subscriptions?student_id=in.(' + part + ')&select=id,student_id,endpoint,p256dh,auth') || []);
   }
 
+  const ta = await tamilSchools();
   let sent = 0, skipped = 0, saved = 0;
   for (const s of born) {
     const fresh = await logOnce(s.school_id, 'birthday', today + ':' + s.id);
     if (!fresh) { skipped++; continue; }
 
     const name = firstName(s.full_name);
-    const msg = 'Happy birthday, ' + name + '! Wishing you a very happy year ahead. With love, from everyone at school.';
+    const msgEn = 'Happy birthday, ' + name + '! Wishing you a very happy year ahead. With love, from everyone at school.';
+    const msg = ta.has(String(s.school_id)) ? both(msgEn, birthdayTamil(name)) : msgEn;
 
     // The row is what the parent dashboard shows, so it is saved even for
     // parents who have not turned notifications on.
@@ -263,12 +282,13 @@ async function runBirthdayJob() {
 }
 
 // ══ Absent alerts (cron) ══
-async function runAbsentJob() {
+async function runAbsentJob(onlySchool) {
   const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
   const today = ist.toISOString().slice(0, 10);
   const nice = ist.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' });
 
-  const absents = await sb('GET', 'student_attendance?date=eq.' + today + '&status=eq.absent&select=school_id,student_id,student_name') || [];
+  const absents = await sb('GET', 'student_attendance?date=eq.' + today + '&status=eq.absent'
+    + (onlySchool ? '&school_id=eq.' + enc(onlySchool) : '') + '&select=school_id,student_id,student_name') || [];
   if (!absents.length) return { date: today, absents: 0, sent: 0 };
 
   const ids = [...new Set(absents.map(a => String(a.student_id)))];
@@ -278,23 +298,26 @@ async function runAbsentJob() {
     subs = subs.concat(await sb('GET', 'push_subscriptions?student_id=in.(' + part + ')&select=id,school_id,student_id,endpoint,p256dh,auth') || []);
   }
 
-  let sent = 0, skipped = 0;
+  const ta = await tamilSchools();
+  let sent = 0, skipped = 0, noPhone = 0;
   for (const a of absents) {
     const mine = subs.filter(s => String(s.student_id) === String(a.student_id));
-    if (!mine.length) continue;
+    if (!mine.length) { noPhone++; continue; }
     // Only once per child per day, even though the job runs twice
     const fresh = await logOnce(a.school_id, 'absent', today + ':' + a.student_id);
     if (!fresh) { skipped++; continue; }
     const name = a.student_name || 'Your child';
     const out = await sendToSubs(mine, () => ({
       title: '🔴 Absent today',
-      body: name + ' was marked absent today (' + nice + '). If this is a mistake, please contact the school.',
+      body: ta.has(String(a.school_id))
+        ? both(name + ' was marked absent today (' + nice + '). If this is a mistake, please contact the school.', absentTamil(name, today))
+        : name + ' was marked absent today (' + nice + '). If this is a mistake, please contact the school.',
       tag: 'absent-' + a.student_id + '-' + today,
       url: parentUrl(a.school_id, a.student_id)
     }), true);
     sent += out.sent;
   }
-  return { date: today, absents: absents.length, sent, already_sent: skipped };
+  return { date: today, absents: absents.length, sent, already_sent: skipped, no_alerts_on: noPhone };
 }
 
 module.exports = async (req, res) => {
@@ -385,6 +408,17 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, students_on: new Set(subs.map(s => String(s.student_id))).size });
     }
 
+    // Office presses "Send absent alerts now" (for attendance marked after the 10:30 / 12:30 rounds)
+    if (action === 'absent_now') {
+      if (session.role === 'staff') {
+        const mods = Array.isArray(session.mods) ? session.mods : [];
+        if (!mods.some(m => String(m).split(':')[0] === 'student-att')) {
+          return res.status(403).json({ ok: false, error: 'Only staff with Student Attendance access can send these.' });
+        }
+      }
+      return res.status(200).json(Object.assign({ ok: true }, await runAbsentJob(schoolId)));
+    }
+
     if (action === 'notify_comm') {
       // The message text is read from the saved record, never taken from the browser
       const rows = await sb('GET', 'communications?id=eq.' + enc(body.comm_id) + '&school_id=eq.' + enc(schoolId) + '&select=*&limit=1') || [];
@@ -401,7 +435,7 @@ module.exports = async (req, res) => {
         const who = names[String(s.student_id)];
         return {
           title: heading + (who ? ' · ' + who : '') + ': ' + short(c.title, 60),
-          body: short(c.message, 140),
+          body: /[\u0B80-\u0BFF]/.test(c.message || '') ? shortLines(c.message, 320) : short(c.message, 140),
           tag: forClass ? 'comm-' + c.id + '-' + s.student_id : 'comm-' + c.id,
           url: forClass ? parentUrl(schoolId, s.student_id) : parentUrl(schoolId)
         };
@@ -430,15 +464,15 @@ module.exports = async (req, res) => {
       }
 
       const names = await childNames(stuIds);
-      const heads = { homework: '📚 Homework not written', test_not_written: '📝 Class test', test_absent: '📝 Absent for class test', test_low_marks: '📝 Class test marks' };
+      const heads = { homework: '📚 Homework not written', test_not_written: '📝 Class test', test_absent: '📝 Absent for class test', test_low_marks: '📝 Class test marks', discipline: '👔 Discipline note' };
       let sent = 0, noPhone = 0;
       for (const d of rows) {
         const mine = subs.filter(s => String(s.student_id) === String(d.student_id));
         if (!mine.length) { noPhone++; continue; }
         if (!(await logOnce(schoolId, 'defaulter', String(d.id)))) continue;
         const out = await sendToSubs(mine, () => ({
-          title: (heads[d.kind] || '📝 Message from school') + (names[String(d.student_id)] ? ' · ' + names[String(d.student_id)] : '') + ' · ' + short(d.subject, 30),
-          body: short(d.message, 160),
+          title: (heads[d.kind] || '📝 Message from school') + (names[String(d.student_id)] ? ' · ' + names[String(d.student_id)] : '') + (d.kind === 'discipline' ? '' : ' · ' + short(d.subject, 30)),
+          body: /[\u0B80-\u0BFF]/.test(d.message || '') ? shortLines(d.message, 400) : short(d.message, 160),
           tag: 'defaulter-' + d.id,
           url: parentUrl(schoolId, d.student_id)
         }), false);
@@ -457,11 +491,14 @@ module.exports = async (req, res) => {
       const classes = Array.isArray(ex.classes) && ex.classes.length ? ex.classes : 'all';
       const subs = await subsForClass(schoolId, classes, null);
       const names = await childNames(subs.map(s => s.student_id));
+      const taRes = (await tamilSchools()).has(schoolId);
       const out = await sendToSubs(subs, s => {
         const who = names[String(s.student_id)];
         return {
           title: '📝 Results published' + (who ? ' · ' + who : ''),
-          body: short(ex.name, 60) + ' results are ready. Tap to view marks.',
+          body: taRes
+            ? both(short(ex.name, 60) + ' results are ready. Tap to view marks.', resultsTamil(short(ex.name, 60)))
+            : short(ex.name, 60) + ' results are ready. Tap to view marks.',
           tag: 'results-' + ex.id + '-' + s.student_id,
           url: parentUrl(schoolId, s.student_id)
         };

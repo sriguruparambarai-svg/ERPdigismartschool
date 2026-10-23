@@ -80,7 +80,7 @@ async function renderSidebar(activePage) {
     { group: 'Academics', items: [
       { id: 'exam', icon: '📄', label: 'Exams & Marks', href: 'exam.html' },
       { id: 'icard', icon: '🗓', label: 'Timetable', href: 'icard.html#timetable' },
-      { id: 'defaulters', icon: '📋', label: 'HW & Test Defaulters', href: 'defaulters.html' },
+      { id: 'defaulters', icon: '📋', label: 'HW, Test & Discipline', href: 'defaulters.html' },
     ]},
     { group: 'Fees & Accounts', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },

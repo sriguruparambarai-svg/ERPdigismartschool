@@ -18,15 +18,22 @@
 //     repeat    { month }                                  → counts per child
 //   Parent:
 //     my_notes  {}                                         → last 30 days, sent only
+//
+// Oct 2026: kind 'discipline' — uniform, shoes, nails, hair, books, ID card.
+//   save { kind:'discipline', work_date, class, section, items:{studentId:[codes]} }
+//   One combined message per child per day (marking again the same day adds
+//   the new items into that one message while it is still waiting).
+// Oct 2026: schools with has_tamil_msgs = true get simple Tamil below the English.
 
 const crypto = require('crypto');
+const { both, defaulterTamil, disciplineMessage, DISCIPLINE_CODES } = require('./_tamil');
 
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 
 // Below this percentage a class test mark counts as low. Change here if needed.
 const PASS_PERCENT = 35;
 
-const KINDS = ['homework', 'test_not_written', 'test_absent', 'test_low_marks'];
+const KINDS = ['homework', 'test_not_written', 'test_absent', 'test_low_marks', 'discipline'];
 
 function getServiceKey() {
   return process.env.SUPABASE_SERVICE_KEY
@@ -107,7 +114,13 @@ function clean(s, max) {
   return String(s || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-// The words a parent reads. English only, same as other parent messages.
+// Is "Tamil messages" switched on for this school? (off if the column is not there yet)
+async function tamilOn(schoolId) {
+  const r = await sb('GET', 'schools?school_id=eq.' + enc(schoolId) + '&select=has_tamil_msgs&limit=1');
+  return !!(r.ok && r.data && r.data[0] && r.data[0].has_tamil_msgs === true);
+}
+
+// The words a parent reads. English first; Tamil below when the school has it on.
 function buildMessage(kind, name, date, subject, lesson, marks, total) {
   const where = subject + ' – ' + lesson;
   const on = niceDate(date);
@@ -185,6 +198,69 @@ module.exports = async (req, res) => {
       const subject = clean(body.subject, 60);
       const lesson = clean(body.lesson, 100);
       const staffName = clean(body.staff_name, 80) || (session.role === 'staff' ? 'Staff' : 'Admin');
+      const tamil = await tamilOn(schoolId);
+
+      // ── Discipline: one combined message per child per day ──
+      if (kind === 'discipline') {
+        if (!validDate(workDate)) return res.status(400).json({ ok: false, error: 'Please pick the date.' });
+        if (workDate > istToday()) return res.status(400).json({ ok: false, error: 'The date cannot be in the future.' });
+        if (!cls) return res.status(400).json({ ok: false, error: 'Please pick a class.' });
+        const given = body.items && typeof body.items === 'object' ? body.items : {};
+        const want = {};
+        Object.keys(given).slice(0, 200).forEach(id => {
+          const codes = (Array.isArray(given[id]) ? given[id] : []).map(String).filter(c => DISCIPLINE_CODES.indexOf(c) !== -1);
+          if (codes.length) want[String(id)] = [...new Set(codes)];
+        });
+        const ids = Object.keys(want);
+        if (ids.length === 0) return res.status(200).json({ ok: true, saved: 0, note: 'No item was ticked.' });
+
+        const stu = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(cls)
+          + '&id=in.(' + ids.map(enc).join(',') + ')&select=id,full_name');
+        if (!stu.ok) return res.status(500).json({ ok: false, error: 'Could not check students: ' + stu.raw });
+
+        // Today's discipline notes already there for these children
+        const old = await sb('GET', 'defaulter_entries?school_id=eq.' + enc(schoolId) + '&kind=eq.discipline&work_date=eq.' + workDate
+          + '&student_id=in.(' + ids.map(enc).join(',') + ')&select=id,student_id,status,items');
+        if (!old.ok) {
+          const needSql = /items/.test(old.raw || '');
+          return res.status(500).json({ ok: false, error: needSql
+            ? 'The database is not ready for discipline notes yet. Please run the discipline SQL step in Supabase first.'
+            : 'Could not check: ' + old.raw });
+        }
+        const oldBy = {};
+        (old.data || []).forEach(o => { oldBy[String(o.student_id)] = o; });
+
+        let saved = 0, alreadySent = 0;
+        for (const s of (stu.data || [])) {
+          const id = String(s.id);
+          const name = clean(s.full_name, 80) || 'your ward';
+          const o = oldBy[id];
+          if (o && o.status !== 'pending') { alreadySent++; continue; }
+          const codes = [...new Set((o && Array.isArray(o.items) ? o.items : []).concat(want[id]))];
+          const message = disciplineMessage(name, workDate, niceDate(workDate), codes, tamil);
+          if (o) {
+            const u = await sb('PATCH', 'defaulter_entries?id=eq.' + enc(o.id) + '&school_id=eq.' + enc(schoolId) + '&status=eq.pending',
+              { items: codes, message: message, marked_by: staffName });
+            if (!u.ok) return res.status(500).json({ ok: false, error: 'Could not save: ' + u.raw });
+          } else {
+            const ins = await sb('POST', 'defaulter_entries', [{
+              school_id: schoolId, work_date: workDate, kind: 'discipline', class: cls, section: sec,
+              subject: 'Discipline', lesson: 'Discipline', student_id: id, student_name: name,
+              marks: null, total_marks: null, items: codes, message: message,
+              status: 'pending', marked_by: staffName
+            }]);
+            if (!ins.ok) {
+              const needSql = /items|kind|check/i.test(ins.raw || '');
+              return res.status(500).json({ ok: false, error: needSql
+                ? 'The database is not ready for discipline notes yet. Please run the discipline SQL step in Supabase first.'
+                : 'Could not save: ' + ins.raw });
+            }
+          }
+          saved++;
+        }
+        if (saved === 0 && alreadySent === 0) return res.status(400).json({ ok: false, error: 'Those students are not in this class.' });
+        return res.status(200).json({ ok: true, saved: saved, already: 0, already_sent: alreadySent });
+      }
 
       if (!validDate(workDate)) return res.status(400).json({ ok: false, error: 'Please pick the date the work was given.' });
       if (workDate > istToday()) return res.status(400).json({ ok: false, error: 'The date cannot be in the future.' });
@@ -232,7 +308,10 @@ module.exports = async (req, res) => {
           subject: subject, lesson: lesson, student_id: id, student_name: name,
           marks: kind === 'test_low_marks' ? scoreOf[id] : null,
           total_marks: kind === 'test_low_marks' ? total : null,
-          message: buildMessage(kind, name, workDate, subject, lesson, scoreOf[id], total),
+          message: tamil
+            ? both(buildMessage(kind, name, workDate, subject, lesson, scoreOf[id], total),
+                   defaulterTamil(kind, name, workDate, subject, lesson, scoreOf[id], total))
+            : buildMessage(kind, name, workDate, subject, lesson, scoreOf[id], total),
           status: 'pending', marked_by: staffName
         };
       });
@@ -310,8 +389,8 @@ module.exports = async (req, res) => {
       for (const e of (r.data || [])) {
         const k = e.student_id;
         if (!byChild[k]) byChild[k] = { student_name: e.student_name, class: e.class, section: e.section,
-          homework: 0, test_not_written: 0, test_absent: 0, test_low_marks: 0, total: 0 };
-        byChild[k][e.kind]++;
+          homework: 0, test_not_written: 0, test_absent: 0, test_low_marks: 0, discipline: 0, total: 0 };
+        byChild[k][e.kind] = (byChild[k][e.kind] || 0) + 1;
         byChild[k].total++;
       }
       const rows = Object.values(byChild).sort((a, b) => b.total - a.total);

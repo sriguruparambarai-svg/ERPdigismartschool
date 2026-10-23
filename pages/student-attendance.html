@@ -112,6 +112,7 @@
           <div style="margin-top:20px;display:flex;gap:8px;margin-left:auto">
             <button class="btn btn-secondary" onclick="openAddStudentModal()">+ Add Student</button>
             <button class="btn btn-primary" onclick="saveAttendance()" id="save-att-btn">💾 Save Attendance</button>
+            <button class="btn btn-gold" onclick="sendAbsentNow()" id="absent-now-btn" title="Alerts go on their own at 10:30 AM and 12:30 PM. Use this for absentees marked later.">🔔 Send absent alerts now</button>
           </div>
         </div>
 
@@ -380,6 +381,33 @@ async function saveAttendance() {
   if (error) { showToast('Error saving: ' + error.message, 'error'); return; }
   showToast('Attendance saved successfully!', 'success');
   await loadTodayStats();
+}
+
+// ── SEND ABSENT ALERTS NOW ──
+// Alerts go on their own at 10:30 AM and 12:30 PM. This sends today's
+// alerts straight away for absentees marked later. A parent never gets
+// the same day's alert twice, so pressing it again is safe.
+async function sendAbsentNow() {
+  if (!confirm('Send absent alerts now to the parents of all children marked Absent today?\n\nSave the attendance first. Parents who already got today\'s alert will not get it again.')) return;
+  const btn = document.getElementById('absent-now-btn');
+  btn.disabled = true; btn.textContent = 'Sending...';
+  try {
+    const r = await fetch('/api/push', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action: 'absent_now' })
+    });
+    const out = await r.json();
+    if (!out.ok) { showToast('⚠️ ' + (out.error || 'Could not send.'), 'error'); return; }
+    if (!out.absents) { showToast('No child is marked absent today.', 'success'); return; }
+    let msg = 'Absent today: ' + out.absents + '. Alerts sent now: ' + (out.sent || 0) + '.';
+    if (out.already_sent) msg += ' Already sent earlier: ' + out.already_sent + '.';
+    if (out.no_alerts_on) msg += ' Alerts not turned on by parent: ' + out.no_alerts_on + '.';
+    showToast(msg, 'success');
+  } catch (e) {
+    showToast('⚠️ Could not send: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔔 Send absent alerts now';
+  }
 }
 
 // ── MONTHLY REPORT ──

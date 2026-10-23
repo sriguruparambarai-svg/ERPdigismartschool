@@ -700,6 +700,7 @@ function renderSA(list) {
           ${(s.subscription_status||s.status) !== 'suspended' ? `<button onclick="changeStatus('${s.school_code}','suspended')" style="padding:3px 8px;background:#FCEBEB;color:#A32D2D;border:1px solid #f5c0c0;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Suspend</button>` : ''}
           <button onclick="toggleTnCard('${s.school_code}', ${s.has_tn_card ? 'false' : 'true'})" title="TN State Board term card (FA 40 + SA 60) — only for Tamil Nadu board schools" style="padding:3px 8px;background:${s.has_tn_card ? '#E8F5EB' : '#FFF8E6'};color:${s.has_tn_card ? '#2D7A3A' : '#8B5E00'};border:1px solid ${s.has_tn_card ? '#b8dfc0' : '#EDD9A3'};border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap">TN Card: ${s.has_tn_card ? 'On' : 'Off'}</button>
           <button onclick="toggleDailyPosters('${s.school_code}', ${s.has_daily_posters ? 'false' : 'true'})" title="Daily Posters — 3 weekly message posters (paid add-on; needs Social Media Posts)" style="padding:3px 8px;background:${s.has_daily_posters ? '#E8F5EB' : '#FFF8E6'};color:${s.has_daily_posters ? '#2D7A3A' : '#8B5E00'};border:1px solid ${s.has_daily_posters ? '#b8dfc0' : '#EDD9A3'};border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap">Daily Posters: ${s.has_daily_posters ? 'On' : 'Off'}</button>
+          <button onclick="toggleTamilMsgs('${s.school_code}', ${s.has_tamil_msgs ? 'false' : 'true'})" title="Tamil messages — parents get simple Tamil just below the English in every message" style="padding:3px 8px;background:${s.has_tamil_msgs ? '#E8F5EB' : '#FFF8E6'};color:${s.has_tamil_msgs ? '#2D7A3A' : '#8B5E00'};border:1px solid ${s.has_tamil_msgs ? '#b8dfc0' : '#EDD9A3'};border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap">Tamil msgs: ${s.has_tamil_msgs ? 'On' : 'Off'}</button>
           <button onclick="delSchool('${s.school_code}')" style="padding:3px 7px;background:#F1EFE8;color:#888;border:1px solid #ddd;border-radius:5px;font-size:10px;cursor:pointer;font-family:inherit">Del</button>
         </div>
       </td>
@@ -751,6 +752,22 @@ async function toggleDailyPosters(code, on) {
   }
   if (!data || !data.length) { toast('⚠️ Nothing changed — school not found.'); return; }
   toast(on ? '✅ Daily Posters switched ON' : 'Daily Posters switched OFF');
+  await loadSA();
+}
+
+// Switch Tamil messages on or off for one school (column schools.has_tamil_msgs)
+async function toggleTamilMsgs(code, on) {
+  const msg = on
+    ? 'Switch ON Tamil messages for this school?\n\nParents will get simple Tamil just below the English in every message.'
+    : 'Switch OFF Tamil messages for this school?\n\nNew messages will be in English only. Messages already sent stay as they are.';
+  if (!confirm(msg)) return;
+  const { data, error } = await db.from('schools').update({ has_tamil_msgs: on }).eq('school_code', code).select('school_code');
+  if (error) {
+    toast('⚠️ Could not change: ' + error.message + (/has_tamil_msgs/.test(error.message) ? ' — run the Tamil messages SQL step in Supabase first.' : ''));
+    return;
+  }
+  if (!data || !data.length) { toast('⚠️ Nothing changed — school not found.'); return; }
+  toast(on ? '✅ Tamil messages switched ON' : 'Tamil messages switched OFF');
   await loadSA();
 }
 

@@ -980,5 +980,109 @@ function switchTab(tab, el) {
   }
 }
 </script>
+<script>
+// ══ TAMIL BELOW ENGLISH (Oct 2026) ══
+// Only for schools where the super admin switched on "Tamil messages"
+// (schools.has_tamil_msgs). The office types English as usual; the AI writes
+// simple Tamil in a box below. The office reads/corrects it, and the parent
+// gets English first and the Tamil just below, in the same message.
+(function () {
+  const BOXES = ['c-message', 'cf-desc', 'ev-desc'];
+  let tamilOn = false;
+
+  function tok() { return sessionStorage.getItem('digismart_session_token') || ''; }
+
+  function addBox(id) {
+    const ta = document.getElementById(id);
+    if (!ta || document.getElementById(id + '-ta')) return;
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-top:8px;padding:10px;border:1px dashed #C9A84C;border-radius:10px;background:#FFFBF2';
+    wrap.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">'
+      + '<span style="font-size:12px;font-weight:700;color:#6B1A1A">தமிழ் (goes below the English) — please read and correct</span>'
+      + '<button type="button" class="btn btn-secondary btn-sm" id="' + id + '-ta-btn">✨ Write Tamil</button></div>'
+      + '<textarea id="' + id + '-ta" class="form-control" rows="3" placeholder="Press ✨ Write Tamil after typing the English. Tamil is also written on its own when you press Send."></textarea>';
+    ta.parentNode.appendChild(wrap);
+    document.getElementById(id + '-ta-btn').onclick = () => writeTamil(id);
+  }
+
+  async function writeTamil(id) {
+    const en = (document.getElementById(id).value || '').trim();
+    const box = document.getElementById(id + '-ta');
+    if (!en) { showToast('⚠️ Type the English message first.', 'error'); return false; }
+    const btn = document.getElementById(id + '-ta-btn');
+    btn.disabled = true; btn.textContent = 'Writing...';
+    try {
+      const r = await fetch('/api/tamil', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tok(), text: en })
+      });
+      const out = await r.json();
+      if (!out.ok) { showToast('⚠️ ' + (out.error || 'Could not write Tamil.'), 'error'); return false; }
+      box.value = out.tamil;
+      box.dataset.forEnglish = en;
+      return true;
+    } catch (e) {
+      showToast('⚠️ Could not write Tamil: ' + e.message, 'error');
+      return false;
+    } finally {
+      btn.disabled = false; btn.textContent = '✨ Write Tamil';
+    }
+  }
+
+  // Before sending: make sure the Tamil is there and matches the English.
+  // If it had to be written now, stop so the office can read it first.
+  async function ready(id) {
+    if (!tamilOn) return { go: true };
+    const ta = document.getElementById(id);
+    const box = document.getElementById(id + '-ta');
+    const en = (ta.value || '').trim();
+    if (!en || !box) return { go: true };
+    const tamil = (box.value || '').trim();
+    const stale = box.dataset.forEnglish !== undefined && box.dataset.forEnglish !== en;
+    if (!tamil || stale) {
+      if (await writeTamil(id)) {
+        showToast('Tamil written below the English. Please read it, correct if needed, then press Send again.', 'success');
+        box.focus();
+      }
+      return { go: false };
+    }
+    return { go: true, en: en, both: en + '\n\n' + tamil };
+  }
+
+  function wrapSend(fnName, id) {
+    const original = window[fnName];
+    if (typeof original !== 'function') return;
+    window[fnName] = async function () {
+      const st = await ready(id);
+      if (!st.go) return;
+      const ta = document.getElementById(id);
+      const box = document.getElementById(id + '-ta');
+      if (st.both) ta.value = st.both;
+      try { await original.apply(this, arguments); }
+      finally {
+        // Sent → the page cleared the message; clear the Tamil too.
+        // Not sent (a missing field) → put the English back as it was.
+        if (st.both) {
+          if (ta.value === '' ) { box.value = ''; delete box.dataset.forEnglish; }
+          else if (ta.value === st.both) ta.value = st.en;
+        }
+      }
+    };
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const { data } = await supabase.from('schools').select('has_tamil_msgs').eq('school_id', SCHOOL_ID).single();
+      tamilOn = !!(data && data.has_tamil_msgs);
+    } catch (e) { tamilOn = false; }
+    if (!tamilOn) return;
+    BOXES.forEach(addBox);
+    wrapSend('sendCommunication', 'c-message');
+    wrapSend('createConsentForm', 'cf-desc');
+    wrapSend('addEvent', 'ev-desc');
+  });
+})();
+</script>
 </body>
 </html>
