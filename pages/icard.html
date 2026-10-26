@@ -421,6 +421,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="mt-unsaved hidden" id="mt-unsaved">● Unsaved changes</span>
             <button class="btn btn-gold" onclick="mtSave()">💾 Save Master</button>
+            <button class="btn btn-secondary" onclick="mtOpenReplace()" title="Change one teacher to another in every period at once">🔁 Replace teacher</button>
             <button class="btn btn-secondary" onclick="mtSendToClasses()">📤 Send to class timetables</button>
             <button class="btn btn-secondary" onclick="mtSendToStaff()" title="Teachers see their timetable in the staff app only after this button. Edit and save freely before that.">👥 Send to staff</button>
             <span id="mt-staff-sent" style="font-size:12px;color:#7a6a5a"></span>
@@ -593,6 +594,35 @@
       <button class="btn btn-secondary" onclick="closeCellModal()">Cancel</button>
       <button class="btn btn-danger btn-sm" onclick="clearCell()">Clear</button>
       <button class="btn btn-gold" onclick="saveCell()">Set Subject</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MASTER TIMETABLE: REPLACE TEACHER (Oct 2026) ══ -->
+<div class="modal-overlay" id="mt-rep-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">🔁 Replace teacher</div>
+      <button class="modal-close" onclick="mtCloseReplace()">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Changes the teacher in every period of every day. Subjects stay the same. Click 💾 Save Master after.</div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">Replace this teacher</label>
+      <select id="mt-rep-from" class="form-control" style="margin-top:4px" onchange="mtRepPreview()"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">With this teacher</label>
+      <input id="mt-rep-to" class="form-control" list="mt-rep-staff" placeholder="Choose or type a name" style="margin-top:4px">
+      <datalist id="mt-rep-staff"></datalist>
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label class="form-label">In which class</label>
+      <select id="mt-rep-class" class="form-control" style="margin-top:4px" onchange="mtRepPreview()"></select>
+    </div>
+    <div style="font-size:12px;color:var(--maroon);margin-bottom:12px;font-weight:600" id="mt-rep-count"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="mtCloseReplace()">Cancel</button>
+      <button class="btn btn-gold" onclick="mtDoReplace()">Replace</button>
     </div>
   </div>
 </div>
@@ -1783,6 +1813,76 @@ function mtClearCell() {
 
 function mtCloseModal() { document.getElementById('mt-modal').classList.remove('open'); mtCell = null; }
 
+// ── Replace teacher (Oct 2026) ──
+// Swap one teacher for another across all days of the master grid (all classes or one class).
+function mtRepEach(fn) {
+  Object.keys(mtGrid || {}).forEach(d => {
+    Object.keys(mtGrid[d] || {}).forEach(pi => {
+      Object.keys(mtGrid[d][pi] || {}).forEach(cls => {
+        const cell = mtGrid[d][pi][cls];
+        if (cell) fn(cell, cls);
+      });
+    });
+  });
+}
+
+function mtOpenReplace() {
+  if (!mtLoadedYear) { showToast('Master timetable has not loaded yet.', 'error'); return; }
+  const used = [];
+  mtRepEach(cell => {
+    const t = (cell.teacher || '').trim();
+    if (t && used.indexOf(t) === -1) used.push(t);
+  });
+  used.sort((a, b) => a.localeCompare(b));
+  if (!used.length) { showToast('No teachers in the master timetable yet.', 'error'); return; }
+  document.getElementById('mt-rep-from').innerHTML = '<option value="">— Choose teacher —</option>' +
+    used.map(n => `<option value="${mtEsc(n)}">${mtEsc(n)}</option>`).join('');
+  const staff = allStaff.map(s => (s.name || '').trim()).filter(Boolean);
+  document.getElementById('mt-rep-staff').innerHTML = staff.map(n => `<option value="${mtEsc(n)}"></option>`).join('');
+  document.getElementById('mt-rep-to').value = '';
+  document.getElementById('mt-rep-class').innerHTML = '<option value="">All classes</option>' +
+    mtClasses.map(c => `<option value="${mtEsc(c)}">${mtEsc(c)}</option>`).join('');
+  mtRepPreview();
+  document.getElementById('mt-rep-modal').classList.add('open');
+}
+
+function mtRepCount(from, onlyCls) {
+  let n = 0;
+  mtRepEach((cell, cls) => {
+    if ((cell.teacher || '').trim() === from && (!onlyCls || cls === onlyCls)) n++;
+  });
+  return n;
+}
+
+function mtRepPreview() {
+  const from = document.getElementById('mt-rep-from').value;
+  const onlyCls = document.getElementById('mt-rep-class').value;
+  document.getElementById('mt-rep-count').textContent = from
+    ? mtRepCount(from, onlyCls) + ' period(s) will change' + (onlyCls ? ' in ' + onlyCls : ' across all classes') + '.'
+    : '';
+}
+
+function mtDoReplace() {
+  const from = document.getElementById('mt-rep-from').value;
+  const to = (document.getElementById('mt-rep-to').value || '').trim();
+  const onlyCls = document.getElementById('mt-rep-class').value;
+  if (!from) { showToast('Choose the teacher to replace.', 'error'); return; }
+  if (!to) { showToast('Choose or type the new teacher.', 'error'); return; }
+  if (to === from) { showToast('Both names are the same.', 'error'); return; }
+  const n = mtRepCount(from, onlyCls);
+  if (!n) { showToast(from + ' has no periods' + (onlyCls ? ' in ' + onlyCls : '') + '.', 'error'); return; }
+  if (!confirm('Change ' + from + ' to ' + to + ' in ' + n + ' period(s)' + (onlyCls ? ' of ' + onlyCls : '') + '?')) return;
+  mtRepEach((cell, cls) => {
+    if ((cell.teacher || '').trim() === from && (!onlyCls || cls === onlyCls)) cell.teacher = to;
+  });
+  mtSetDirty(true);
+  mtCloseReplace();
+  renderMaster();
+  showToast(n + ' period(s) changed to ' + to + '. Click 💾 Save Master to keep it.', 'success');
+}
+
+function mtCloseReplace() { document.getElementById('mt-rep-modal').classList.remove('open'); }
+
 // ── Save ──
 async function mtSave() {
   if (!mtLoadedYear) { showToast('Master timetable has not loaded yet.', 'error'); return; }
@@ -2005,6 +2105,7 @@ window.addEventListener('load', function () {
 
 document.getElementById('cell-modal').addEventListener('click', function(e){ if(e.target===this) closeCellModal(); });
 document.getElementById('mt-modal').addEventListener('click', function(e){ if(e.target===this) mtCloseModal(); });
+document.getElementById('mt-rep-modal').addEventListener('click', function(e){ if(e.target===this) mtCloseReplace(); });
 </script>
 </body>
 </html>
