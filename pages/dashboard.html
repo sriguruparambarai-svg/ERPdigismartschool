@@ -191,7 +191,7 @@
 
         <!-- Attendance Overview -->
         <div class="card">
-          <div class="section-header">📊 Today's Attendance by Class<button type="button" class="strength-print-btn" onclick="printStrengthSheet()">🖨 Print</button></div>
+          <div class="section-header">📊 Today's Attendance by Class<button type="button" class="strength-print-btn" onclick="printStrengthSheet('attendance')">🖨 Print</button></div>
           <div id="class-attendance-overview">
             <div class="empty-state" style="padding:20px">
               <div class="icon" style="font-size:24px">⏳</div>
@@ -213,7 +213,7 @@
 
         <!-- Class-wise Students -->
         <div class="card">
-          <div class="section-header">👨‍🎓 Students by Class — Boys &amp; Girls<button type="button" class="strength-print-btn" onclick="printStrengthSheet()">🖨 Print</button></div>
+          <div class="section-header">👨‍🎓 Students by Class — Boys &amp; Girls<button type="button" class="strength-print-btn" onclick="printStrengthSheet('strength')">🖨 Print</button></div>
           <div id="class-student-count">
             <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Loading...</p></div>
           </div>
@@ -616,7 +616,8 @@ function attendanceTableHtml(a) {
     <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Present / Strength · Late arrivals counted as present</div>`;
 }
 // One-page printable sheet: strength + today's attendance, with school name and date
-async function printStrengthSheet() {
+async function printStrengthSheet(which) {
+  const showStr = which !== 'attendance', showAtt = which !== 'strength';
   const w = window.open('', '_blank');
   if (!w) { alert('Please allow pop-ups for this site to print.'); return; }
   w.document.write('<p style="font-family:sans-serif">Preparing…</p>');
@@ -630,7 +631,7 @@ async function printStrengthSheet() {
     const dateTxt = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', weekday:'long' });
     const timeTxt = d.toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit', hour12:true });
     const pct = (p,t) => t > 0 ? Math.round((p/t)*100) : 0;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Student Strength — ${strengthEsc(dateTxt)}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${showAtt && !showStr ? 'Attendance' : 'Student Strength'} — ${strengthEsc(dateTxt)}</title>
 <style>
   body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:24px}
   h1{color:#6B1A1A;font-size:20px;margin:0;text-align:center}
@@ -646,20 +647,20 @@ async function printStrengthSheet() {
   @media print{body{margin:10mm}}
 </style></head><body>
 <h1>${strengthEsc(schoolName)}</h1>
-<div class="sub">Class-wise Student Strength &amp; Attendance · ${strengthEsc(dateTxt)} · ${strengthEsc(timeTxt)}</div>
-<h2>Student Strength (Class-wise)</h2>
+<div class="sub">${showStr && showAtt ? 'Class-wise Student Strength &amp; Attendance' : showStr ? 'Class-wise Student Strength' : 'Class-wise Attendance'} · ${strengthEsc(dateTxt)} · ${strengthEsc(timeTxt)}</div>
+${showStr ? `<h2>Student Strength (Class-wise)</h2>
 <table><tr><th>Class</th><th>Boys</th><th>Girls</th><th>Total</th></tr>
 ${str.rows.map(r => `<tr><td>${strengthEsc(r.cls)}</td><td>${r.boys}</td><td>${r.girls}</td><td>${r.total}</td></tr>`).join('')}
 <tr class="tot"><td>Total</td><td>${str.tot.boys}</td><td>${str.tot.girls}</td><td>${str.tot.total}</td></tr></table>
-${str.tot.other ? `<div class="note">Gender not entered for ${str.tot.other} student(s) — included in Total only.</div>` : ''}
-<h2>Today's Attendance (Class-wise)</h2>
+${str.tot.other ? `<div class="note">Gender not entered for ${str.tot.other} student(s) — included in Total only.</div>` : ''}` : ''}
+${showAtt ? `<h2>Today's Attendance (Class-wise)</h2>
 <table><tr><th rowspan="2">Class</th><th colspan="2">Boys</th><th colspan="2">Girls</th><th colspan="2">Total</th><th rowspan="2">%</th></tr>
 <tr><th>Present</th><th>Strength</th><th>Present</th><th>Strength</th><th>Present</th><th>Strength</th></tr>
 ${a.rows.map(r => r.marked
   ? `<tr><td>${strengthEsc(r.cls)}</td><td>${r.boysP}</td><td>${r.boysT}</td><td>${r.girlsP}</td><td>${r.girlsT}</td><td>${r.present}</td><td>${r.total}</td><td>${pct(r.present,r.total)}%</td></tr>`
   : `<tr><td>${strengthEsc(r.cls)}</td><td colspan="7" style="color:#888;font-style:italic">Attendance not marked yet</td></tr>`).join('')}
 <tr class="tot"><td>Total</td><td>${a.tot.boysP}</td><td>${a.tot.boysT}</td><td>${a.tot.girlsP}</td><td>${a.tot.girlsT}</td><td>${a.tot.present}</td><td>${a.tot.total}</td><td>${pct(a.tot.present,a.tot.total)}%</td></tr></table>
-<div style="font-size:10px;color:#666;margin-top:6px">Late arrivals are counted as present.</div>
+<div style="font-size:10px;color:#666;margin-top:6px">Late arrivals are counted as present.</div>` : ''}
 <div class="sign"><span>Prepared by</span><span>Principal</span></div>
 <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
 </body></html>`;
