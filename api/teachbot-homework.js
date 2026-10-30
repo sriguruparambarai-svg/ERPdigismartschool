@@ -8,7 +8,9 @@
 // saves, and parents get the same phone alert as for homework posted in ERP.
 //
 // POST  header x-teachbot-key: <TEACHBOT_LINK_KEY>
-//   { school_id, type?, class_name, due_date, title, message, subject, sender_name }
+//   { school_id, type?, class_name, section?, due_date, title, message, subject, sender_name }
+//   Sections (Oct 2026): class_name "LKG B" (or class_name "LKG" + section "B") goes only to
+//   LKG B parents. Section A also reaches children with no section saved.
 //   type: 'homework' (default) or 'classwork' — "In class today", shown on the parent home page
 //   → { ok: true, id, alerts: { sent, failed } }
 
@@ -29,10 +31,13 @@ function keyOk(given) {
 }
 
 // Phones of parents whose child is in this class (same as push.js subsForClass)
-async function subsForClass(schoolId, cls) {
+async function subsForClass(schoolId, cls, section) {
   const subs = await sb('GET', 'push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,student_id,endpoint,p256dh,auth') || [];
   if (!subs.length) return [];
-  const stu = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&status=eq.active&class=eq.' + enc(cls) + '&select=id') || [];
+  let secQ = '';
+  if (section === 'A') secQ = '&or=(section.eq.A,section.is.null,section.eq.)';
+  else if (section) secQ = '&section=eq.' + enc(section);
+  const stu = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&status=eq.active&class=eq.' + enc(cls) + secQ + '&select=id') || [];
   const ids = new Set(stu.map(s => String(s.id)));
   return subs.filter(s => ids.has(String(s.student_id)));
 }
@@ -48,7 +53,11 @@ module.exports = async (req, res) => {
   catch (e) { return res.status(400).json({ ok: false, error: 'Invalid request.' }); }
 
   const schoolId = str(body.school_id, 64);
-  const rawCls = str(body.class_name, 30);
+  let rawCls = str(body.class_name, 30);
+  let section = str(body.section, 2).toUpperCase();
+  const split = rawCls.match(/^(.*\S)\s+([A-Fa-f])$/);   // "LKG B" → LKG + B
+  if (split) { rawCls = split[1]; if (!section) section = split[2].toUpperCase(); }
+  if (section && !/^[A-F]$/.test(section)) section = '';
   const cls = CLASS_MAP[rawCls] || rawCls;
   const due = str(body.due_date, 10);
   const message = str(body.message, 4000);
@@ -66,10 +75,10 @@ module.exports = async (req, res) => {
 
     const rows = await sb('POST', 'communications', [{
       school_id: schoolId, type: type,
-      title: str(body.title, 200) || (cls + ' Homework'),
+      title: str(body.title, 200) || (cls + (section ? ' ' + section : '') + ' Homework'),
       message,
       subject: str(body.subject, 300),
-      target_class: cls, target_section: null,
+      target_class: cls, target_section: section || null,
       due_date: due, priority: 'normal',
       sender_name: str(body.sender_name, 120) || 'School',
       created_at: new Date().toISOString()
@@ -79,7 +88,7 @@ module.exports = async (req, res) => {
     // Phone alert to this class's parents, once (same wording as ERP's own homework)
     let alerts = { sent: 0, failed: 0, skipped: 'no phone alerts set up' };
     if (pushReady() && c.id && await logOnce(schoolId, 'comm', String(c.id))) {
-      const subs = await subsForClass(schoolId, cls);
+      const subs = await subsForClass(schoolId, cls, section);
       // Parents with more than one child: say which child, and open on that child
       const names = {};
       const ids = [...new Set(subs.map(s => String(s.student_id)))];

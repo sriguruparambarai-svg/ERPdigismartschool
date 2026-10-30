@@ -41,6 +41,15 @@ function pinHash(studentId, pin) {
   return crypto.createHmac('sha256', getServiceKey()).update('parent-pin:' + studentId + ':' + String(pin)).digest('hex');
 }
 
+// Section check (Oct 2026): a message sent to one section (e.g. LKG B) is shown only
+// to that section's parents. Messages with no section reach the whole class.
+// A child with no section saved counts as section A.
+function sectionOk(target, childSec) {
+  const t = String(target || '').trim().toUpperCase();
+  if (!t || t === 'ALL') return true;
+  return t === (String(childSec || '').trim().toUpperCase() || 'A');
+}
+
 // Everything a child's class can see: items for "all" or for this class
 function forClass(cls) {
   return '&target_class=in.(' + ['all', cls].map(function (v) { return '"' + String(v || '').replace(/"/g, '') + '"'; }).join(',') + ')';
@@ -377,9 +386,10 @@ module.exports = async (req, res) => {
     // whole communications table straight from the database).
     if (action === 'comms') {
       const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +
-        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class&limit=1');
+        '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=class,section&limit=1');
       if (!me || !me.length) return res.status(404).json({ ok: false, error: 'Student record not found.' });
       const cls = me[0].class;
+      const childSec = me[0].section;
       const today = new Date().toISOString().split('T')[0];
       const base = 'communications?school_id=eq.' + encodeURIComponent(schoolId) + '&select=*';
       let path;
@@ -393,7 +403,8 @@ module.exports = async (req, res) => {
         case 'consent':    path = base + '&type=eq.consent_form' + forClass(cls) + '&order=created_at.desc&limit=10'; break;
         default: return res.status(400).json({ ok: false, error: 'Unknown list.' });
       }
-      const rows = await sb('GET', path);
+      let rows = await sb('GET', path);
+      if (Array.isArray(rows)) rows = rows.filter(function (r) { return sectionOk(r.target_section, childSec); });
       let responses = [];
       if (body.kind === 'consent' && rows && rows.length) {
         const ids = rows.map(function (r) { return '"' + String(r.id).replace(/"/g, '') + '"'; }).join(',');
