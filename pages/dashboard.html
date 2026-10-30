@@ -15,6 +15,14 @@
 .dash-value{font-size:24px;font-weight:800;color:var(--maroon)}
 .dash-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
 .section-header{font-size:15px;font-weight:700;color:var(--maroon);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.strength-print-btn{margin-left:auto;font-size:11px;font-weight:600;color:var(--maroon);background:var(--sandal-light);border:1px solid var(--gold);border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+.strength-print-btn:hover{background:var(--gold);color:#fff}
+.bg-table{width:100%;font-size:12px;border-collapse:collapse}
+.bg-table th{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--text-muted);font-weight:700;text-align:right;padding:4px 4px 6px;border-bottom:2px solid var(--gold)}
+.bg-table th:first-child,.bg-table td:first-child{text-align:left;padding-left:0}
+.bg-table td{padding:5px 4px;border-bottom:1px solid var(--border);text-align:right}
+.bg-table tr.bg-total td{font-weight:800;color:var(--maroon);border-bottom:none;border-top:2px solid var(--gold)}
+.bg-note{font-size:11px;color:#A32D2D;margin-top:8px}
 .activity-item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
 .activity-item:last-child{border-bottom:none}
 .act-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
@@ -183,7 +191,7 @@
 
         <!-- Attendance Overview -->
         <div class="card">
-          <div class="section-header">📊 Today's Attendance by Class</div>
+          <div class="section-header">📊 Today's Attendance by Class<button type="button" class="strength-print-btn" onclick="printStrengthSheet()">🖨 Print</button></div>
           <div id="class-attendance-overview">
             <div class="empty-state" style="padding:20px">
               <div class="icon" style="font-size:24px">⏳</div>
@@ -205,7 +213,7 @@
 
         <!-- Class-wise Students -->
         <div class="card">
-          <div class="section-header">👨‍🎓 Students by Class</div>
+          <div class="section-header">👨‍🎓 Students by Class — Boys &amp; Girls<button type="button" class="strength-print-btn" onclick="printStrengthSheet()">🖨 Print</button></div>
           <div id="class-student-count">
             <div class="empty-state" style="padding:20px"><div class="icon" style="font-size:24px">⏳</div><p style="font-size:12px">Loading...</p></div>
           </div>
@@ -305,7 +313,7 @@ function getMonthFees() {
 let _dashActiveStudents = null;
 function getActiveStudentClasses() {
   if (!_dashActiveStudents) {
-    _dashActiveStudents = Promise.resolve(supabase.from('students').select('class').eq('school_id', SCHOOL_ID).eq('status', 'active'));
+    _dashActiveStudents = Promise.resolve(supabase.from('students').select('id,class,gender').eq('school_id', SCHOOL_ID).eq('status', 'active'));
   }
   return _dashActiveStudents;
 }
@@ -504,14 +512,177 @@ async function loadMainStats() {
   document.getElementById('st-att-sub').textContent = attPct + '% present today';
 }
 
+// ══ Boys / Girls strength (for DEO / inspection visits) ══
+// Gender comes from the admission form (Male / Female). Anything else
+// (blank, Other) is counted separately so totals always add up.
+const STRENGTH_CLASS_ORDER = ['Pre KG','PreKG','Pre-KG','Nursery','LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'];
+function strengthGender(g) {
+  const v = String(g || '').trim().toLowerCase();
+  if (v === 'male' || v === 'm' || v === 'boy' || v === 'boys') return 'boy';
+  if (v === 'female' || v === 'f' || v === 'girl' || v === 'girls') return 'girl';
+  return 'other';
+}
+function strengthEsc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function strengthSortClasses(list) {
+  const rank = c => { const i = STRENGTH_CLASS_ORDER.indexOf(c); return i === -1 ? 999 : i; };
+  return list.sort((a,b) => rank(a) - rank(b) || String(a).localeCompare(String(b)));
+}
+// Builds { rows:[{cls,boys,girls,other,total}], tot:{...} } from active students
+function buildStrength(students) {
+  const map = {};
+  (students||[]).forEach(s => {
+    const c = s.class || '(No class)';
+    if (!map[c]) map[c] = { cls:c, boys:0, girls:0, other:0, total:0 };
+    const g = strengthGender(s.gender);
+    if (g === 'boy') map[c].boys++; else if (g === 'girl') map[c].girls++; else map[c].other++;
+    map[c].total++;
+  });
+  const rows = strengthSortClasses(Object.keys(map)).map(c => map[c]);
+  const tot = rows.reduce((t,r) => ({ boys:t.boys+r.boys, girls:t.girls+r.girls, other:t.other+r.other, total:t.total+r.total }), {boys:0,girls:0,other:0,total:0});
+  return { rows, tot };
+}
+// Today's attendance per class, split boys / girls. Late counts as present (child is in school).
+function buildAttendanceStrength(students, att) {
+  const genderById = {}, classById = {};
+  (students||[]).forEach(s => { genderById[s.id] = strengthGender(s.gender); classById[s.id] = s.class || '(No class)'; });
+  const str = buildStrength(students);
+  const map = {};
+  str.rows.forEach(r => { map[r.cls] = { cls:r.cls, boysT:r.boys, girlsT:r.girls, total:r.total, boysP:0, girlsP:0, otherP:0, present:0, marked:0 }; });
+  (att||[]).forEach(a => {
+    const c = classById[a.student_id] || a.class;
+    if (!map[c]) return; // student no longer active
+    map[c].marked++;
+    if (a.status === 'present' || a.status === 'late') {
+      map[c].present++;
+      const g = genderById[a.student_id];
+      if (g === 'boy') map[c].boysP++; else if (g === 'girl') map[c].girlsP++; else map[c].otherP++;
+    }
+  });
+  const rows = str.rows.map(r => map[r.cls]);
+  const tot = rows.reduce((t,r) => ({ boysP:t.boysP+r.boysP, boysT:t.boysT+r.boysT, girlsP:t.girlsP+r.girlsP, girlsT:t.girlsT+r.girlsT, present:t.present+r.present, total:t.total+r.total, marked:t.marked+r.marked }), {boysP:0,boysT:0,girlsP:0,girlsT:0,present:0,total:0,marked:0});
+  return { rows, tot, otherCount: str.tot.other };
+}
+let _strengthAttCache = null;
+function getTodayAttendanceRows() {
+  if (!_strengthAttCache) {
+    _strengthAttCache = Promise.resolve(supabase.from('student_attendance').select('student_id,class,status').eq('school_id',SCHOOL_ID).eq('date',dashLocalDate()));
+  }
+  return _strengthAttCache;
+}
+function strengthTableHtml(str) {
+  return `
+    <table class="bg-table">
+      <tr><th>Class</th><th>Boys</th><th>Girls</th><th>Total</th></tr>
+      ${str.rows.map(r => `
+        <tr>
+          <td style="font-weight:500">${strengthEsc(r.cls)}</td>
+          <td>${r.boys}</td>
+          <td>${r.girls}</td>
+          <td style="font-weight:700;color:var(--maroon)">${r.total}</td>
+        </tr>`).join('')}
+      <tr class="bg-total"><td>Total</td><td>${str.tot.boys}</td><td>${str.tot.girls}</td><td>${str.tot.total}</td></tr>
+    </table>
+    ${str.tot.other ? `<div class="bg-note">⚠ Gender not entered for ${str.tot.other} student${str.tot.other>1?'s':''} — they are in the Total but not in Boys/Girls. Fix in Admission.</div>` : ''}`;
+}
+function attendanceTableHtml(a) {
+  const pct = (p,t) => t > 0 ? Math.round((p/t)*100) : 0;
+  return `
+    <table class="bg-table">
+      <tr><th>Class</th><th>Boys</th><th>Girls</th><th>Present</th><th>%</th></tr>
+      ${a.rows.map(r => {
+        if (!r.marked) return `
+        <tr>
+          <td style="font-weight:500">${strengthEsc(r.cls)}</td>
+          <td colspan="4" style="color:var(--text-muted);font-style:italic">Not marked yet (strength ${r.total})</td>
+        </tr>`;
+        const p = pct(r.present, r.total);
+        return `
+        <tr>
+          <td style="font-weight:500">${strengthEsc(r.cls)}</td>
+          <td>${r.boysP}/${r.boysT}</td>
+          <td>${r.girlsP}/${r.girlsT}</td>
+          <td style="font-weight:700">${r.present}/${r.total}</td>
+          <td style="font-weight:600;color:${p>=75?'#2D7A3A':'#A32D2D'}">${p}%</td>
+        </tr>`;
+      }).join('')}
+      <tr class="bg-total">
+        <td>Total</td>
+        <td>${a.tot.boysP}/${a.tot.boysT}</td>
+        <td>${a.tot.girlsP}/${a.tot.girlsT}</td>
+        <td>${a.tot.present}/${a.tot.total}</td>
+        <td>${pct(a.tot.present, a.tot.total)}%</td>
+      </tr>
+    </table>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Present / Strength · Late arrivals counted as present</div>`;
+}
+// One-page printable sheet: strength + today's attendance, with school name and date
+async function printStrengthSheet() {
+  const w = window.open('', '_blank');
+  if (!w) { alert('Please allow pop-ups for this site to print.'); return; }
+  w.document.write('<p style="font-family:sans-serif">Preparing…</p>');
+  try {
+    const [{ data: studs, error: e1 }, { data: att, error: e2 }] = await Promise.all([getActiveStudentClasses(), getTodayAttendanceRows()]);
+    if (e1) throw e1; if (e2) throw e2;
+    const str = buildStrength(studs);
+    const a = buildAttendanceStrength(studs, att);
+    const schoolName = sessionStorage.getItem('school_name') || '';
+    const d = new Date();
+    const dateTxt = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', weekday:'long' });
+    const timeTxt = d.toLocaleTimeString('en-IN', { hour:'numeric', minute:'2-digit', hour12:true });
+    const pct = (p,t) => t > 0 ? Math.round((p/t)*100) : 0;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Student Strength — ${strengthEsc(dateTxt)}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;color:#222;margin:24px}
+  h1{color:#6B1A1A;font-size:20px;margin:0;text-align:center}
+  .sub{text-align:center;font-size:12px;color:#555;margin:4px 0 16px}
+  h2{color:#6B1A1A;font-size:14px;margin:18px 0 6px;border-bottom:2px solid #C9A84C;padding-bottom:3px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid #bbb;padding:5px 8px;text-align:center}
+  th{background:#E8C99A;color:#4a1010}
+  td:first-child,th:first-child{text-align:left}
+  tr.tot td{font-weight:bold;background:#f6eedd}
+  .note{font-size:11px;color:#A32D2D;margin-top:6px}
+  .sign{display:flex;justify-content:space-between;margin-top:48px;font-size:12px}
+  @media print{body{margin:10mm}}
+</style></head><body>
+<h1>${strengthEsc(schoolName)}</h1>
+<div class="sub">Class-wise Student Strength &amp; Attendance · ${strengthEsc(dateTxt)} · ${strengthEsc(timeTxt)}</div>
+<h2>Student Strength (Class-wise)</h2>
+<table><tr><th>Class</th><th>Boys</th><th>Girls</th><th>Total</th></tr>
+${str.rows.map(r => `<tr><td>${strengthEsc(r.cls)}</td><td>${r.boys}</td><td>${r.girls}</td><td>${r.total}</td></tr>`).join('')}
+<tr class="tot"><td>Total</td><td>${str.tot.boys}</td><td>${str.tot.girls}</td><td>${str.tot.total}</td></tr></table>
+${str.tot.other ? `<div class="note">Gender not entered for ${str.tot.other} student(s) — included in Total only.</div>` : ''}
+<h2>Today's Attendance (Class-wise)</h2>
+<table><tr><th rowspan="2">Class</th><th colspan="2">Boys</th><th colspan="2">Girls</th><th colspan="2">Total</th><th rowspan="2">%</th></tr>
+<tr><th>Present</th><th>Strength</th><th>Present</th><th>Strength</th><th>Present</th><th>Strength</th></tr>
+${a.rows.map(r => r.marked
+  ? `<tr><td>${strengthEsc(r.cls)}</td><td>${r.boysP}</td><td>${r.boysT}</td><td>${r.girlsP}</td><td>${r.girlsT}</td><td>${r.present}</td><td>${r.total}</td><td>${pct(r.present,r.total)}%</td></tr>`
+  : `<tr><td>${strengthEsc(r.cls)}</td><td colspan="7" style="color:#888;font-style:italic">Attendance not marked yet</td></tr>`).join('')}
+<tr class="tot"><td>Total</td><td>${a.tot.boysP}</td><td>${a.tot.boysT}</td><td>${a.tot.girlsP}</td><td>${a.tot.girlsT}</td><td>${a.tot.present}</td><td>${a.tot.total}</td><td>${pct(a.tot.present,a.tot.total)}%</td></tr></table>
+<div style="font-size:10px;color:#666;margin-top:6px">Late arrivals are counted as present.</div>
+<div class="sign"><span>Prepared by</span><span>Principal</span></div>
+<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+</body></html>`;
+    w.document.open(); w.document.write(html); w.document.close();
+  } catch (err) {
+    w.document.body.innerHTML = '<p style="font-family:sans-serif;color:#A32D2D">Could not prepare the sheet: ' + strengthEsc(err && err.message || err) + '</p>';
+  }
+}
+
 async function loadClassAttendance() {
   const today = dashLocalDate();
   const classes = ['LKG','UKG','Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8'];
 
   const [{ data: attData }, { data: studData }] = await Promise.all([
-    supabase.from('student_attendance').select('class,status').eq('school_id',SCHOOL_ID).eq('date',today),
+    getTodayAttendanceRows(),
     getActiveStudentClasses()
   ]);
+
+  // Boys / Girls master attendance table (all classes)
+  if ((studData||[]).length) {
+    document.getElementById('class-attendance-overview').innerHTML = attendanceTableHtml(buildAttendanceStrength(studData, attData));
+    return;
+  }
 
   const classMap = {};
   (studData||[]).forEach(s => { classMap[s.class] = (classMap[s.class]||{total:0,present:0}); classMap[s.class].total++; });
@@ -561,6 +732,8 @@ async function loadClassStudentCount() {
     document.getElementById('class-student-count').innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:10px 0">No students yet. <a href="admission.html" style="color:var(--maroon);font-weight:600">Add students →</a></div>';
     return;
   }
+  document.getElementById('class-student-count').innerHTML = strengthTableHtml(buildStrength(data));
+  return;
   const counts = {};
   data.forEach(s => { counts[s.class] = (counts[s.class]||0) + 1; });
   const sorted = Object.entries(counts).sort((a,b) => {
