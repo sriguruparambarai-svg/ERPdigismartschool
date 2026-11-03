@@ -31,6 +31,8 @@
 //   Children are matched to ERP by roll number in that class (name if the roll is not found).
 //   Saving again replaces that teacher's waiting entries for that homework (sent ones stay).
 //   The reason is kept in items[] and chooses the message wording.
+//   action 'class_list' { school_id, class_name } → rows [{ id, roll, name }] — the class's children
+//   from ERP, so the teacher app needs no separate student list. hw_check kids may carry that id.
 
 const crypto = require('crypto');
 const { both, defaulterTamil, disciplineMessage, DISCIPLINE_CODES, DISCIPLINE, taDate } = require('./_tamil');
@@ -206,7 +208,7 @@ function nameKey(n) { return String(n || '').toLowerCase().replace(/[^a-z\u0B80-
 async function teachbotDoor(req, res, body) {
   if (!process.env.TEACHBOT_LINK_KEY) return res.status(500).json({ ok: false, error: 'TEACHBOT_LINK_KEY is not set in ERP\'s Vercel settings.' });
   if (!tbKeyOk(req.headers['x-teachbot-key'])) return res.status(401).json({ ok: false, error: 'TeachBot link key does not match ERP\'s TEACHBOT_LINK_KEY.' });
-  if (body.action !== 'hw_check') return res.status(400).json({ ok: false, error: 'Unknown action.' });
+  if (body.action !== 'hw_check' && body.action !== 'class_list') return res.status(400).json({ ok: false, error: 'Unknown action.' });
 
   const given = clean(body.school_id, 64);
   if (!given || !/^[a-zA-Z0-9_-]+$/.test(given)) return res.status(400).json({ ok: false, error: 'ERP school id missing.' });
@@ -227,13 +229,14 @@ async function teachbotDoor(req, res, body) {
   const teacher = clean(body.staff_name, 60) || 'Teacher';
   const marker = 'My Day · ' + teacher;
   if (!cls) return res.status(400).json({ ok: false, error: 'Class missing.' });
-  if (!subject) return res.status(400).json({ ok: false, error: 'Subject missing.' });
-  if (!validDate(workDate) || workDate > istToday()) return res.status(400).json({ ok: false, error: 'Homework date missing or in the future.' });
+  if (body.action === 'class_list') { /* only the class is needed */ }
+  else if (!subject) return res.status(400).json({ ok: false, error: 'Subject missing.' });
+  else if (!validDate(workDate) || workDate > istToday()) return res.status(400).json({ ok: false, error: 'Homework date missing or in the future.' });
 
   const kids = (Array.isArray(body.kids) ? body.kids : []).slice(0, 200).map(k => ({
-    roll: clean(k && k.roll, 10), name: clean(k && k.name, 80),
+    id: clean(k && k.id, 64), roll: clean(k && k.roll, 10), name: clean(k && k.name, 80),
     reason: HW_REASON_KIND[k && k.reason] ? k.reason : 'not_done'
-  })).filter(k => k.roll || k.name);
+  })).filter(k => k.id || k.roll || k.name);
 
   // This class's children in ERP
   let secQ = '';
@@ -242,6 +245,13 @@ async function teachbotDoor(req, res, body) {
   const stu = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(cls)
     + '&status=eq.active' + secQ + '&select=id,full_name,roll_no&limit=300');
   if (!stu.ok) return res.status(500).json({ ok: false, error: 'Could not read ERP students: ' + stu.raw });
+  if (body.action === 'class_list') {
+    const list = (stu.data || []).map(s => ({ id: String(s.id), roll: String(s.roll_no == null ? '' : s.roll_no).trim(), name: clean(s.full_name, 80) }));
+    list.sort((a, b) => ((parseInt(a.roll, 10) || 9999) - (parseInt(b.roll, 10) || 9999)) || a.name.localeCompare(b.name));
+    return res.status(200).json({ ok: true, rows: list });
+  }
+  const byId = {};
+  (stu.data || []).forEach(s => { byId[String(s.id)] = s; });
   const byRoll = {}, byName = {};
   (stu.data || []).forEach(s => {
     const r = rollKey(s.roll_no);
@@ -251,7 +261,8 @@ async function teachbotDoor(req, res, body) {
   });
   const found = [], notFound = [];
   kids.forEach(k => {
-    let s = byRoll[rollKey(k.roll)];
+    let s = k.id ? byId[k.id] : null;   // exact child when the list came from ERP
+    if (!s) s = byRoll[rollKey(k.roll)];
     if (!s || s === 'two') s = byName[nameKey(k.name)];
     if (s && s !== 'two') found.push({ s: s, reason: k.reason });
     else notFound.push((k.roll ? 'Roll ' + k.roll : '') + (k.name ? (k.roll ? ' ' : '') + k.name : ''));
