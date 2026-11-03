@@ -152,6 +152,9 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
 <script>
 const API = '/api/defaulters';
 const KIND_NAMES = { homework: 'Homework not written', test_not_written: 'Test – not written', test_absent: 'Test – absent', test_low_marks: 'Test – low marks', discipline: 'Discipline' };
+// Nov 2026: reasons teachers mark in the My Day app (their own message wording)
+const W_NAMES = Object.assign({}, KIND_NAMES, { homework_half: 'Homework – half done (My Day)', homework_notebook: 'Homework – notebook not brought (My Day)' });
+const HW_REASON_NAMES = { half: 'Half done', notebook: 'Notebook not brought', not_done: 'Not done' };
 // Discipline items (same codes as the server). One combined message per child per day.
 const DSC_ITEMS = [['uniform', 'Uniform'], ['shoes', 'Shoes / socks'], ['nails', 'Nails not cut'], ['hair', 'Hair not neat'], ['books', 'Books / notebooks'], ['idcard', 'ID card']];
 let kind = 'homework';
@@ -214,22 +217,22 @@ async function loadWording() {
     const r = await call('wording_get', {});
     W_DEF = Object.assign({}, r.defaults, { _tamil: !!r.tamil_on });
     const saved = r.saved || {};
-    box.innerHTML = Object.keys(KIND_NAMES).map(k => {
+    box.innerHTML = Object.keys(W_NAMES).filter(k => r.defaults[k]).map(k => {
       const s = saved[k], en = s ? s.en : r.defaults[k].en, ta = s ? s.ta : (r.tamil_on ? r.defaults[k].ta : '');
       return '<div class="d-card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">'
-        + '<div class="d-label">' + esc(KIND_NAMES[k]) + (s ? ' <span class="d-chip sent">Your wording</span>' : ' <span class="d-chip">Standard</span>') + '</div>'
+        + '<div class="d-label">' + esc(W_NAMES[k]) + (s ? ' <span class="d-chip sent">Your wording</span>' : ' <span class="d-chip">Standard</span>') + '</div>'
         + '<button class="btn" type="button" onclick="wReset(\'' + k + '\')">↩ Back to standard</button></div>'
         + '<label class="form-label" style="margin-top:8px">English</label><textarea id="w-en-' + k + '" class="form-control" rows="2" maxlength="600" oninput="wPreview(\'' + k + '\')">' + esc(en) + '</textarea>'
         + '<label class="form-label" style="margin-top:8px">Tamil (below the English)</label><textarea id="w-ta-' + k + '" class="form-control" rows="2" maxlength="600" placeholder="' + esc(r.defaults[k].ta) + '" oninput="wPreview(\'' + k + '\')">' + esc(ta) + '</textarea>'
         + '<div class="d-meta" style="margin-top:8px">Parent will read, for example:</div><div class="d-msg" id="w-pv-' + k + '" style="white-space:pre-line;background:#FDFAF4;border:1px solid #F0EDE8;border-radius:8px;padding:8px"></div></div>';
     }).join('');
-    Object.keys(KIND_NAMES).forEach(wPreview);
+    Object.keys(W_NAMES).filter(k => r.defaults[k]).forEach(wPreview);
     document.getElementById('w-note').textContent = r.ready ? '' : 'The database is not ready for this yet. Please run step-defaulter-wording.sql in Supabase first.';
   } catch (e) { box.innerHTML = '<div class="d-card" style="color:#A32D2D;font-size:13px">Could not load: ' + esc(e.message) + '</div>'; }
 }
 async function saveWording() {
   const w = {};
-  Object.keys(KIND_NAMES).forEach(k => {
+  Object.keys(W_NAMES).filter(k => document.getElementById('w-en-' + k)).forEach(k => {
     const en = document.getElementById('w-en-' + k).value.trim(), ta = document.getElementById('w-ta-' + k).value.trim();
     // the standard words, unchanged, are not saved — the school keeps following the standard (and the Tamil switch)
     if (en === W_DEF[k].en && (ta === (W_DEF._tamil ? W_DEF[k].ta : '') )) return;
@@ -388,6 +391,8 @@ function entryHtml(r) {
     + '<div class="nm"><b>' + esc(r.student_name) + '</b> '
     + '<span class="d-chip' + (sent ? ' sent' : '') + '">' + (sent ? 'Sent' : 'Waiting') + '</span> '
     + '<span class="d-chip">' + esc(KIND_NAMES[r.kind] || r.kind) + '</span>'
+    + (r.kind === 'homework' && Array.isArray(r.items) && HW_REASON_NAMES[r.items[0]] ? ' <span class="d-chip">' + esc(HW_REASON_NAMES[r.items[0]]) + '</span>' : '')
+    + (/^My Day/.test(r.marked_by || '') ? ' <span class="d-chip">📱 My Day</span>' : '')
     + '<div class="d-msg" style="white-space:pre-line">' + esc(r.message) + '</div>'
     + '<div class="d-meta">' + esc(r.subject) + ' · ' + esc(r.work_date) + ' · marked by ' + esc(r.marked_by || '') + '</div></div>'
     + (sent ? '' : '<button class="btn btn-secondary btn-sm" onclick="removeEntry(\'' + esc(r.id) + '\')">✕ Remove</button>')

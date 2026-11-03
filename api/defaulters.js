@@ -24,6 +24,13 @@
 //   One combined message per child per day (marking again the same day adds
 //   the new items into that one message while it is still waiting).
 // Oct 2026: schools with has_tamil_msgs = true get simple Tamil below the English.
+// Nov 2026: TeachBot's My Day teacher app sends homework defaulters here (header x-teachbot-key,
+//   the same TEACHBOT_LINK_KEY as teachbot-homework.js). action 'hw_check':
+//   { school_id, class_name, section?, subject, homework, hw_date, staff_name,
+//     kids:[{ roll, name, reason:'not_done'|'half'|'notebook' }] }
+//   Children are matched to ERP by roll number in that class (name if the roll is not found).
+//   Saving again replaces that teacher's waiting entries for that homework (sent ones stay).
+//   The reason is kept in items[] and chooses the message wording.
 
 const crypto = require('crypto');
 const { both, defaulterTamil, disciplineMessage, DISCIPLINE_CODES, DISCIPLINE, taDate } = require('./_tamil');
@@ -143,7 +150,7 @@ function buildMessage(kind, name, date, subject, lesson, marks, total) {
 // ── Nov 2026: each school may change the wording (English box + Tamil box per message) ──
 // Blanks: {name} {date} {subject} {lesson} {marks} {total}; discipline uses {name} {date} {items}.
 // A message the school has not changed keeps the words above (Tamil only when the Tamil switch is on).
-const WORDING_KINDS = ['homework', 'test_not_written', 'test_absent', 'test_low_marks', 'discipline'];
+const WORDING_KINDS = ['homework', 'test_not_written', 'test_absent', 'test_low_marks', 'discipline', 'homework_half', 'homework_notebook'];
 const DEFAULT_WORDING = {
   homework: {
     en: 'Your child {name} did not write the Homework given on {date} in {subject} – {lesson}. Kindly make sure your ward writes the homework properly.',
@@ -159,7 +166,14 @@ const DEFAULT_WORDING = {
     ta: 'உங்கள் குழந்தை {name}, {date} அன்று நடந்த {subject} – {lesson} வகுப்புத் தேர்வில் {total}-க்கு {marks} மதிப்பெண் பெற்றார். இந்தப் பாடத்தில் வீட்டில் கூடுதல் கவனம் செலுத்தவும்.' },
   discipline: {
     en: 'Your child {name} came to school on {date} {items}. Kindly send your ward neatly from tomorrow.',
-    ta: 'உங்கள் குழந்தை {name}, {date} அன்று {items} பள்ளிக்கு வந்தார். நாளை முதல் ஒழுங்காக அனுப்பவும்.' }
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று {items} பள்ளிக்கு வந்தார். நாளை முதல் ஒழுங்காக அனுப்பவும்.' },
+  // Nov 2026: reasons marked in the My Day teacher app
+  homework_half: {
+    en: 'Your child {name} did not complete the Homework given on {date} in {subject} – {lesson}. Kindly make sure your ward finishes the homework fully.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று கொடுத்த {subject} – {lesson} வீட்டுப்பாடத்தை முழுமையாக முடிக்கவில்லை. முழுமையாக எழுத உதவவும்.' },
+  homework_notebook: {
+    en: 'Your child {name} did not bring the notebook for the {subject} Homework given on {date} ({lesson}). Kindly make sure your ward brings the notebook every day.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று கொடுத்த {subject} வீட்டுப்பாட நோட்டைக் கொண்டு வரவில்லை ({lesson}). தினமும் நோட்டைக் கொண்டு வர உதவவும்.' }
 };
 function fillIn(tpl, v) {
   return String(tpl || '').replace(/\{(name|date|subject|lesson|marks|total|items)\}/g, (m, k) => (v[k] == null ? '' : String(v[k]))).trim();
@@ -177,6 +191,115 @@ function ownMessage(W, kind, en, ta) {
 }
 function joinAnd(parts) { return parts.length <= 1 ? parts.join('') : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]; }
 
+// ══ Nov 2026: homework defaulters from TeachBot's My Day teacher app ══
+const HW_REASON_KIND = { not_done: 'homework', half: 'homework_half', notebook: 'homework_notebook' };
+const TB_CLASS_MAP = { 'Pre KG': 'PreKG', 'PRE KG': 'PreKG', 'Pre-KG': 'PreKG' };
+function tbKeyOk(given) {
+  const want = process.env.TEACHBOT_LINK_KEY || '';
+  if (!want || !given) return false;
+  const a = Buffer.from(String(given)), b = Buffer.from(want);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function rollKey(r) { const t = String(r == null ? '' : r).trim().toLowerCase(); return /^\d+$/.test(t) ? String(parseInt(t, 10)) : t; }
+function nameKey(n) { return String(n || '').toLowerCase().replace(/[^a-z\u0B80-\u0BFF]+/g, ' ').trim(); }
+
+async function teachbotDoor(req, res, body) {
+  if (!process.env.TEACHBOT_LINK_KEY) return res.status(500).json({ ok: false, error: 'TEACHBOT_LINK_KEY is not set in ERP\'s Vercel settings.' });
+  if (!tbKeyOk(req.headers['x-teachbot-key'])) return res.status(401).json({ ok: false, error: 'TeachBot link key does not match ERP\'s TEACHBOT_LINK_KEY.' });
+  if (body.action !== 'hw_check') return res.status(400).json({ ok: false, error: 'Unknown action.' });
+
+  const given = clean(body.school_id, 64);
+  if (!given || !/^[a-zA-Z0-9_-]+$/.test(given)) return res.status(400).json({ ok: false, error: 'ERP school id missing.' });
+  const sch = await sb('GET', 'schools?or=(school_id.eq.' + enc(given) + ',school_code.eq.' + enc(given) + ')&select=school_id&limit=1');
+  if (!sch.ok || !sch.data || !sch.data.length) return res.status(404).json({ ok: false, error: 'School ' + given + ' not found in ERP.' });
+  const schoolId = String(sch.data[0].school_id);
+
+  // "LKG B" → LKG + section B. No section = section A (or no section saved), like homework.
+  let rawCls = clean(body.class_name, 30);
+  let sec = clean(body.section, 2).toUpperCase();
+  const split = rawCls.match(/^(.*\S)\s+([A-Fa-f])$/);
+  if (split) { rawCls = split[1]; if (!sec) sec = split[2].toUpperCase(); }
+  if (sec && !/^[A-F]$/.test(sec)) sec = '';
+  const cls = TB_CLASS_MAP[rawCls] || rawCls;
+  const workDate = String(body.hw_date || '');
+  const subject = clean(body.subject, 60);
+  const lesson = clean(body.homework, 100) || 'Homework';
+  const teacher = clean(body.staff_name, 60) || 'Teacher';
+  const marker = 'My Day · ' + teacher;
+  if (!cls) return res.status(400).json({ ok: false, error: 'Class missing.' });
+  if (!subject) return res.status(400).json({ ok: false, error: 'Subject missing.' });
+  if (!validDate(workDate) || workDate > istToday()) return res.status(400).json({ ok: false, error: 'Homework date missing or in the future.' });
+
+  const kids = (Array.isArray(body.kids) ? body.kids : []).slice(0, 200).map(k => ({
+    roll: clean(k && k.roll, 10), name: clean(k && k.name, 80),
+    reason: HW_REASON_KIND[k && k.reason] ? k.reason : 'not_done'
+  })).filter(k => k.roll || k.name);
+
+  // This class's children in ERP
+  let secQ = '';
+  if (!sec || sec === 'A') secQ = '&or=(section.eq.A,section.is.null,section.eq.)';
+  else secQ = '&section=eq.' + enc(sec);
+  const stu = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(cls)
+    + '&status=eq.active' + secQ + '&select=id,full_name,roll_no&limit=300');
+  if (!stu.ok) return res.status(500).json({ ok: false, error: 'Could not read ERP students: ' + stu.raw });
+  const byRoll = {}, byName = {};
+  (stu.data || []).forEach(s => {
+    const r = rollKey(s.roll_no);
+    if (r) byRoll[r] = byRoll[r] ? 'two' : s;
+    const n = nameKey(s.full_name);
+    if (n) byName[n] = byName[n] ? 'two' : s;
+  });
+  const found = [], notFound = [];
+  kids.forEach(k => {
+    let s = byRoll[rollKey(k.roll)];
+    if (!s || s === 'two') s = byName[nameKey(k.name)];
+    if (s && s !== 'two') found.push({ s: s, reason: k.reason });
+    else notFound.push((k.roll ? 'Roll ' + k.roll : '') + (k.name ? (k.roll ? ' ' : '') + k.name : ''));
+  });
+
+  // Saving again replaces this teacher's waiting entries for this homework; sent ones stay
+  const del = await sb('DELETE', 'defaulter_entries?school_id=eq.' + enc(schoolId) + '&kind=eq.homework&status=eq.pending'
+    + '&class=eq.' + enc(cls) + '&work_date=eq.' + workDate + '&subject=eq.' + enc(subject)
+    + '&marked_by=eq.' + enc(marker) + (sec ? '&section=eq.' + enc(sec) : '&section=is.null'));
+  if (!del.ok) return res.status(500).json({ ok: false, error: 'Could not update the list: ' + del.raw });
+
+  if (!found.length) return res.status(200).json({ ok: true, saved: 0, already_sent: 0, not_found: notFound });
+
+  const tamil = await tamilOn(schoolId);
+  const W = await loadWording(schoolId);
+  const seen = {};
+  const rows = [];
+  found.forEach(f => {
+    const id = String(f.s.id);
+    if (seen[id]) return; seen[id] = 1;
+    const name = clean(f.s.full_name, 80) || 'your ward';
+    const wk = HW_REASON_KIND[f.reason];
+    const en = { name: name, date: niceDate(workDate), subject: subject, lesson: lesson };
+    const ta = { name: name, date: taDate(workDate), subject: subject, lesson: lesson };
+    let message = ownMessage(W, wk, en, ta);
+    if (!message) {
+      if (wk === 'homework') {
+        message = tamil ? both(buildMessage('homework', name, workDate, subject, lesson), defaulterTamil('homework', name, workDate, subject, lesson))
+                        : buildMessage('homework', name, workDate, subject, lesson);
+      } else {
+        const e = fillIn(DEFAULT_WORDING[wk].en, en);
+        message = tamil ? both(e, fillIn(DEFAULT_WORDING[wk].ta, ta)) : e;
+      }
+    }
+    rows.push({
+      school_id: schoolId, work_date: workDate, kind: 'homework', class: cls, section: sec || null,
+      subject: subject, lesson: lesson, student_id: id, student_name: name,
+      marks: null, total_marks: null, items: [f.reason], message: message,
+      status: 'pending', marked_by: marker
+    });
+  });
+  const ins = await sb('POST', 'defaulter_entries?on_conflict=school_id,student_id,work_date,kind,subject,lesson',
+    rows, 'return=representation,resolution=ignore-duplicates');
+  if (!ins.ok) return res.status(500).json({ ok: false, error: 'Could not save: ' + ins.raw });
+  const saved = (ins.data || []).length;
+  return res.status(200).json({ ok: true, saved: saved, already_sent: rows.length - saved, not_found: notFound });
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST only' });
@@ -190,6 +313,12 @@ module.exports = async (req, res) => {
     body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
   } catch (e) {
     return res.status(400).json({ ok: false, error: 'Bad request body.' });
+  }
+
+  // Nov 2026: TeachBot's My Day app (server to server, no staff login)
+  if (req.headers['x-teachbot-key'] !== undefined) {
+    try { return await teachbotDoor(req, res, body); }
+    catch (e) { return res.status(500).json({ ok: false, error: 'Server error: ' + (e.message || e) }); }
   }
 
   const session = verifyToken(body.token);
