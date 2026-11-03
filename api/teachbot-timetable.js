@@ -9,7 +9,8 @@
 // POST  header x-teachbot-key: <TEACHBOT_LINK_KEY>
 //   { school_id, academic_year? }   (no year → the most recently saved master)
 //   → { ok: true, academic_year, classes, grid, periods, working_days, ai_class, updated_at }
-//     grid: { Monday: { "0": { "Class 1": { subject, teacher, ai?, common? } } } }
+//     grid: { Monday: { "0": { "Class 1": { subject, teacher, ai?, common?, helper? } } } }
+//     helper (Nov 2026): a second teacher helping in that class this period (free-period teacher)
 //     periods: [{ label, start, end, isBreak }]   (index = the grid's period number)
 //   { school_id, which:'staff' }   (Oct 2026) → the copy last SENT to staff (Send to staff button),
 //     same shape plus staff_sent_at; grid null when never sent. Used by TeachBot's staff app.

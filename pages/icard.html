@@ -641,7 +641,11 @@
     </div>
     <div class="form-group" style="margin-bottom:14px">
       <label class="form-label">Teacher</label>
-      <select id="mt-teacher" class="form-control" style="margin-top:4px"></select>
+      <select id="mt-teacher" class="form-control" style="margin-top:4px" onchange="mtFillHelper()"></select>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label">Helper teacher <span style="font-weight:400;color:var(--text-muted)">(optional — only staff free this period)</span></label>
+      <select id="mt-helper" class="form-control" style="margin-top:4px"></select>
     </div>
     <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin:-4px 0 14px;cursor:pointer">
       <input type="checkbox" id="mt-common" style="margin-top:2px">
@@ -1351,7 +1355,7 @@ function renderTimetableGrid(key) {
             <div class="tt-cell ${cell?'filled':''}" id="cell-${d.replace(/\s/g,'_')}-${pi}">
               ${cell ? `
                 <div class="tt-subject" style="color:${cell.color||'var(--maroon)'}">${cell.subject}</div>
-                ${cell.teacher ? `<div class="tt-teacher">${cell.teacher}</div>` : ''}
+                ${cell.teacher ? `<div class="tt-teacher">${cell.teacher}${cell.helper ? ' + ' + cell.helper : ''}</div>` : (cell.helper ? `<div class="tt-teacher">${cell.helper}</div>` : '')}
                 ${cell.ai && aiClassOn ? '<div class="mt-ai-note">🤖 AI Class</div>' : ''}
               ` : ''}
             </div>
@@ -1430,7 +1434,9 @@ function saveCell() {
   const colors = ['#6B1A1A','#185FA5','#0F6E56','#854F0B','#4A1070'];
   const color = colors[subjects.indexOf(subj) % colors.length];
 
+  const prevHelper = timetableData[cellKey] && timetableData[cellKey].helper;
   timetableData[cellKey] = { subject: subj, teacher: teacher||null, color };
+  if (prevHelper && prevHelper !== teacher) timetableData[cellKey].helper = prevHelper;   // keep the helper sent from the master
 
   const cellEl = document.getElementById(`cell-${day.replace(/\s/g,'_')}-${periodIdx}`);
   if (cellEl) {
@@ -1605,6 +1611,17 @@ function mtTeacherUse(day, pi) {
   return use;
 }
 
+// For one period: which classes each teacher is HELPING in (Helper teacher, Nov 2026)
+function mtHelperUse(day, pi) {
+  const use = {};
+  mtClasses.forEach(cls => {
+    const cell = mtGetCell(day, pi, cls);
+    const h = cell && (cell.helper || '').trim();
+    if (h) (use[h] = use[h] || []).push(cls);
+  });
+  return use;
+}
+
 // For one period: which classes are in the AI class room.
 // More than one class is fine only when every one of them is ticked "Common class".
 function mtAiRoom(day, pi) {
@@ -1634,6 +1651,7 @@ function renderMtGrid() {
       return;
     }
     const use = mtTeacherUse(mtDay, pi);
+    const hUse = mtHelperUse(mtDay, pi);
     const air = mtAiRoom(mtDay, pi);
     html += `<tr><td class="tt-period-label">${mtEsc(p.label)}<span class="period-time">${mtEsc(p.start)}${p.end ? ' – ' + mtEsc(p.end) : ''}</span></td>`;
     mtClasses.forEach((cls, ci) => {
@@ -1650,20 +1668,25 @@ function renderMtGrid() {
         const oCell = mtGetCell(mtDay, pi, oc);
         return oCell && oCell.common === true && (oCell.subject || '') === (cell.subject || '');
       });
-      const clash = others.length > 0 && !isCommon;
+      const helping = t && hUse[t] ? hUse[t].filter(c => c !== cls) : [];   // main teacher is also a helper elsewhere
+      const clash = (others.length > 0 && !isCommon) || helping.length > 0;
+      const h = (cell.helper || '').trim();
+      const hElse = h ? (use[h] || []).concat((hUse[h] || []).filter(c => c !== cls)) : [];
       const inAi = aiClassOn && cell.ai === true;
       const aiOthers = inAi && air.clash ? air.classes.filter(c => c !== cls) : [];
-      html += `<td><div class="tt-cell filled ${clash || aiOthers.length ? 'mt-clash' : ''} ${isCommon ? 'mt-common' : ''} ${inAi ? 'mt-ai' : ''}" onclick="mtOpenCell(${pi},${ci})">
+      html += `<td><div class="tt-cell filled ${clash || aiOthers.length || hElse.length ? 'mt-clash' : ''} ${isCommon ? 'mt-common' : ''} ${inAi ? 'mt-ai' : ''}" onclick="mtOpenCell(${pi},${ci})">
         <div class="tt-subject">${mtEsc(cell.subject || '—')}</div>
         ${t ? `<div class="tt-teacher">${mtEsc(t)}</div>` : ''}
-        ${clash ? `<div class="mt-clash-note">⚠ also in ${mtEsc(others.join(', '))}</div>` : ''}
+        ${h ? `<div class="tt-teacher">+ Helper: ${mtEsc(h)}</div>` : ''}
+        ${clash ? `<div class="mt-clash-note">⚠ also in ${mtEsc(others.concat(helping.map(c => c + ' (helper)')).join(', '))}</div>` : ''}
+        ${hElse.length ? `<div class="mt-clash-note">⚠ helper also in ${mtEsc(hElse.join(', '))}</div>` : ''}
         ${isCommon ? `<div class="mt-common-note">Common class · ${mtEsc(mtClasses.filter(c => use[t].indexOf(c) !== -1).join(', '))}</div>` : ''}
         ${inAi ? '<div class="mt-ai-note">🤖 AI Class</div>' : ''}
         ${aiOthers.length ? `<div class="mt-clash-note">⚠ AI room also has ${mtEsc(aiOthers.join(', '))}</div>` : ''}
       </div></td>`;
     });
     if (aiClassOn) html += `<td class="mt-airoom ${air.clash ? 'clash' : ''}">${air.classes.length ? mtEsc(air.classes.join(', ')) + (air.clash ? '<br>⚠ more than one class — tick Common class if they sit together' : (air.classes.length > 1 ? '<br><span style="font-weight:400">Common class</span>' : '')) : '<span class="empty">Empty</span>'}</td>`;
-    const busy = new Set(Object.keys(use));
+    const busy = new Set(Object.keys(use).concat(Object.keys(hUse)));
     const free = allStaff.map(s => s.name).filter(n => n && !busy.has(n.trim()));
     html += `<td class="mt-free no-print">${allStaff.length ? (free.length ? mtEsc(free.join(', ')) : '<span style="color:#C0392B">Nobody free</span>') : '—'}</td></tr>`;
   });
@@ -1702,6 +1725,8 @@ function renderMtSummary() {
           commonSeen[key] = true;
         }
         if (t) load[t] = (load[t] || 0) + 1;
+        const hl = (cell.helper || '').trim();
+        if (hl) load[hl] = (load[hl] || 0) + 1;   // helper period counts in the helper's load
       });
     });
   });
@@ -1761,17 +1786,36 @@ function mtOpenCell(pi, ci) {
       return `<option value="${mtEsc(n)}" ${n === cell.teacher ? 'selected' : ''}>${mtEsc(n + tag)}</option>`;
     }).join('');
 
+  mtFillHelper(cell.helper || '');
   document.getElementById('mt-common').checked = cell.common === true;
   document.getElementById('mt-ai').checked = cell.ai === true;
   document.getElementById('mt-ai-wrap').classList.toggle('hidden', !aiClassOn);
   document.getElementById('mt-modal').classList.add('open');
 }
 
+// Helper teacher list: only staff free in this period (not teaching or helping in another class),
+// never the main teacher of this box. The saved helper is always kept in the list.
+function mtFillHelper(keep) {
+  if (!mtCell) return;
+  const sel = document.getElementById('mt-helper');
+  const cur = keep !== undefined ? keep : sel.value;
+  const main = (document.getElementById('mt-teacher').value || '').trim();
+  const use = mtTeacherUse(mtDay, mtCell.pi), hUse = mtHelperUse(mtDay, mtCell.pi);
+  const busy = n => (use[n] || []).filter(c => c !== mtCell.cls).length || (hUse[n] || []).filter(c => c !== mtCell.cls).length;
+  const names = allStaff.map(s => (s.name || '').trim()).filter(n => n && n !== main && !busy(n));
+  if (cur && cur !== main && names.indexOf(cur) === -1) names.unshift(cur);
+  sel.innerHTML = '<option value="">No helper</option>' + names.map(n => {
+    const tag = busy(n) ? ' (busy elsewhere)' : '';
+    return `<option value="${mtEsc(n)}" ${n === cur ? 'selected' : ''}>${mtEsc(n + tag)}</option>`;
+  }).join('');
+  if (!names.length) sel.innerHTML = '<option value="">Nobody free this period</option>';
+}
+
 // Picking a subject fills in its usual teacher (from Teacher–Subject Mapping) if none chosen yet
 function mtSubjectChanged() {
   const s = document.getElementById('mt-subject').value;
   const tSel = document.getElementById('mt-teacher');
-  if (s && !tSel.value && teacherMap[s]) tSel.value = teacherMap[s];
+  if (s && !tSel.value && teacherMap[s]) { tSel.value = teacherMap[s]; mtFillHelper(); }
 }
 
 function mtSetCell() {
@@ -1787,6 +1831,8 @@ function mtSetCell() {
   // AI class room tick (kept as it was when the school has the AI room switched off)
   const aiOn = aiClassOn ? document.getElementById('mt-ai').checked : prev.ai === true;
   if (aiOn) mtGrid[mtDay][mtCell.pi][mtCell.cls].ai = true;
+  const helper = (document.getElementById('mt-helper').value || '').trim();
+  if (helper && helper !== teacher.trim()) mtGrid[mtDay][mtCell.pi][mtCell.cls].helper = helper;
   // Common class: apply the same tick to the other classes this teacher takes for this subject in this period
   if (teacher && (common || prev.common === true)) {
     mtClasses.forEach(oc => {
@@ -1832,6 +1878,8 @@ function mtOpenReplace() {
   mtRepEach(cell => {
     const t = (cell.teacher || '').trim();
     if (t && used.indexOf(t) === -1) used.push(t);
+    const h = (cell.helper || '').trim();
+    if (h && used.indexOf(h) === -1) used.push(h);
   });
   used.sort((a, b) => a.localeCompare(b));
   if (!used.length) { showToast('No teachers in the master timetable yet.', 'error'); return; }
@@ -1850,6 +1898,7 @@ function mtRepCount(from, onlyCls) {
   let n = 0;
   mtRepEach((cell, cls) => {
     if ((cell.teacher || '').trim() === from && (!onlyCls || cls === onlyCls)) n++;
+    if ((cell.helper || '').trim() === from && (!onlyCls || cls === onlyCls)) n++;
   });
   return n;
 }
@@ -1874,6 +1923,9 @@ function mtDoReplace() {
   if (!confirm('Change ' + from + ' to ' + to + ' in ' + n + ' period(s)' + (onlyCls ? ' of ' + onlyCls : '') + '?')) return;
   mtRepEach((cell, cls) => {
     if ((cell.teacher || '').trim() === from && (!onlyCls || cls === onlyCls)) cell.teacher = to;
+    if ((cell.helper || '').trim() === from && (!onlyCls || cls === onlyCls)) {
+      if ((cell.teacher || '').trim() === to) delete cell.helper; else cell.helper = to;
+    }
   });
   mtSetDirty(true);
   mtCloseReplace();
@@ -2028,13 +2080,19 @@ function renderStaffTT() {
         if (cell.common !== true) bySubject[s].common = false;
         if (cell.ai === true && aiClassOn) bySubject[s].ai = true;
       });
+      // Helper periods (Nov 2026): this teacher helps in another class's period
+      const helpIn = [];
+      mtClasses.forEach(cls => {
+        const cell = mtGetCell(d, pi, cls);
+        if (cell && (cell.helper || '').trim() === teacher) helpIn.push({ cls, subject: (cell.subject || '').trim() || '—' });
+      });
       const subs = Object.keys(bySubject);
-      if (!subs.length) {
+      if (!subs.length && !helpIn.length) {
         free++;
         grid += '<td><div class="tt-cell" style="align-items:center"><span class="st-free">Free</span></div></td>';
         return;
       }
-      let inner = '', clash = subs.length > 1;
+      let inner = '', clash = subs.length + helpIn.length > 1;
       subs.forEach(s => {
         const g = bySubject[s];
         const isCommon = g.common && g.classes.length > 1;
@@ -2044,6 +2102,10 @@ function renderStaffTT() {
         inner += `<div class="tt-subject">${mtEsc(s)}</div><div class="st-cls">${mtEsc(stJoinClasses(g.classes))}</div>`;
         if (isCommon) inner += '<div class="st-common">Common class</div>';
         if (g.ai) inner += '<div class="mt-ai-note">🤖 AI room</div>';
+      });
+      helpIn.forEach(x => {
+        total += 1;   // helper period counts in this teacher's load
+        inner += `<div class="tt-subject">Helper – ${mtEsc(x.subject)}</div><div class="st-cls">${mtEsc(x.cls)}</div>`;
       });
       if (clash) inner += '<div class="mt-clash-note no-print">⚠ two classes at once — check Master Timetable</div>';
       grid += `<td><div class="tt-cell filled ${clash ? 'mt-clash' : ''}">${inner}</div></td>`;

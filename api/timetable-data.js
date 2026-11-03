@@ -114,7 +114,7 @@ function cleanSettings(input) {
   return out;
 }
 
-// Master grid: { Monday: { "0": { "Class 1": { teacher, subject } } } }
+// Master grid: { Monday: { "0": { "Class 1": { teacher, subject, helper? } } } }
 function cleanMasterGrid(grid) {
   const out = {};
   if (!grid || typeof grid !== 'object' || Array.isArray(grid)) return out;
@@ -135,6 +135,9 @@ function cleanMasterGrid(grid) {
           r[str(cls, 30)] = { teacher, subject };
           if (cell.common === true) r[str(cls, 30)].common = true;   // Common class (combined classes, one teacher)
           if (cell.ai === true) r[str(cls, 30)].ai = true;           // goes to the AI class room this period
+          // Helper (Nov 2026): a second, free teacher who helps the main teacher (e.g. LKG writing practice)
+          const helper = str(cell.helper, 120).trim();
+          if (helper && helper !== teacher.trim()) r[str(cls, 30)].helper = helper;
         }
       });
       if (Object.keys(r).length) d[str(pi, 3)] = r;
@@ -271,6 +274,7 @@ module.exports = async (req, res) => {
               color: colorFor(cell.subject || '')
             };
             if (cell.ai === true) out[day + '_' + pi].ai = true;   // shown as "AI Class" on the class timetable
+            if (cell.helper) out[day + '_' + pi].helper = cell.helper; // helper teacher shown beside the main teacher
           });
         });
         // A class with nothing in the master is left untouched, never wiped
