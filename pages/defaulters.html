@@ -57,6 +57,7 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
         <div class="d-tab on" data-tab="mark" onclick="showTab('mark')">✏️ Mark defaulters</div>
         <div class="d-tab office hidden" data-tab="send" onclick="showTab('send')">📤 Send to parents <span id="pend-count"></span></div>
         <div class="d-tab office hidden" data-tab="repeat" onclick="showTab('repeat')">🔁 Repeat defaulters</div>
+        <div class="d-tab admin-only hidden" data-tab="wording" onclick="showTab('wording')">📝 Message wording</div>
       </div>
 
       <!-- ═════ MARK ═════ -->
@@ -117,6 +118,21 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
         <div id="pend-list"><div class="d-meta">Loading…</div></div>
       </div>
 
+      <!-- ═════ WORDING (principal / admin, Nov 2026) ═════ -->
+      <div id="tab-wording" class="hidden">
+        <div class="d-card">
+          <div class="d-label">The words parents read</div>
+          <div class="d-meta" style="margin-top:4px">Change the message for each kind in your school's own words. The English box goes first, the Tamil box just below it. <b>Leave a box empty</b> to send only the other language (for example, empty the English box for Tamil only). These blanks fill in by themselves:
+            <b>{name}</b> child's name · <b>{date}</b> date · <b>{subject}</b> · <b>{lesson}</b> · <b>{marks}</b> and <b>{total}</b> (low marks) · <b>{items}</b> (discipline: uniform, nails…).
+            New wording is used for children marked <b>after</b> you save; messages already waiting keep their old words.</div>
+        </div>
+        <div id="w-list"><div class="d-meta">Loading…</div></div>
+        <div class="d-card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="saveWording()">💾 Save wording</button>
+          <span class="d-meta" id="w-note"></span>
+        </div>
+      </div>
+
       <!-- ═════ REPEAT (office) ═════ -->
       <div id="tab-repeat" class="hidden">
         <div class="d-card">
@@ -169,9 +185,61 @@ function istDate(offsetDays) {
 
 function showTab(t) {
   document.querySelectorAll('.d-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
-  ['mark', 'send', 'repeat'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  ['mark', 'send', 'repeat', 'wording'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  if (t === 'wording') loadWording();
   if (t === 'send') loadPending();
   if (t === 'repeat') loadRepeat();
+}
+
+// ── Message wording (Nov 2026): principal / admin only ──
+const IS_ADMIN = typeof USER_ROLE === 'undefined' || USER_ROLE !== 'staff';
+let W_DEF = {};
+const W_SAMPLE = { en: { name: 'RAVI', date: '2 Nov', subject: 'Hindi', lesson: 'Fruits Name', marks: 6, total: 20, items: 'without proper uniform and with nails not cut' },
+                   ta: { name: 'RAVI', date: '2 நவ.', subject: 'Hindi', lesson: 'Fruits Name', marks: 6, total: 20, items: 'சரியான சீருடை இல்லாமல், நகம் வெட்டாமல்' } };
+function wFill(t, v) { return String(t || '').replace(/\{(name|date|subject|lesson|marks|total|items)\}/g, (m, k) => v[k]).trim(); }
+function wPreview(k) {
+  const en = wFill(document.getElementById('w-en-' + k).value, W_SAMPLE.en), ta = wFill(document.getElementById('w-ta-' + k).value, W_SAMPLE.ta);
+  document.getElementById('w-pv-' + k).textContent = (en && ta ? en + '\n' + ta : (en || ta)) || '(Both boxes empty — the standard message will be used.)';
+}
+function wReset(k) {
+  document.getElementById('w-en-' + k).value = W_DEF[k].en;
+  document.getElementById('w-ta-' + k).value = W_DEF._tamil ? W_DEF[k].ta : '';
+  wPreview(k);
+  document.getElementById('w-note').textContent = 'Press Save wording to keep this.';
+}
+async function loadWording() {
+  const box = document.getElementById('w-list');
+  box.innerHTML = '<div class="d-meta">Loading…</div>';
+  try {
+    const r = await call('wording_get', {});
+    W_DEF = Object.assign({}, r.defaults, { _tamil: !!r.tamil_on });
+    const saved = r.saved || {};
+    box.innerHTML = Object.keys(KIND_NAMES).map(k => {
+      const s = saved[k], en = s ? s.en : r.defaults[k].en, ta = s ? s.ta : (r.tamil_on ? r.defaults[k].ta : '');
+      return '<div class="d-card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">'
+        + '<div class="d-label">' + esc(KIND_NAMES[k]) + (s ? ' <span class="d-chip sent">Your wording</span>' : ' <span class="d-chip">Standard</span>') + '</div>'
+        + '<button class="btn" type="button" onclick="wReset(\'' + k + '\')">↩ Back to standard</button></div>'
+        + '<label class="form-label" style="margin-top:8px">English</label><textarea id="w-en-' + k + '" class="form-control" rows="2" maxlength="600" oninput="wPreview(\'' + k + '\')">' + esc(en) + '</textarea>'
+        + '<label class="form-label" style="margin-top:8px">Tamil (below the English)</label><textarea id="w-ta-' + k + '" class="form-control" rows="2" maxlength="600" placeholder="' + esc(r.defaults[k].ta) + '" oninput="wPreview(\'' + k + '\')">' + esc(ta) + '</textarea>'
+        + '<div class="d-meta" style="margin-top:8px">Parent will read, for example:</div><div class="d-msg" id="w-pv-' + k + '" style="white-space:pre-line;background:#FDFAF4;border:1px solid #F0EDE8;border-radius:8px;padding:8px"></div></div>';
+    }).join('');
+    Object.keys(KIND_NAMES).forEach(wPreview);
+    document.getElementById('w-note').textContent = r.ready ? '' : 'The database is not ready for this yet. Please run step-defaulter-wording.sql in Supabase first.';
+  } catch (e) { box.innerHTML = '<div class="d-card" style="color:#A32D2D;font-size:13px">Could not load: ' + esc(e.message) + '</div>'; }
+}
+async function saveWording() {
+  const w = {};
+  Object.keys(KIND_NAMES).forEach(k => {
+    const en = document.getElementById('w-en-' + k).value.trim(), ta = document.getElementById('w-ta-' + k).value.trim();
+    // the standard words, unchanged, are not saved — the school keeps following the standard (and the Tamil switch)
+    if (en === W_DEF[k].en && (ta === (W_DEF._tamil ? W_DEF[k].ta : '') )) return;
+    w[k] = { en: en, ta: ta };
+  });
+  try {
+    await call('wording_save', { wording: w });
+    showToast('Wording saved. It is used for children marked from now on.', 'success');
+    loadWording();
+  } catch (e) { showToast('⚠️ ' + e.message, 'error'); }
 }
 
 function pickKind(k) {
@@ -412,6 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('m-date').max = istDate(0);
   document.getElementById('r-month').value = istDate(0).slice(0, 7);
 
+  if (IS_ADMIN) document.querySelectorAll('.d-tab.admin-only').forEach(t => t.classList.remove('hidden'));
   if (IS_OFFICE) {
     document.querySelectorAll('.d-tab.office').forEach(t => t.classList.remove('hidden'));
     call('pending', {}).then(r => {

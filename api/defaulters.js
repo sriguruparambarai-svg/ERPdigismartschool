@@ -26,7 +26,7 @@
 // Oct 2026: schools with has_tamil_msgs = true get simple Tamil below the English.
 
 const crypto = require('crypto');
-const { both, defaulterTamil, disciplineMessage, DISCIPLINE_CODES } = require('./_tamil');
+const { both, defaulterTamil, disciplineMessage, DISCIPLINE_CODES, DISCIPLINE, taDate } = require('./_tamil');
 
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 
@@ -140,6 +140,43 @@ function buildMessage(kind, name, date, subject, lesson, marks, total) {
     + '. Kindly give extra attention to this lesson at home.';
 }
 
+// ── Nov 2026: each school may change the wording (English box + Tamil box per message) ──
+// Blanks: {name} {date} {subject} {lesson} {marks} {total}; discipline uses {name} {date} {items}.
+// A message the school has not changed keeps the words above (Tamil only when the Tamil switch is on).
+const WORDING_KINDS = ['homework', 'test_not_written', 'test_absent', 'test_low_marks', 'discipline'];
+const DEFAULT_WORDING = {
+  homework: {
+    en: 'Your child {name} did not write the Homework given on {date} in {subject} – {lesson}. Kindly make sure your ward writes the homework properly.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று கொடுத்த {subject} – {lesson} வீட்டுப்பாடத்தை எழுதவில்லை. வீட்டுப்பாடம் எழுத உதவவும்.' },
+  test_not_written: {
+    en: 'Your child {name} did not write / was not prepared for the Class Test on {date} in {subject} – {lesson}. Kindly make sure your ward prepares properly.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று நடந்த {subject} – {lesson} வகுப்புத் தேர்வை எழுதவில்லை / படித்து வரவில்லை. நன்றாகப் படிக்க உதவவும்.' },
+  test_absent: {
+    en: 'Your child {name} was absent for the Class Test on {date} in {subject} – {lesson}. Kindly help your ward catch up on this lesson.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று நடந்த {subject} – {lesson} வகுப்புத் தேர்வுக்கு வரவில்லை. இந்தப் பாடத்தை வீட்டில் படிக்க உதவவும்.' },
+  test_low_marks: {
+    en: 'Your child {name} scored {marks} out of {total} in the Class Test on {date} in {subject} – {lesson}. Kindly give extra attention to this lesson at home.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று நடந்த {subject} – {lesson} வகுப்புத் தேர்வில் {total}-க்கு {marks} மதிப்பெண் பெற்றார். இந்தப் பாடத்தில் வீட்டில் கூடுதல் கவனம் செலுத்தவும்.' },
+  discipline: {
+    en: 'Your child {name} came to school on {date} {items}. Kindly send your ward neatly from tomorrow.',
+    ta: 'உங்கள் குழந்தை {name}, {date} அன்று {items} பள்ளிக்கு வந்தார். நாளை முதல் ஒழுங்காக அனுப்பவும்.' }
+};
+function fillIn(tpl, v) {
+  return String(tpl || '').replace(/\{(name|date|subject|lesson|marks|total|items)\}/g, (m, k) => (v[k] == null ? '' : String(v[k]))).trim();
+}
+async function loadWording(schoolId) {
+  const r = await sb('GET', 'defaulter_wording?school_id=eq.' + enc(schoolId) + '&select=wording&limit=1');
+  return (r.ok && r.data && r.data[0] && r.data[0].wording && typeof r.data[0].wording === 'object') ? r.data[0].wording : {};
+}
+// The school's own words for this message, or null to use the standard words
+function ownMessage(W, kind, en, ta) {
+  const w = W && W[kind];
+  if (!w || (!String(w.en || '').trim() && !String(w.ta || '').trim())) return null;
+  const e = fillIn(w.en, en), t = fillIn(w.ta, ta);
+  return e && t ? both(e, t) : (e || t);
+}
+function joinAnd(parts) { return parts.length <= 1 ? parts.join('') : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1]; }
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST only' });
@@ -177,6 +214,30 @@ module.exports = async (req, res) => {
     if (!canMark(session)) return res.status(401).json({ ok: false, error: 'Please log in again.' });
     const schoolId = String(session.sid);
 
+    // ══ Nov 2026: message wording (everyone who marks can see it; principal / admin can change it) ══
+    if (action === 'wording_get') {
+      const r = await sb('GET', 'defaulter_wording?school_id=eq.' + enc(schoolId) + '&select=wording&limit=1');
+      return res.status(200).json({ ok: true, defaults: DEFAULT_WORDING, saved: (r.ok && r.data && r.data[0] && r.data[0].wording) || {},
+        ready: r.ok, tamil_on: await tamilOn(schoolId), can_edit: session.role !== 'staff' });
+    }
+    if (action === 'wording_save') {
+      if (session.role === 'staff') return res.status(403).json({ ok: false, error: 'Only the principal or admin can change the wording.' });
+      const given = body.wording && typeof body.wording === 'object' ? body.wording : {};
+      const out = {};
+      WORDING_KINDS.forEach(k => {
+        const g = given[k] || {};
+        const en = String(g.en || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+        const ta = String(g.ta || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+        if (en || ta) out[k] = { en: en, ta: ta };
+      });
+      const r = await sb('POST', 'defaulter_wording?on_conflict=school_id',
+        [{ school_id: schoolId, wording: out, updated_at: new Date().toISOString(), updated_by: clean(body.staff_name, 80) || 'Admin' }],
+        'return=representation,resolution=merge-duplicates');
+      if (!r.ok) return res.status(500).json({ ok: false, error: /defaulter_wording/.test(r.raw || '')
+        ? 'The database is not ready for this yet. Please run step-defaulter-wording.sql in Supabase first.' : 'Could not save: ' + r.raw });
+      return res.status(200).json({ ok: true, saved: out });
+    }
+
     // ══ TEACHER ══
     if (action === 'students') {
       const cls = clean(body.class, 40);
@@ -199,6 +260,7 @@ module.exports = async (req, res) => {
       const lesson = clean(body.lesson, 100);
       const staffName = clean(body.staff_name, 80) || (session.role === 'staff' ? 'Staff' : 'Admin');
       const tamil = await tamilOn(schoolId);
+      const W = await loadWording(schoolId);   // Nov 2026: the school's own words, if any
 
       // ── Discipline: one combined message per child per day ──
       if (kind === 'discipline') {
@@ -237,7 +299,11 @@ module.exports = async (req, res) => {
           const o = oldBy[id];
           if (o && o.status !== 'pending') { alreadySent++; continue; }
           const codes = [...new Set((o && Array.isArray(o.items) ? o.items : []).concat(want[id]))];
-          const message = disciplineMessage(name, workDate, niceDate(workDate), codes, tamil);
+          const dl = DISCIPLINE_CODES.filter(c => codes.indexOf(c) !== -1);
+          const message = ownMessage(W, 'discipline',
+              { name: name, date: niceDate(workDate), items: joinAnd(dl.map(c => DISCIPLINE[c][1])) },
+              { name: name, date: taDate(workDate), items: dl.map(c => DISCIPLINE[c][2]).join(', ') })
+            || disciplineMessage(name, workDate, niceDate(workDate), codes, tamil);
           if (o) {
             const u = await sb('PATCH', 'defaulter_entries?id=eq.' + enc(o.id) + '&school_id=eq.' + enc(schoolId) + '&status=eq.pending',
               { items: codes, message: message, marked_by: staffName });
@@ -308,10 +374,12 @@ module.exports = async (req, res) => {
           subject: subject, lesson: lesson, student_id: id, student_name: name,
           marks: kind === 'test_low_marks' ? scoreOf[id] : null,
           total_marks: kind === 'test_low_marks' ? total : null,
-          message: tamil
+          message: ownMessage(W, kind,
+              { name: name, date: niceDate(workDate), subject: subject, lesson: lesson, marks: scoreOf[id], total: total },
+              { name: name, date: taDate(workDate), subject: subject, lesson: lesson, marks: scoreOf[id], total: total }) || (tamil
             ? both(buildMessage(kind, name, workDate, subject, lesson, scoreOf[id], total),
                    defaulterTamil(kind, name, workDate, subject, lesson, scoreOf[id], total))
-            : buildMessage(kind, name, workDate, subject, lesson, scoreOf[id], total),
+            : buildMessage(kind, name, workDate, subject, lesson, scoreOf[id], total)),
           status: 'pending', marked_by: staffName
         };
       });
