@@ -101,7 +101,8 @@ module.exports = async (req, res) => {
       alerts = await sendToSubs(subs, s => {
         const who = names[String(s.student_id)];
         return {
-          title: (type === 'classwork' ? '📖 In class today' : '📚 Homework') + (who ? ' · ' + who : '') + ': ' + short(c.title, 60),
+          // Nov 2026: one evening message with both parts → one alert
+          title: (body.combined ? '📚 Class work & Homework' : type === 'classwork' ? '📖 In class today' : '📚 Homework') + (who ? ' · ' + who : '') + ': ' + short(c.title, 60),
           body: short(c.message, 140),
           tag: 'comm-' + c.id + '-' + s.student_id,
           url: BASE + '/parent/dashboard.html?child=' + enc(s.student_id)
