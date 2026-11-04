@@ -162,6 +162,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .hw-subject{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;margin-bottom:8px;background:var(--sandal-light);color:var(--maroon);border:1px solid #E8D8B8}
 .hw-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
 .hw-desc{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:8px}
+/* Nov 2026: homework / class work from TeachBot shown like the diary slip — subject left, work right */
+.hw-rows{margin:6px 0 4px}
+.hw-row{display:grid;grid-template-columns:minmax(88px,34%) 1fr;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
+.hw-row:first-child{border-top:0;padding-top:2px}
+.hw-row-sub{font-size:13px;font-weight:700;color:var(--maroon);line-height:1.45}
+.hw-row-txt{font-size:13.5px;color:var(--text);line-height:1.55;white-space:pre-line;overflow-wrap:anywhere}
 .hw-due{font-size:11px;font-weight:600;display:flex;align-items:center;gap:4px}
 .hw-due.overdue{color:#A32D2D}
 .hw-due.due-today{color:#8B5E00}
@@ -1401,7 +1407,7 @@ async function loadClassWork() {
       return `<div class="hw-card" style="border-left:4px solid #2F6B3A">
         <div class="hw-subject" style="color:#2F6B3A">${e(when)}${c.subject ? ' · ' + e(c.subject) : ''}</div>
         <div class="hw-title">${e(c.title)}</div>
-        ${c.message ? `<div class="hw-desc" style="white-space:pre-line">${e(c.message)}</div>` : ''}
+        ${hwRowsHTML(c.message, c.subject) || (c.message ? `<div class="hw-desc" style="white-space:pre-line">${e(c.message)}</div>` : '')}
       </div>`;
     }).join('');
     document.getElementById('cw-section').classList.remove('hidden');
@@ -1463,17 +1469,37 @@ function buildNoticeCard(n) {
   `;
 }
 
+// Nov 2026: "English: …\nMaths: …" (one subject per line, more lines = more of that subject) → slip-style rows.
+// Only when EVERY part fits that pattern; any other message is shown exactly as before.
+function hwRowsHTML(message, subjects) {
+  const subs = String(subjects || '').split(',').map(s => s.trim()).filter(Boolean);
+  const lines = String(message || '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (!subs.length || !lines.length) return '';
+  const rows = [];
+  for (const l of lines) {
+    const s = subs.find(x => l.toLowerCase().startsWith(x.toLowerCase() + ':'));
+    if (s) rows.push({ sub: s, txt: l.slice(s.length + 1).trim() });
+    else if (rows.length) rows[rows.length - 1].txt += '\n' + l;
+    else return '';
+  }
+  if (!rows.length) return '';
+  return '<div class="hw-rows">' + rows.map(r => '<div class="hw-row"><div class="hw-row-sub">' + escapeHtml(r.sub) +
+    '</div><div class="hw-row-txt">' + escapeHtml(r.txt) + '</div></div>').join('') + '</div>';
+}
+
 function buildHWCard(h) {
   const today = new Date().toISOString().split('T')[0];
   const isOverdue = h.due_date < today;
   const isToday = h.due_date === today;
   const dueClass = isOverdue ? 'overdue' : isToday ? 'due-today' : 'upcoming';
   const dueLabel = isOverdue ? '⚠️ Overdue' : isToday ? '📅 Due today' : `📅 Due ${formatDateShort(h.due_date)}`;
+  const rowsHtml = hwRowsHTML(h.message, h.subject);
+  const nSub = rowsHtml ? rowsHtml.split('class="hw-row"').length - 1 : 0;
   return `
     <div class="hw-card">
-      <div class="hw-subject">${h.subject || 'General'}</div>
+      <div class="hw-subject">${nSub ? '📚 ' + nSub + (nSub > 1 ? ' subjects' : ' subject') : (h.subject || 'General')}</div>
       <div class="hw-title">${h.title}</div>
-      ${h.message ? `<div class="hw-desc" style="white-space:pre-line">${h.message}</div>` : ''}
+      ${rowsHtml || (h.message ? `<div class="hw-desc" style="white-space:pre-line">${h.message}</div>` : '')}
       <div class="hw-footer">
         <div class="hw-due ${dueClass}">${dueLabel}</div>
         <button class="btn-done" onclick="markHWDone('${h.id}',this)">Mark Done ✓</button>
