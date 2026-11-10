@@ -96,6 +96,7 @@ async function renderSidebar(activePage) {
       { id: 'voice', icon: '🎙', label: 'Voice Messages', href: 'voice-notes.html' },
       { id: 'communication', icon: '🎯', label: 'Foundation Questions', href: 'foundation-questions.html' },
       { id: 'communication', icon: '🔒', label: 'Parent PINs', href: 'parent-pins.html' },
+      { id: 'communication', icon: '👀', label: 'Parent App Use', href: 'app-use.html' },
     ]},
     { group: 'Office', items: [
       { id: 'frontoffice', icon: '🏢', label: 'Front Office', href: 'frontoffice.html' },

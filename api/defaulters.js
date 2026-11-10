@@ -16,8 +16,10 @@
 //     pending   {}                                         → everything waiting
 //     send      { ids[] }                                  → mark as sent
 //     repeat    { month }                                  → counts per child
+//     seen_list { date }                                   → sent that day, with seen_at (Nov 2026)
 //   Parent:
 //     my_notes  {}                                         → last 30 days, sent only
+//               (the newest 5, shown on the home screen, get seen_at the first time)
 //
 // Oct 2026: kind 'discipline' — uniform, shoes, nails, hair, books, ID card.
 //   save { kind:'discipline', work_date, class, section, items:{studentId:[codes]} }
@@ -347,6 +349,17 @@ module.exports = async (req, res) => {
         + '&status=eq.sent&work_date=gte.' + since
         + '&select=id,kind,subject,lesson,work_date,message,sent_at&order=sent_at.desc&limit=30');
       if (!r.ok) return res.status(500).json({ ok: false, error: 'Could not load messages.' });
+      // Nov 2026: the home screen shows the newest 5 — note when the parent first saw each one.
+      // Only messages not seen before are touched, so the first time stays.
+      const shown = (r.data || []).slice(0, 5).map(x => x.id).filter(Boolean);
+      if (shown.length) {
+        try {
+          await sb('PATCH', 'defaulter_entries?school_id=eq.' + enc(String(session.sid))
+            + '&student_id=eq.' + enc(String(session.stu))
+            + '&seen_at=is.null&id=in.(' + shown.map(enc).join(',') + ')',
+            { seen_at: new Date().toISOString() }, 'return=minimal');
+        } catch (e) { /* the parent still sees the messages */ }
+      }
       return res.status(200).json({ ok: true, rows: r.data || [] });
     }
 
@@ -561,7 +574,7 @@ module.exports = async (req, res) => {
     }
 
     // ══ OFFICE ══
-    if (['pending', 'send', 'repeat'].indexOf(action) !== -1 && !canSend(session)) {
+    if (['pending', 'send', 'repeat', 'seen_list'].indexOf(action) !== -1 && !canSend(session)) {
       return res.status(403).json({ ok: false, error: 'Only the office can send messages to parents.' });
     }
 
@@ -603,6 +616,28 @@ module.exports = async (req, res) => {
       }
       const rows = Object.values(byChild).sort((a, b) => b.total - a.total);
       return res.status(200).json({ ok: true, month: month, rows: rows });
+    }
+
+    // ══ Nov 2026: Seen / Not seen — messages sent on one day, and whether the parent saw each ══
+    if (action === 'seen_list') {
+      const day = validDate(body.date || '') ? body.date : istToday();
+      const next = new Date(new Date(day + 'T00:00:00Z').getTime() + 86400000).toISOString().slice(0, 10);
+      const r = await sb('GET', 'defaulter_entries?school_id=eq.' + enc(schoolId)
+        + '&status=eq.sent&sent_at=gte.' + enc(day + 'T00:00:00+05:30') + '&sent_at=lt.' + enc(next + 'T00:00:00+05:30')
+        + '&select=id,student_id,student_name,class,section,kind,subject,work_date,sent_at,seen_at'
+        + '&order=class.asc,student_name.asc&limit=2000');
+      if (!r.ok) return res.status(500).json({ ok: false, error: 'Could not load the list. Has step-parent-seen.sql been run? ' + r.raw });
+      const rows = r.data || [];
+      // Parents' phone numbers, so the office can call those who have not seen it
+      const ids = [...new Set(rows.map(x => String(x.student_id)).filter(Boolean))];
+      const phone = {};
+      for (let i = 0; i < ids.length; i += 150) {
+        const s = await sb('GET', 'students?school_id=eq.' + enc(schoolId)
+          + '&id=in.(' + ids.slice(i, i + 150).map(enc).join(',') + ')&select=id,mobile');
+        if (s.ok) (s.data || []).forEach(x => { phone[String(x.id)] = x.mobile || ''; });
+      }
+      rows.forEach(x => { x.mobile = phone[String(x.student_id)] || ''; });
+      return res.status(200).json({ ok: true, date: day, rows: rows });
     }
 
     return res.status(400).json({ ok: false, error: 'Unknown action.' });

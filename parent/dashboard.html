@@ -2406,6 +2406,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (e) { /* the rest of the dashboard keeps working */ }
 });
 </script>
+<script>
+// ══ Nov 2026: note that the parent opened the app (the office sees Seen / Not seen) ══
+// Every child added on this phone is counted, since the family uses one app.
+document.addEventListener('DOMContentLoaded', () => {
+  const toks = [sessionStorage.getItem('parent_token') || ''];
+  try { (typeof psChildren === 'function' ? psChildren() : []).forEach(c => { if (c && c.token) toks.push(c.token); }); } catch (e) {}
+  [...new Set(toks.filter(Boolean))].forEach(t => {
+    fetch('/api/app-use', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: t, action: 'opened' })
+    }).catch(() => { /* the app keeps working */ });
+  });
+});
+</script>
 <script src="/parent/install-help.js"></script>
 </body>
 </html>

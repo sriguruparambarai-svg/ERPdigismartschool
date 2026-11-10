@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parent App Use — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.u-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:12px}
+.u-label{font-size:13px;font-weight:700;color:var(--maroon)}
+.u-meta{font-size:11.5px;color:#9B928A;margin-top:3px;line-height:1.5}
+.u-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.u-stat{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:12px;cursor:pointer}
+.u-stat.on{border-color:var(--maroon);background:#F7EDE3}
+.u-stat b{display:block;font-size:22px;color:var(--maroon)}
+.u-stat span{font-size:12px;color:#5C534B}
+.u-chip{display:inline-block;font-size:11px;padding:2px 9px;border-radius:10px;font-weight:600}
+.u-chip.g{background:#E6F2E8;color:#2D7A3A}
+.u-chip.a{background:#FBF1DC;color:#8A6410}
+.u-chip.r{background:#FBE9E9;color:#A32D2D}
+table.u-t{width:100%;border-collapse:collapse;font-size:13px}
+table.u-t th,table.u-t td{padding:8px;border-bottom:1px solid #F0EDE8;text-align:left}
+table.u-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Parent App Use</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Parents → Parent App Use</div>
+      </div>
+      <div class="topbar-right">
+        <div style="font-size:12px;color:#9B928A" id="today-date"></div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="u-card">
+        <div class="u-label">👀 Which parents open the app?</div>
+        <div class="u-meta">The last time each child's parent opened the parent app. Parents who have not opened it for a week may be missing homework, fee and absent messages — call them and help them log in.
+          Counting starts from the day this page was switched on.</div>
+      </div>
+
+      <div class="u-stats" id="u-stats"></div>
+
+      <div class="u-card">
+        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+          <div><label class="form-label">Class</label>
+            <select id="u-class" class="form-control" onchange="render()"><option value="">All classes</option></select></div>
+          <div><label class="form-label">Search</label>
+            <input id="u-search" class="form-control" placeholder="Student name" oninput="render()"></div>
+          <button class="btn btn-secondary btn-sm" onclick="load()" style="margin-bottom:2px">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div id="u-list"><div class="u-meta">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+let rows = [];
+let show = 'all';   // all | today | week | late | never
+
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Whole days since the last opening (India time)
+function daysAgo(iso) {
+  if (!iso) return null;
+  const ist = t => Math.floor((t + 5.5 * 3600 * 1000) / 86400000);
+  return ist(Date.now()) - ist(new Date(iso).getTime());
+}
+
+function group(r) {
+  const d = daysAgo(r.last_at);
+  if (d === null) return 'never';
+  if (d === 0) return 'today';
+  if (d <= 7) return 'week';
+  return 'late';
+}
+
+function label(r) {
+  const d = daysAgo(r.last_at);
+  if (d === null) return '<span class="u-chip r">Never opened</span>';
+  const time = new Date(r.last_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+  if (d === 0) return '<span class="u-chip g">Today, ' + esc(time) + '</span>';
+  if (d === 1) return '<span class="u-chip g">Yesterday</span>';
+  if (d <= 7) return '<span class="u-chip a">' + d + ' days ago</span>';
+  return '<span class="u-chip r">' + d + ' days ago</span>';
+}
+
+async function load() {
+  const box = document.getElementById('u-list');
+  box.innerHTML = '<div class="u-meta">Loading…</div>';
+  try {
+    const r = await fetch('/api/app-use', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', token: token() })
+    });
+    let out;
+    try { out = await r.json(); } catch (e) { throw new Error('The server sent back something unreadable (status ' + r.status + ').'); }
+    if (!out.ok) throw new Error(out.error || 'Something went wrong.');
+    rows = out.rows || [];
+    render();
+  } catch (e) {
+    box.innerHTML = '<div class="u-card" style="color:#A32D2D;font-size:13px">Could not load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function pick(g) { show = (show === g ? 'all' : g); render(); }
+
+function render() {
+  const cls = document.getElementById('u-class').value;
+  const q = document.getElementById('u-search').value.trim().toLowerCase();
+  const inClass = rows.filter(r => !cls || r.class === cls);
+
+  const n = { today: 0, week: 0, late: 0, never: 0 };
+  inClass.forEach(r => n[group(r)]++);
+  const stat = (g, num, text) => '<div class="u-stat' + (show === g ? ' on' : '') + '" onclick="pick(\'' + g + '\')"><b>' + num + '</b><span>' + text + '</span></div>';
+  document.getElementById('u-stats').innerHTML =
+      stat('today', n.today, 'Opened today')
+    + stat('week', n.week, 'Opened this week')
+    + stat('late', n.late, 'Not opened for over a week')
+    + stat('never', n.never, 'Never opened');
+
+  const list = inClass
+    .filter(r => show === 'all' || group(r) === show)
+    .filter(r => !q || String(r.name || '').toLowerCase().indexOf(q) !== -1)
+    .sort((a, b) => {
+      // Never opened first, then the longest gap, so the office calls those first
+      const da = daysAgo(a.last_at), db = daysAgo(b.last_at);
+      return (db === null ? 1e9 : db) - (da === null ? 1e9 : da) || String(a.name).localeCompare(String(b.name));
+    });
+
+  const box = document.getElementById('u-list');
+  if (list.length === 0) { box.innerHTML = '<div class="u-card u-meta">No children in this list.</div>'; return; }
+  box.innerHTML = '<div class="u-card"><div class="u-meta" style="margin:0 0 6px">' + list.length + ' child(ren)' + (show !== 'all' ? ' · tap the box again to show all' : '') + '</div>'
+    + '<div class="table-wrap"><table class="u-t"><tr><th>Student</th><th>Class</th><th>Last opened</th><th>Phone</th></tr>'
+    + list.map(r => '<tr><td><b>' + esc(r.name) + '</b></td><td>' + esc(r.class) + (r.section ? ' ' + esc(r.section) : '') + '</td>'
+      + '<td>' + label(r) + '</td>'
+      + '<td>' + (r.mobile ? '<a href="tel:' + esc(String(r.mobile).replace(/[^0-9+]/g, '')) + '" style="color:var(--maroon);font-weight:600;text-decoration:none">📞 ' + esc(r.mobile) + '</a>' : '<span class="u-meta">—</span>') + '</td></tr>').join('')
+    + '</table></div></div>';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderSidebar('communication');
+  const d = document.getElementById('today-date');
+  if (d) d.textContent = new Date().toDateString();
+  document.getElementById('u-class').innerHTML += ALL_CLASSES.map(c => '<option>' + esc(c) + '</option>').join('');
+  load();
+});
+</script>
+</body>
+</html>

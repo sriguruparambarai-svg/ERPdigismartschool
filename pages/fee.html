@@ -3427,15 +3427,39 @@ async function loadReminderLog() {
   (data || []).forEach(function (r) {
     if (r.student_id && !reminderLog[r.student_id]) reminderLog[r.student_id] = r.sent_at;
   });
+  await loadAppSeen();
+}
+
+// Nov 2026: WhatsApp does not tell us who read the reminder, so we show
+// whether the parent has opened the parent app since it was sent.
+let appSeen = {};   // student_id -> last time the parent opened the app
+async function loadAppSeen() {
+  appSeen = {};
+  const ids = Object.keys(reminderLog);
+  if (ids.length === 0) return;
+  try {
+    const r = await fetch('/api/app-use', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'last_seen', token: sessionStorage.getItem('digismart_session_token') || '', ids: ids })
+    });
+    const out = await r.json();
+    if (out && out.ok) appSeen = out.seen || {};
+    else console.warn('Parent app use not loaded:', out && out.error);
+  } catch (e) { console.warn('Parent app use not loaded:', e.message); }
 }
 
 function reminderAgeLabel(studentId) {
   const last = reminderLog[studentId];
   if (!last) return '';
   const days = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
-  if (days <= 0) return 'sent today';
-  if (days === 1) return 'sent yesterday';
-  return 'sent ' + days + 'd ago';
+  if (days <= 0) return 'sent today' + appSeenNote(studentId, last);
+  if (days === 1) return 'sent yesterday' + appSeenNote(studentId, last);
+  return 'sent ' + days + 'd ago' + appSeenNote(studentId, last);
+}
+
+function appSeenNote(studentId, sentAt) {
+  const opened = appSeen[studentId];
+  return (opened && new Date(opened) > new Date(sentAt)) ? ' · ✓ opened app' : ' · ✗ app not opened';
 }
 
 function refreshReminderLabel(studentId) {

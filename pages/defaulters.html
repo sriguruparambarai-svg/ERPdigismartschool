@@ -56,6 +56,7 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
       <div class="d-tabs">
         <div class="d-tab on" data-tab="mark" onclick="showTab('mark')">✏️ Mark defaulters</div>
         <div class="d-tab office hidden" data-tab="send" onclick="showTab('send')">📤 Send to parents <span id="pend-count"></span></div>
+        <div class="d-tab office hidden" data-tab="seen" onclick="showTab('seen')">👀 Seen by parents</div>
         <div class="d-tab office hidden" data-tab="repeat" onclick="showTab('repeat')">🔁 Repeat defaulters</div>
         <div class="d-tab admin-only hidden" data-tab="wording" onclick="showTab('wording')">📝 Message wording</div>
       </div>
@@ -116,6 +117,22 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
           </div>
         </div>
         <div id="pend-list"><div class="d-meta">Loading…</div></div>
+      </div>
+
+      <!-- ═════ SEEN BY PARENTS (office, Nov 2026) ═════ -->
+      <div id="tab-seen" class="hidden">
+        <div class="d-card">
+          <div class="d-label">Did the parent see it?</div>
+          <div class="d-meta">Messages sent on the chosen day. <b>Seen</b> = the parent opened the app and the message was on their screen. <b>Not seen</b> = not opened yet — you may call them.</div>
+          <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-top:10px">
+            <div><label class="form-label">Sent on</label>
+              <input id="s-date" type="date" class="form-control" onchange="loadSeen()"></div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;padding-bottom:8px;cursor:pointer">
+              <input type="checkbox" id="s-only" onchange="renderSeen()" style="width:18px;height:18px;accent-color:#6B1A1A"> Not seen only</label>
+          </div>
+          <div id="s-sum" style="margin-top:12px;font-size:15px;font-weight:700;color:var(--maroon)"></div>
+        </div>
+        <div id="seen-list"><div class="d-meta">Loading…</div></div>
       </div>
 
       <!-- ═════ WORDING (principal / admin, Nov 2026) ═════ -->
@@ -188,7 +205,8 @@ function istDate(offsetDays) {
 
 function showTab(t) {
   document.querySelectorAll('.d-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
-  ['mark', 'send', 'repeat', 'wording'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  ['mark', 'send', 'seen', 'repeat', 'wording'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  if (t === 'seen') loadSeen();
   if (t === 'wording') loadWording();
   if (t === 'send') loadPending();
   if (t === 'repeat') loadRepeat();
@@ -457,6 +475,64 @@ async function sendAll() {
   }
 }
 
+// ═════ SEEN BY PARENTS (Nov 2026) ═════
+let seenKids = [];
+
+function niceTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', '
+    + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+async function loadSeen() {
+  const box = document.getElementById('seen-list');
+  box.innerHTML = '<div class="d-meta">Loading…</div>';
+  document.getElementById('s-sum').textContent = '';
+  try {
+    const res = await call('seen_list', { date: document.getElementById('s-date').value });
+    // One line per child (a child may have homework and discipline on the same day)
+    const byKid = {};
+    (res.rows || []).forEach(r => {
+      const k = r.student_id;
+      if (!byKid[k]) byKid[k] = { name: r.student_name, cls: r.class + (r.section ? ' ' + r.section : ''), mobile: r.mobile, what: [], seen: true, seenAt: null };
+      const kid = byKid[k];
+      kid.what.push((KIND_NAMES[r.kind] || r.kind) + (r.subject ? ' – ' + r.subject : ''));
+      if (!r.seen_at) kid.seen = false;
+      else if (!kid.seenAt || r.seen_at < kid.seenAt) kid.seenAt = r.seen_at;
+    });
+    seenKids = Object.values(byKid);
+    renderSeen();
+  } catch (e) {
+    box.innerHTML = '<div class="d-card" style="color:#A32D2D;font-size:13px">Could not load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderSeen() {
+  const box = document.getElementById('seen-list');
+  const sum = document.getElementById('s-sum');
+  if (seenKids.length === 0) {
+    sum.textContent = '';
+    box.innerHTML = '<div class="d-card d-meta">No messages were sent on this day.</div>';
+    return;
+  }
+  const seenN = seenKids.filter(k => k.seen).length;
+  sum.innerHTML = 'Seen by ' + seenN + ' of ' + seenKids.length + ' parents'
+    + (seenN < seenKids.length ? ' <span style="color:#A32D2D;font-weight:600;font-size:13px">· ' + (seenKids.length - seenN) + ' not seen</span>' : ' ✅');
+  const only = document.getElementById('s-only').checked;
+  const list = seenKids.filter(k => !only || !k.seen)
+    .sort((a, b) => (a.seen - b.seen) || a.cls.localeCompare(b.cls) || String(a.name).localeCompare(String(b.name)));
+  if (list.length === 0) { box.innerHTML = '<div class="d-card d-meta">Every parent has seen it. 🎉</div>'; return; }
+  box.innerHTML = '<div class="d-card"><div class="table-wrap"><table class="d-t"><tr><th>Student</th><th>Class</th><th>Message</th><th>Seen?</th><th>Phone</th></tr>'
+    + list.map(k => '<tr><td><b>' + esc(k.name) + '</b></td><td>' + esc(k.cls) + '</td>'
+      + '<td style="font-size:12px;color:#5C534B">' + k.what.map(esc).join('<br>') + '</td>'
+      + '<td>' + (k.seen
+          ? '<span class="d-chip sent">✓ Seen</span><div class="d-meta">' + esc(niceTime(k.seenAt)) + '</div>'
+          : '<span class="d-chip" style="background:#FBE9E9;color:#A32D2D">Not seen</span>') + '</td>'
+      + '<td>' + (k.mobile ? '<a href="tel:' + esc(String(k.mobile).replace(/[^0-9+]/g, '')) + '" style="color:var(--maroon);font-weight:600;text-decoration:none">📞 ' + esc(k.mobile) + '</a>' : '<span class="d-meta">—</span>') + '</td></tr>').join('')
+    + '</table></div></div>';
+}
+
 async function loadRepeat() {
   const box = document.getElementById('rep-list');
   box.innerHTML = 'Loading…';
@@ -484,6 +560,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('m-date').value = istDate(-1);   // yesterday by default
   document.getElementById('m-date').max = istDate(0);
   document.getElementById('r-month').value = istDate(0).slice(0, 7);
+  document.getElementById('s-date').value = istDate(0);
+  document.getElementById('s-date').max = istDate(0);
 
   if (IS_ADMIN) document.querySelectorAll('.d-tab.admin-only').forEach(t => t.classList.remove('hidden'));
   if (IS_OFFICE) {
