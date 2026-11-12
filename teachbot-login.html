@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Opening School Office — DigiSmart ERP</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Nunito,system-ui,sans-serif;
+       background:linear-gradient(135deg,#4A0A12,#6B0F1A);color:#4A0A12;padding:16px;box-sizing:border-box}
+  .box{background:#FFF8EC;border:3px solid #C9A84C;border-radius:16px;max-width:420px;width:100%;padding:28px;text-align:center}
+  h1{font-size:1.25rem;margin:10px 0 6px;color:#6B0F1A}
+  p{margin:0 0 16px;line-height:1.5}
+  .spin{width:34px;height:34px;border:4px solid #EAD9BC;border-top-color:#6B0F1A;border-radius:50%;margin:0 auto;animation:s 1s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  a.btn{display:inline-block;padding:11px 20px;border-radius:10px;font-weight:800;text-decoration:none;background:#C9A84C;color:#3A0E0E;margin:4px}
+  a.btn.alt{background:transparent;border:1.5px solid #C9A84C;color:#6B0F1A}
+</style>
+</head>
+<body>
+<div class="box" id="box" role="status" aria-live="polite">
+  <div class="spin" aria-hidden="true"></div>
+  <h1>Opening School Office&hellip;</h1>
+  <p>Signing you in from TeachBot.</p>
+</div>
+<script>
+// One login from TeachBot (Nov 2026). The pass arrives after "#" so it never reaches any server log,
+// is removed from the address bar at once, and is sent to api/teachbot-login.js.
+(function () {
+  var m = /[#&]pass=([^&]+)/.exec(location.hash || '');
+  try { history.replaceState(null, '', location.pathname); } catch (e) {}
+  function fail(msg) {
+    var b = document.getElementById('box');
+    b.innerHTML = '<div style="font-size:2.2rem" aria-hidden="true">&#9888;&#65039;</div><h1>Could not open School Office</h1><p></p>' +
+      '<a class="btn" href="https://www.digismartschool.com/dashboard.html">Back to TeachBot</a><a class="btn alt" href="/index.html">ERP login</a>';
+    b.querySelector('p').textContent = msg;
+  }
+  if (!m) { fail('This link is not complete. Please press School Office (ERP) in TeachBot again.'); return; }
+  fetch('/api/teachbot-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pass: decodeURIComponent(m[1]) }) })
+    .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'The server did not answer properly.' }; }); })
+    .then(function (d) {
+      if (!d || !d.ok) { fail((d && d.error) || 'Could not sign in.'); return; }
+      var s = d.school;
+      // exactly what the owner login on index.html saves
+      sessionStorage.setItem('digismart_session_token', d.session_token);
+      sessionStorage.setItem('digismart_school_id', s.school_code || s.school_id);
+      sessionStorage.setItem('digismart_school_code', s.school_code);
+      sessionStorage.setItem('school_name', s.name);
+      sessionStorage.setItem('school_email', s.email || '');
+      sessionStorage.setItem('digismart_role', 'owner');
+      sessionStorage.removeItem('digismart_staff_name');
+      sessionStorage.removeItem('digismart_modules');
+      location.replace('pages/admission.html');
+    })
+    .catch(function () { fail('No internet, or ERP did not answer. Please try again.'); });
+})();
+</script>
+</body>
+</html>
