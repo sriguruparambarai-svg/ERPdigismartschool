@@ -9,6 +9,10 @@
 // POST { token, req: { table, action, select, filters, order, values, single, limit } }
 
 const crypto = require('crypto');
+const { feeYear } = require('./_fees');
+// Nov 2026 fee years:
+//   req.thisYear = true on a fee_payments select → only this academic year's payments (dues)
+//   every new fee_payments row is stamped with the school's current academic year
 
 const SUPABASE_URL = 'https://nkfxrbumhjztmdyepygt.supabase.co';
 
@@ -19,7 +23,8 @@ const ALLOWED_TABLES = [
   'fee_structure',
   'fee_payments',
   'student_fee_overrides',
-  'fee_reminders'
+  'fee_reminders',
+  'fee_arrears'          // Nov 2026: read only here — made by api/promotion.js
 ];
 const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete'];
 const ALLOWED_FILTER_OPS = ['eq', 'in', 'gte', 'lte'];
@@ -101,6 +106,10 @@ module.exports = async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Update/delete needs a filter.' });
   }
 
+  if (q.table === 'fee_arrears' && q.action !== 'select') {
+    return res.status(403).json({ ok: false, error: 'The previous year balance is set by the year-end promotion.' });
+  }
+
   // ── Extra rules for Fee Collection Only staff ──
   if (hasCollectOnly) {
     // May not change fee settings, heads or structure
@@ -128,6 +137,31 @@ module.exports = async (req, res) => {
   });
   params.push('school_id=eq.' + encodeURIComponent(schoolId));
 
+  // This academic year's payments only (needs step-promotion.sql; falls back to all payments)
+  let yearFilter = null;
+  async function schoolYear() {
+    const key = getServiceKey();
+    try {
+      const r = await fetch(SUPABASE_URL + '/rest/v1/fee_settings?school_id=eq.' + encodeURIComponent(schoolId) + '&select=*&limit=1',
+        { headers: { apikey: key, Authorization: 'Bearer ' + key } });
+      const rows = await r.json();
+      const row = Array.isArray(rows) ? rows[0] : null;
+      const fy = feeYear(row);
+      // Fix the year once it is first used, so it changes only at promotion (not by itself on 1 June)
+      if (row && !row.current_year && 'current_year' in row) {
+        fetch(SUPABASE_URL + '/rest/v1/fee_settings?school_id=eq.' + encodeURIComponent(schoolId),
+          { method: 'PATCH', headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ current_year: fy }) }).catch(() => {});
+      }
+      return fy;
+    } catch (e) { return feeYear(null); }
+  }
+  if (q.table === 'fee_payments' && q.action === 'select' && q.thisYear && !q.orFilter) {
+    const fy = await schoolYear();
+    yearFilter = 'or=(academic_year.is.null,academic_year.eq.' + encodeURIComponent(fy) + ')';
+    params.push(yearFilter);
+  }
+
   if (q.orFilter) {
     // Search filter (e.g. name/receipt search) — strip anything that could
     // change the query structure, keep letters (any language), digits, . , % * - _
@@ -154,6 +188,10 @@ module.exports = async (req, res) => {
   if (q.action === 'insert') {
     const rows = Array.isArray(q.values) ? q.values : [q.values];
     payload = rows.map(r => Object.assign({}, r, { school_id: schoolId }));
+    if (q.table === 'fee_payments') {
+      const fy = await schoolYear();
+      payload.forEach(r => { if (!r.academic_year) r.academic_year = fy; });
+    }
   } else if (q.action === 'update') {
     payload = Object.assign({}, q.values);
     delete payload.school_id; // school can never be changed
@@ -174,8 +212,19 @@ module.exports = async (req, res) => {
     };
     if (payload) opts.body = JSON.stringify(payload);
 
-    const r = await fetch(url, opts);
-    const text = await r.text();
+    let r = await fetch(url, opts);
+    let text = await r.text();
+    // Before step-promotion.sql the fee-year column is missing: do it the old way
+    if (!r.ok && /academic_year/i.test(text)) {
+      let url2 = url;
+      if (yearFilter) url2 = url.replace('&' + yearFilter, '');
+      if (payload && q.table === 'fee_payments' && q.action === 'insert') {
+        payload.forEach(x => { delete x.academic_year; });
+        opts.body = JSON.stringify(payload);
+      }
+      r = await fetch(url2, opts);
+      text = await r.text();
+    }
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
 

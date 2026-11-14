@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Year-end Promotion — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.p-card{background:var(--white);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px}
+.p-head{font-size:15px;font-weight:700;color:var(--maroon)}
+.p-meta{font-size:12.5px;color:#7A6F66;margin-top:4px;line-height:1.6}
+.p-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.p-stat{background:#FBF6EE;border:1px solid var(--border);border-radius:12px;padding:12px}
+.p-stat b{display:block;font-size:20px;color:var(--maroon)}
+.p-stat span{font-size:12px;color:#5C534B}
+.cls{border:1px solid var(--border);border-radius:12px;margin-bottom:10px;background:#fff}
+.cls summary{list-style:none;cursor:pointer;padding:12px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cls summary::-webkit-details-marker{display:none}
+.cls .arrow{font-weight:700;color:var(--maroon);flex:1}
+.pill{font-size:11.5px;font-weight:700;border-radius:20px;padding:2px 10px;white-space:nowrap}
+.pill.g{background:#E6F2E8;color:#2D7A3A}.pill.a{background:#FBF1DC;color:#8A6410}.pill.r{background:#FBE9E9;color:#A32D2D}.pill.b{background:#EEE8F7;color:#5B3E8A}
+.kids{padding:0 14px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px}
+.kid{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 8px;border-radius:8px;background:#FBF8F3}
+.kid.rep{background:#FBF1DC}
+.kid small{color:#9B928A}
+.warn{background:#FFF4F2;border:1.5px solid #E8B4AC;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.6}
+.ok{background:#F1FAF3;border:1.5px solid #BFE3C8;border-radius:12px;padding:14px;font-size:13.5px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Year-end Promotion</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Students → Year-end Promotion</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div id="p-body"><div class="p-meta">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+// Year-end promotion (Nov 2026) — api/promotion.js does the work on the server.
+let P = null;              // preview from the server
+const repeat = new Set();  // children who repeat their class
+function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function inr(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+async function call(action, extra) {
+  try {
+    const r = await fetch('/api/promotion', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: token(), action }, extra || {})) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'No connection.' }; }
+}
+
+async function load() {
+  const box = document.getElementById('p-body');
+  if (typeof USER_ROLE !== 'undefined' && USER_ROLE === 'staff') {
+    box.innerHTML = '<div class="warn">Only the owner login can promote the school.</div>'; return;
+  }
+  box.innerHTML = '<div class="p-meta">Working out every class… (a few seconds)</div>';
+  P = await call('preview');
+  if (!P || !P.ok) { box.innerHTML = '<div class="warn">' + esc((P && P.error) || 'Could not load.') + (P && /promotions|fee_arrears|relation/i.test(P.error || '') ? '<br>Please run step-promotion.sql in Supabase first.' : '') + '</div>'; return; }
+  render();
+}
+
+function render() {
+  const box = document.getElementById('p-body');
+  if (P.done) {
+    const c = P.done.counts || {};
+    box.innerHTML = '<div class="ok"><b>✅ The school was promoted from ' + esc(P.from_year) + ' to ' + esc(P.done.to_year) + '</b> on ' +
+      esc(new Date(P.done.done_at).toLocaleString('en-IN')) + '.<br>' + (c.promoted || 0) + ' moved up · ' + (c.repeated || 0) + ' repeating · ' +
+      (c.passed_out || 0) + ' passed out' + (c.carried ? ' · ' + c.carried + ' with previous year balance (' + inr(c.carried_amount) + ')' : '') + '</div>';
+    return;
+  }
+  const lastSel = document.getElementById('p-last') ? document.getElementById('p-last').value : P.last_class;
+  const total = P.classes.reduce((a, c) => a + c.students.length, 0);
+  let html = '<div class="p-card"><div class="p-head">🎓 Move the whole school from ' + esc(P.from_year) + ' to ' + esc(P.to_year) + '</div>' +
+    '<div class="p-meta">Every child moves to the next class. Untick a child who must <b>repeat</b> the class. Children in the last class are marked <b>Passed out</b> (their record stays). ' +
+    'Unpaid fees of ' + esc(P.from_year) + ' are carried into ' + esc(P.to_year) + ' as <b>Previous Year Balance</b>, and from then on fees count only ' + esc(P.to_year) + ' payments.</div>' +
+    '<div class="p-stats"><div class="p-stat"><b>' + total + '</b><span>Children</span></div>' +
+    '<div class="p-stat"><b>' + repeat.size + '</b><span>Repeating</span></div>' +
+    (P.carry ? '<div class="p-stat"><b>' + inr(P.carry.amount) + '</b><span>Unpaid fees carried forward (' + P.carry.students + ' children)</span></div>' : '') + '</div>' +
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><label class="form-label" style="margin:0">Last class in this school</label>' +
+    '<select id="p-last" class="form-control" style="max-width:180px" onchange="render()">' +
+    P.classes.filter(c => c.known).map(c => '<option' + (c.class === lastSel ? ' selected' : '') + '>' + esc(c.class) + '</option>').join('') + '</select>' +
+    '<span class="p-meta" style="margin:0">Children here are marked Passed out.</span></div></div>';
+
+  html += P.classes.map(c => {
+    const isLast = c.class === lastSel;
+    const reps = c.students.filter(st => repeat.has(st.id)).length;
+    const to = isLast ? '<span class="pill b">🎓 Passed out</span>' : c.next ? '→ <b>' + esc(c.next) + '</b>' : '<span class="pill r">Class name not recognised — stays in ' + esc(c.class) + '</span>';
+    return '<details class="cls"><summary><span class="arrow">' + esc(c.class) + ' ' + to + '</span>' +
+      '<span class="pill g">' + (c.students.length - reps) + ' ' + (isLast ? 'leave' : 'move') + '</span>' + (reps ? '<span class="pill a">' + reps + ' repeat</span>' : '') +
+      '<span class="p-meta" style="margin:0">tap to see children ▾</span></summary><div class="kids">' +
+      c.students.map(st => '<label class="kid' + (repeat.has(st.id) ? ' rep' : '') + '"><input type="checkbox" ' + (repeat.has(st.id) ? '' : 'checked') +
+        ' onchange="toggleKid(\'' + esc(st.id) + '\', this.checked)"> <span>' + esc(st.name) + ' <small>' + esc([st.section, st.adm].filter(Boolean).join(' · ')) + '</small>' +
+        (repeat.has(st.id) ? ' <span class="pill a">repeats</span>' : '') + '</span></label>').join('') + '</div></details>';
+  }).join('');
+
+  html += '<div class="p-card"><div class="warn" style="margin-bottom:12px">Please check before pressing: this changes every child\'s class. ' +
+    'It can be undone <b>only today</b>, and only before any ' + esc(P.to_year) + ' fee is collected.</div>' +
+    '<button class="btn btn-gold" onclick="runPromotion()">🎓 Promote the whole school to ' + esc(P.to_year) + '</button></div>';
+  box.innerHTML = html;
+}
+function toggleKid(id, promote) {
+  if (promote) repeat.delete(id); else repeat.add(id);
+  const open = Array.from(document.querySelectorAll('details.cls')).map(d => d.open);
+  render();
+  document.querySelectorAll('details.cls').forEach((d, i) => { d.open = !!open[i]; });
+}
+async function runPromotion() {
+  const last = document.getElementById('p-last').value;
+  if (!confirm('Promote the whole school from ' + P.from_year + ' to ' + P.to_year + '?\n\n' + repeat.size + ' child(ren) will repeat. ' + last + ' will be marked Passed out.')) return;
+  const box = document.getElementById('p-body');
+  box.innerHTML = '<div class="p-meta">Promoting… please keep this page open.</div>';
+  const out = await call('run', { from_year: P.from_year, last_class: last, repeat: Array.from(repeat) });
+  if (!out || !out.ok) { showToast((out && out.error) || 'Could not promote.', 'error'); load(); return; }
+  const c = out.counts || {};
+  box.innerHTML = '<div class="ok"><b>✅ Done — the school is now in ' + esc(out.to_year) + '.</b><br>' + (c.promoted || 0) + ' moved up · ' + (c.repeated || 0) + ' repeating · ' +
+    (c.passed_out || 0) + ' passed out' + (c.stayed ? ' · ' + c.stayed + ' stayed (class name not recognised)' : '') +
+    (c.carried ? '<br>' + c.carried + ' children have a Previous Year Balance (' + inr(c.carried_amount) + ') — it shows at the fee counter, in reminders and the parent app.' : '') +
+    '<br><br>Next: check the new year\'s fee amounts in Fee Management → Fee Structure.</div>' +
+    '<div style="margin-top:12px"><button class="btn btn-secondary btn-sm" onclick="undoPromotion()">↩ Undo (today only)</button></div>';
+}
+async function undoPromotion() {
+  if (!confirm('Undo today\'s promotion? Every child goes back to the old class and the previous year balances are removed.')) return;
+  const out = await call('undo');
+  if (!out || !out.ok) { showToast((out && out.error) || 'Could not undo.', 'error'); return; }
+  showToast('Promotion undone — the school is back in ' + out.back_to + '.', 'success');
+  repeat.clear(); load();
+}
+
+document.addEventListener('DOMContentLoaded', () => { renderSidebar('admission'); load(); });
+</script>
+</body>
+</html>

@@ -104,6 +104,11 @@ async function renderSidebar(activePage) {
     ]},
   ];
 
+  // Nov 2026: Year-end Promotion — owner login only (it moves every child to the next class)
+  if (typeof USER_ROLE === 'undefined' || USER_ROLE !== 'staff') {
+    nav.find(g => g.group === 'Students').items.push({ id: 'admission', icon: '🎓', label: 'Year-end Promotion', href: 'promotion.html' });
+  }
+
   // Feature-flagged: 5-Year Scheme only shows for schools with has_scheme = true
   try {
     const { data } = await supabase.from('schools').select('has_scheme').eq('school_id', SCHOOL_ID).single();

@@ -938,6 +938,7 @@ const secureFee = {
       gte(col, val) { req.filters.push({ op: 'gte', col: col, val: val }); return b; },
       lte(col, val) { req.filters.push({ op: 'lte', col: col, val: val }); return b; },
       or(expr) { req.orFilter = expr; return b; },
+      thisYear() { req.thisYear = true; return b; },   // Nov 2026: only this academic year's payments (dues)
       order(col, opts) { req.order.push({ col: col, asc: !opts || opts.ascending !== false }); return b; },
       limit(n) { req.limit = n; return b; },
       single() { req.single = true; return b; },
@@ -1328,6 +1329,28 @@ function getPeriods() {
 // A fixed id so late-fee rows are easy to find in reports.
 // It is not a real fee head and never appears in Fee Structure.
 const LATE_FEE_ID = '00000000-0000-4000-8000-0000000000fe';
+// Nov 2026: last year's unpaid fees carried forward at the year-end promotion (fee_arrears)
+const ARREARS_ID = '00000000-0000-4000-8000-0000000000fd';
+const ARREARS_NAME = 'Previous Year Balance';
+// One child's (or every child's) carried-forward balance: [{ from_year, period, amount, paid, balance }]
+async function loadArrears(studentId) {
+  try {
+    let q = secureFee.from('fee_arrears').select('student_id,from_year,amount');
+    if (studentId) q = q.eq('student_id', studentId);
+    const { data: rows } = await q;
+    if (!rows || !rows.length) return [];
+    let pq = secureFee.from('fee_payments').select('student_id,period,amount_paid,is_cancelled').eq('fee_head_id', ARREARS_ID);
+    if (studentId) pq = pq.eq('student_id', studentId);
+    const { data: pays } = await pq;
+    const paid = {};
+    live(pays || []).forEach(p => { const k = p.student_id + '_' + p.period; paid[k] = (paid[k] || 0) + (parseFloat(p.amount_paid) || 0); });
+    return rows.map(r => {
+      const period = 'Balance ' + r.from_year;
+      const amount = parseFloat(r.amount) || 0, pd = paid[r.student_id + '_' + period] || 0;
+      return { student_id: r.student_id, from_year: r.from_year, period, amount, paid: pd, balance: Math.max(0, Math.round((amount - pd) * 100) / 100) };
+    });
+  } catch (e) { return []; }   // table not there yet
+}
 const LATE_FEE_NAME = 'Late Fee';
 
 let lateFeeConfig = {
@@ -2381,8 +2404,9 @@ async function selectStudentForFee(studentId) {
   const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
 
   // Load all payments for this student
-  const { data: rawPayments1 } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+  const { data: rawPayments1 } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId).thisYear();
   const payments = live(rawPayments1);
+  const arrears1 = await loadArrears(studentId);
 
   const periods = getPeriods();
   const activeScheme = await getActiveScheme(studentId);
@@ -2421,8 +2445,9 @@ async function selectStudentForFee(studentId) {
   let totalFee = 0, totalPaid = 0;
   mainStructure.forEach(s => { if (!isFeeWaived(activeScheme, s.fee_head_id) && !isRteFree(student, s.fee_head_id)) totalFee += s.total_amount || 0; });
   totalFee += vanSection.due;
-  if (payments) payments.forEach(p => { totalPaid += p.amount_paid || 0; });
-  const balance = totalFee - totalPaid;
+  if (payments) payments.forEach(p => { if (p.fee_head_id !== ARREARS_ID) totalPaid += p.amount_paid || 0; });
+  const arrearsDue = arrears1.reduce((a, r) => a + r.balance, 0);
+  const balance = totalFee - totalPaid + arrearsDue;
   const pct = totalFee > 0 ? Math.round((totalPaid/totalFee)*100) : 0;
 
   currentActiveScheme = activeScheme;
@@ -2446,6 +2471,7 @@ async function selectStudentForFee(studentId) {
       <div class="summary-band">
         <div class="sband-item"><div class="sband-label">Total Fee</div><div class="sband-value">₹${totalFee.toLocaleString('en-IN')}</div></div>
         <div class="sband-item"><div class="sband-label">Total Paid</div><div class="sband-value" style="color:#2D7A3A">₹${totalPaid.toLocaleString('en-IN')}</div></div>
+        ${arrearsDue > 0 ? `<div class="sband-item"><div class="sband-label">Previous Year</div><div class="sband-value" style="color:#A32D2D">₹${arrearsDue.toLocaleString('en-IN')}</div></div>` : ''}
         <div class="sband-item"><div class="sband-label">Balance Due</div><div class="sband-value" style="color:${balance>0?'#A32D2D':'#2D7A3A'}">₹${balance.toLocaleString('en-IN')}</div></div>
         <div class="sband-item" style="flex:1">
           <div class="sband-label">Collection</div>
@@ -2504,6 +2530,7 @@ async function selectStudentForFee(studentId) {
       </table>
       </div>
       ${vanSection.html}
+      ${arrears1.filter(a => a.amount > 0).map(a => `<div class="alert ${a.balance > 0 ? 'alert-danger' : 'alert-success'}" style="margin-top:12px;font-size:13px">↩ <b>${ARREARS_NAME} ${a.from_year}</b> — ₹${a.amount.toLocaleString('en-IN')}${a.paid ? ' · paid ₹' + a.paid.toLocaleString('en-IN') : ''} · <b>${a.balance > 0 ? 'balance ₹' + a.balance.toLocaleString('en-IN') : '✓ cleared'}</b></div>`).join('')}
       ${payments && payments.length > 0 ? `
         <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
           <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Payment History</div>
@@ -2537,8 +2564,9 @@ async function openCollectModal(studentId) {
   if (!student) return;
 
   const { data: structure } = await secureFee.from('fee_structure').select('*').eq('school_id', SCHOOL_ID).eq('class', student.class);
-  const { data: rawPayments2 } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId);
+  const { data: rawPayments2 } = await secureFee.from('fee_payments').select('*').eq('student_id', studentId).thisYear();
   const payments = live(rawPayments2);
+  const arrears2 = await loadArrears(studentId);
 
   // Apply this student's custom fee amounts here too
   const { data: ovData2 } = await secureFee.from('student_fee_overrides').select('*').eq('student_id', studentId);
@@ -2562,6 +2590,21 @@ async function openCollectModal(studentId) {
   // Build checkboxes for each unpaid item
   let itemsHtml = '<div style="max-height:280px;overflow-y:auto">';
   itemsHtml += '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px">Select fee items to collect:</div>';
+
+  // Previous year balance first (carried forward at promotion)
+  arrears2.filter(a => a.balance > 0).forEach(a => {
+    const itemId = 'item-arrears-' + a.from_year.replace(/[^0-9]/g, '_');
+    currentCollectItems.push({ id: itemId, fee_head_id: ARREARS_ID, fee_head_name: ARREARS_NAME, period: a.period, amount: a.balance, original: a.amount, paid: a.paid });
+    itemsHtml += `
+      <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #E3B7B7;border-radius:8px;cursor:pointer;margin-bottom:6px;background:#FDF6F6">
+        <input type="checkbox" id="${itemId}" value="${a.balance}" checked onchange="toggleItemAmount('${itemId}')" style="width:16px;height:16px;cursor:pointer">
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px;color:#A32D2D">↩ ${ARREARS_NAME} · ${a.from_year}</div>
+          <div style="font-size:11px;color:var(--text-muted)">Balance: ₹${a.balance.toLocaleString('en-IN')} of ₹${a.amount.toLocaleString('en-IN')}</div>
+        </div>
+        <input type="number" id="${itemId}-amt" class="form-control" style="width:100px;text-align:right;font-weight:700;color:var(--maroon)" value="${a.balance}" max="${a.balance}" min="0" step="1" onclick="event.preventDefault();event.stopPropagation()" oninput="clampAndUpdate('${itemId}',${a.balance})">
+      </label>`;
+  });
 
   // Transport heads are drawn in their own van block below, never as an
   // ordinary class fee line — otherwise van money would be charged twice.
@@ -3214,8 +3257,10 @@ async function loadDefaulters() {
   if (!students || students.length===0) { document.getElementById('defaulters-list').innerHTML = '<div class="empty-state"><div class="icon">✓</div><p>No students found.</p></div>'; return; }
 
   // Get all payments
-  const { data: rawDef } = await secureFee.from('fee_payments').select('student_id,fee_head_id,period,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID);
+  const { data: rawDef } = await secureFee.from('fee_payments').select('student_id,fee_head_id,period,amount_paid,is_cancelled').eq('school_id',SCHOOL_ID).thisYear();
   const payments = live(rawDef);
+  const arrearsBy = {};
+  (await loadArrears(null)).forEach(a => { (arrearsBy[a.student_id] = arrearsBy[a.student_id] || []).push(a); });
   const paidMap = {};
   const lfPaid = {};   // student_id -> { period: amount already collected as fine }
   if (payments) payments.forEach(p => {
@@ -3325,6 +3370,11 @@ async function loadDefaulters() {
         });
       }
     }
+
+    // Previous year balance (all-heads view only)
+    if (headsAll && !feePeriods.length) (arrearsBy[student.id] || []).forEach(a => {
+      if (a.balance > 0) { totalDue += a.balance; pendingItems.unshift({ label: 'Previous year ' + a.from_year, amount: a.balance }); }
+    });
 
     // Fine owed on each overdue period (all-heads view only)
     let lateFee = 0;

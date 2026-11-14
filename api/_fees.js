@@ -7,6 +7,10 @@
 
 const LATE_FEE_ID = '00000000-0000-4000-8000-0000000000fe';
 const LATE_FEE_NAME = 'Late Fee';
+// Nov 2026: last year's unpaid fees carried into the new year (table fee_arrears, made at promotion)
+const ARREARS_ID = '00000000-0000-4000-8000-0000000000fd';
+const ARREARS_NAME = 'Previous Year Balance';
+function arrearsPeriod(fromYear) { return 'Balance ' + fromYear; }
 const VAN_ONETIME_PERIOD = 'One-Time';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -22,6 +26,29 @@ function money(n) { return Math.round((parseFloat(n) || 0) * 100) / 100; }
 function istToday() {
   const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
   return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+}
+
+// ── Fee years (Nov 2026) ──
+// The school's current academic year, e.g. '2026-27': set when the school promotes
+// (fee_settings.current_year); otherwise worked out from today (the year starts in June).
+function feeYear(settings) {
+  const cy = settings && settings.current_year;
+  if (/^\d{4}-\d{2}$/.test(String(cy || ''))) return String(cy);
+  const d = istToday();
+  const y = d.getUTCMonth() >= 5 ? d.getUTCFullYear() : d.getUTCFullYear() - 1;
+  return y + '-' + String((y + 1) % 100).padStart(2, '0');
+}
+function nextYear(fy) { const y = parseInt(String(fy).slice(0, 4), 10) + 1; return y + '-' + String((y + 1) % 100).padStart(2, '0'); }
+// Payments that count for this year's dues: this year's (or not yet stamped), never the
+// carried-forward balance (read separately, from any year). Falls back to all payments when
+// the fee-year column is not in the database yet (before step-promotion.sql).
+async function readYearPayments(sb, basePath, fy) {
+  const yearPart = '&or=(academic_year.is.null,academic_year.eq.' + encodeURIComponent(fy) + ')';
+  try { return await sb('GET', basePath + yearPart); }
+  catch (e) {
+    if (/academic_year/i.test(String(e && e.message || e))) return await sb('GET', basePath);
+    throw e;
+  }
 }
 
 // Reminder settings saved in fee_settings.auto_reminders (Nov 2026).
@@ -70,7 +97,7 @@ function makeContext(settings, heads) {
 // One child's dues, worked out from data already loaded.
 // structureRows: this class's fee_structure rows; overrides, payments: this child's rows;
 // scheme: active 5-Year Scheme row or null; van: student_transport row or null.
-function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van) {
+function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van, arrears, arrearsPayments) {
   const { collectionMode, termConfig, monthStart, lateCfg, vanMonths, periods, heads, headById } = ctx;
 
   let structure = (structureRows || []).map(s => Object.assign({}, s, { period_amounts: parseJson(s.period_amounts, null) }));
@@ -95,6 +122,7 @@ function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van) {
   const lateFeePaid = {};
   (payments || []).forEach(p => {
     const amt = parseFloat(p.amount_paid) || 0;
+    if (p.fee_head_id === ARREARS_ID) return;   // counted against the carried-forward balance below
     if (p.fee_head_id === LATE_FEE_ID) { lateFeePaid[p.period] = (lateFeePaid[p.period] || 0) + amt; return; }
     const key = p.fee_head_id + '_' + p.period;
     paidMap[key] = (paidMap[key] || 0) + amt;
@@ -242,6 +270,21 @@ function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van) {
     });
   }
 
+  // ── Previous year balance (carried forward at promotion) ──
+  if (Array.isArray(arrears) && arrears.length) {
+    const paidA = {};
+    (arrearsPayments || []).forEach(p => { if (p.fee_head_id === ARREARS_ID) paidA[p.period] = (paidA[p.period] || 0) + (parseFloat(p.amount_paid) || 0); });
+    arrears.forEach(a => {
+      const per = arrearsPeriod(a.from_year);
+      const bal = money((parseFloat(a.amount) || 0) - (paidA[per] || 0));
+      if (bal <= 0) return;
+      // due from the first day of the following year (June), so reminders treat it as overdue
+      const due = nextYear(a.from_year).slice(0, 4) + '-06-01';
+      items.unshift({ key: 'arrears|' + a.from_year, group: 'arrears', fee_head_id: ARREARS_ID, fee_head_name: ARREARS_NAME,
+        period: per, label: ARREARS_NAME + ' · ' + a.from_year, amount: bal, due });
+    });
+  }
+
   return { student: stu, items };
 }
 
@@ -262,8 +305,15 @@ async function computeDues(sb, schoolId, studentId) {
     overrides = await sb('GET', 'student_fee_overrides?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) + '&select=fee_head_id,total_amount,note') || [];
   } catch (e) { overrides = []; }
 
-  const payments = await sb('GET', 'fee_payments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
-    '&is_cancelled=not.is.true&select=fee_head_id,period,amount_paid') || [];
+  const fy = feeYear(settings);
+  const payments = await readYearPayments(sb, 'fee_payments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
+    '&is_cancelled=not.is.true&select=fee_head_id,period,amount_paid', fy) || [];
+  let arrears = [], arrearsPay = [];
+  try {
+    arrears = await sb('GET', 'fee_arrears?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) + '&select=from_year,amount&order=from_year.asc') || [];
+    if (arrears.length) arrearsPay = await sb('GET', 'fee_payments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
+      '&fee_head_id=eq.' + ARREARS_ID + '&is_cancelled=not.is.true&select=fee_head_id,period,amount_paid') || [];
+  } catch (e) { arrears = []; }   // table not there yet
 
   let scheme = null;
   try {
@@ -276,7 +326,7 @@ async function computeDues(sb, schoolId, studentId) {
     van = (await sb('GET', 'student_transport?student_id=eq.' + enc(studentId) + '&select=*&limit=1') || [])[0] || null;
   } catch (e) { van = null; }
 
-  return duesFrom(ctx, stu, structure, overrides, payments, scheme, van);
+  return duesFrom(ctx, stu, structure, overrides, payments, scheme, van, arrears, arrearsPay);
 }
 
 // Reads a whole table in pages of 1000 (the database hands back at most 1000 rows at a time)
@@ -303,7 +353,19 @@ async function computeSchoolDues(sb, schoolId) {
   const structure = await getAll(sb, 'fee_structure?school_id=eq.' + sid + '&select=*&order=id');
   let overrides = [];
   try { overrides = await getAll(sb, 'student_fee_overrides?school_id=eq.' + sid + '&select=student_id,fee_head_id,total_amount,note&order=student_id'); } catch (e) { overrides = []; }
-  const payments = await getAll(sb, 'fee_payments?school_id=eq.' + sid + '&is_cancelled=not.is.true&select=student_id,fee_head_id,period,amount_paid&order=id');
+  const fy = feeYear(settings);
+  let payments;
+  try { payments = await getAll(sb, 'fee_payments?school_id=eq.' + sid + '&is_cancelled=not.is.true&or=(academic_year.is.null,academic_year.eq.' + encodeURIComponent(fy) + ')&select=student_id,fee_head_id,period,amount_paid&order=id'); }
+  catch (e) {
+    if (!/academic_year/i.test(String(e && e.message || e))) throw e;
+    payments = await getAll(sb, 'fee_payments?school_id=eq.' + sid + '&is_cancelled=not.is.true&select=student_id,fee_head_id,period,amount_paid&order=id');
+  }
+  let arrearsRows = [], arrearsPay = [];
+  try {
+    arrearsRows = await getAll(sb, 'fee_arrears?school_id=eq.' + sid + '&select=student_id,from_year,amount&order=student_id');
+    if (arrearsRows.length) arrearsPay = await getAll(sb, 'fee_payments?school_id=eq.' + sid + '&fee_head_id=eq.' + ARREARS_ID +
+      '&is_cancelled=not.is.true&select=student_id,fee_head_id,period,amount_paid&order=id');
+  } catch (e) { arrearsRows = []; arrearsPay = []; }
   let schemes = [];
   try { schemes = await getAll(sb, 'scheme_enrollments?school_id=eq.' + sid + '&status=eq.active&select=student_id,free_van,free_uniform,free_books&order=student_id'); } catch (e) { schemes = []; }
   let vans = [];
@@ -315,13 +377,16 @@ async function computeSchoolDues(sb, schoolId) {
   const payBy = by(payments, 'student_id');
   const schBy = by(schemes, 'student_id');
   const vanBy = by(vans, 'student_id');
+  const arrBy = by(arrearsRows, 'student_id');
+  const arrPayBy = by(arrearsPay, 'student_id');
 
   const out = students.map(stu => {
     const id = String(stu.id);
     return duesFrom(ctx, stu, structByClass[String(stu.class)] || [], ovBy[id] || [], payBy[id] || [],
-      (schBy[id] || [])[0] || null, (vanBy[id] || [])[0] || null);
+      (schBy[id] || [])[0] || null, (vanBy[id] || [])[0] || null, arrBy[id] || [], arrPayBy[id] || []);
   });
-  return { ctx, settings, results: out };
+  return { ctx, settings, fee_year: fy, results: out };
 }
 
-module.exports = { computeDues, computeSchoolDues, duesFrom, makeContext, reminderConfig, istToday, MONTHS, LATE_FEE_ID, LATE_FEE_NAME, VAN_ONETIME_PERIOD };
+module.exports = { computeDues, computeSchoolDues, duesFrom, makeContext, reminderConfig, istToday, MONTHS, LATE_FEE_ID, LATE_FEE_NAME, VAN_ONETIME_PERIOD,
+  ARREARS_ID, ARREARS_NAME, arrearsPeriod, feeYear, nextYear, readYearPayments };

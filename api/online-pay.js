@@ -150,8 +150,13 @@ async function settleOrder(orderId) {
   const items = Array.isArray(op.items) ? op.items : [];
   const stu = (await sb('GET', 'students?id=eq.' + enc(op.student_id) + '&select=full_name,class,admission_no&limit=1') || [])[0] || {};
 
+  // Nov 2026: stamp the school's current academic year (fee years)
+  let fy = null;
   try {
-    await sb('POST', 'fee_payments', items.map(it => ({
+    const { feeYear } = require('./_fees');
+    fy = feeYear((await sb('GET', 'fee_settings?school_id=eq.' + enc(op.school_id) + '&select=*&limit=1') || [])[0] || null);
+  } catch (e) { fy = null; }
+  const feeRows = items.map(it => ({
       school_id: op.school_id,
       student_id: op.student_id,
       student_name: stu.full_name || '',
@@ -167,7 +172,15 @@ async function settleOrder(orderId) {
       reference_no: String(reference).slice(0, 60),
       remarks: 'Paid online by parent (Cashfree ' + orderId + ')',
       receipt_no: receiptNo
-    })), 'return=minimal');
+    }));
+  if (fy) feeRows.forEach(r => { r.academic_year = fy; });
+  try {
+    try { await sb('POST', 'fee_payments', feeRows, 'return=minimal'); }
+    catch (e1) {
+      if (!/academic_year/i.test(String(e1 && e1.message || e1))) throw e1;
+      feeRows.forEach(r => { delete r.academic_year; });   // before step-promotion.sql
+      await sb('POST', 'fee_payments', feeRows, 'return=minimal');
+    }
   } catch (e) {
     await sb('PATCH', 'online_payments?order_id=eq.' + enc(orderId), { status: 'paid_not_recorded', updated_at: new Date().toISOString() }, 'return=minimal');
     return { ok: false, error: 'Payment received but the receipt could not be saved. The school office will fix this — no need to pay again.' };

@@ -144,10 +144,25 @@ module.exports = async (req, res) => {
         structure = await sb('GET', 'fee_structure?school_id=eq.' + encodeURIComponent(schoolId) +
           '&class=eq.' + encodeURIComponent(cls) + '&select=*') || [];
       }
-      const payments = await sb('GET', 'fee_payments?student_id=eq.' + encodeURIComponent(studentId) +
+      // Nov 2026 fee years: dues count only this academic year's payments; the receipt list shows all
+      const feesLib = require('./_fees');
+      const feeSet = (await sb('GET', 'fee_settings?school_id=eq.' + encodeURIComponent(schoolId) + '&select=*&limit=1') || [])[0] || null;
+      const payBase = 'fee_payments?student_id=eq.' + encodeURIComponent(studentId) +
         '&school_id=eq.' + encodeURIComponent(schoolId) +
         '&is_cancelled=not.is.true' + // cancelled receipts never count as paid
-        '&select=receipt_no,amount_paid,payment_date,payment_mode,fee_head_id,period&order=payment_date.desc') || [];
+        '&select=receipt_no,amount_paid,payment_date,payment_mode,fee_head_id,period&order=payment_date.desc';
+      const payments = (await feesLib.readYearPayments(sb, payBase, feesLib.feeYear(feeSet)) || [])
+        .filter(p => p.fee_head_id !== feesLib.ARREARS_ID);
+      // Previous year balance carried forward at the year-end promotion
+      let arrearsRows = [], arrearsPaid = {};
+      try {
+        arrearsRows = await sb('GET', 'fee_arrears?student_id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&select=from_year,amount&order=from_year.asc') || [];
+        if (arrearsRows.length) (await sb('GET', 'fee_payments?student_id=eq.' + encodeURIComponent(studentId) +
+          '&school_id=eq.' + encodeURIComponent(schoolId) + '&fee_head_id=eq.' + feesLib.ARREARS_ID +
+          '&is_cancelled=not.is.true&select=period,amount_paid') || []).forEach(p => {
+          arrearsPaid[p.period] = (arrearsPaid[p.period] || 0) + (parseFloat(p.amount_paid) || 0); });
+      } catch (e) { arrearsRows = []; }
 
       // Fee head categories (used to match scheme waivers)
       const heads = await sb('GET', 'fee_heads?school_id=eq.' + encodeURIComponent(schoolId) +
@@ -231,8 +246,13 @@ module.exports = async (req, res) => {
         breakdown.push({ name: 'Other Payments', total: 0, paid: unmatchedPaid, balance: 0, waived: false });
       }
 
+      arrearsRows.forEach(a => {
+        const tot = parseFloat(a.amount) || 0, pd = arrearsPaid[feesLib.arrearsPeriod(a.from_year)] || 0;
+        if (tot > 0) breakdown.unshift({ name: 'Previous year balance (' + a.from_year + ')', total: tot, paid: pd, balance: Math.max(tot - pd, 0), waived: false });
+      });
       const totalFee = breakdown.reduce((s, r) => s + r.total, 0);
-      const totalPaid = payments.reduce((s, r) => s + (parseFloat(r.amount_paid) || 0), 0);
+      const totalPaid = payments.reduce((s, r) => s + (parseFloat(r.amount_paid) || 0), 0)
+        + arrearsRows.reduce((s, a) => s + (arrearsPaid[feesLib.arrearsPeriod(a.from_year)] || 0), 0);
       const schemeFree = scheme
         ? ['School Fees', scheme.free_van && 'Van', scheme.free_uniform && 'Uniform', scheme.free_books && 'Books'].filter(Boolean)
         : [];
