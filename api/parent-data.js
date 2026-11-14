@@ -405,6 +405,16 @@ module.exports = async (req, res) => {
       }
       let rows = await sb('GET', path);
       if (Array.isArray(rows)) rows = rows.filter(function (r) { return sectionOk(r.target_section, childSec); });
+      // Nov 2026: a holiday notice leaves the parent app one week after the last holiday
+      // (older notices without that date: one week after they were sent)
+      if (Array.isArray(rows) && body.kind === 'notices') {
+        const weekAgo = new Date(Date.now() + 5.5 * 3600 * 1000 - 7 * 864e5).toISOString().split('T')[0];
+        rows = rows.filter(function (r) {
+          if (r.type !== 'holiday') return true;
+          const end = r.event_date ? String(r.event_date).slice(0, 10) : String(r.created_at || '').slice(0, 10);
+          return !end || end >= weekAgo;
+        });
+      }
       let responses = [];
       if (body.kind === 'consent' && rows && rows.length) {
         const ids = rows.map(function (r) { return '"' + String(r.id).replace(/"/g, '') + '"'; }).join(',');

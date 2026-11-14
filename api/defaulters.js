@@ -349,6 +349,9 @@ module.exports = async (req, res) => {
         + '&status=eq.sent&work_date=gte.' + since
         + '&select=id,kind,subject,lesson,work_date,message,sent_at&order=sent_at.desc&limit=30');
       if (!r.ok) return res.status(500).json({ ok: false, error: 'Could not load messages.' });
+      // Nov 2026: "homework not done" messages leave the parent app 3 days after they were sent
+      const threeDays = Date.now() - 3 * 86400000;
+      r.data = (r.data || []).filter(x => x.kind !== 'homework' || new Date(x.sent_at || x.work_date).getTime() >= threeDays);
       // Nov 2026: the home screen shows the newest 5 — note when the parent first saw each one.
       // Only messages not seen before are touched, so the first time stays.
       const shown = (r.data || []).slice(0, 5).map(x => x.id).filter(Boolean);

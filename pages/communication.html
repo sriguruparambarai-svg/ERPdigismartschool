@@ -140,6 +140,13 @@
               <input type="text" id="c-title" class="form-control" placeholder="e.g. School closed tomorrow — Holiday" oninput="updateWAPreview()">
             </div>
 
+            <!-- Nov 2026: holidays leave the parent app by themselves one week after the last holiday -->
+            <div class="form-group hidden" id="c-holiday-row" style="margin-bottom:10px">
+              <label class="form-label">Last day of the holiday <span class="req">*</span></label>
+              <input type="date" id="c-holiday-till" class="form-control" style="max-width:200px">
+              <div style="font-size:11px;color:var(--text-muted);margin-top:3px">The message leaves the parent app by itself one week after this day.</div>
+            </div>
+
             <div class="form-group" style="margin-bottom:14px">
               <label class="form-label">Message <span class="req">*</span></label>
               <textarea id="c-message" class="form-control" rows="4" placeholder="Write the full message for parents..." oninput="updateWAPreview()"></textarea>
@@ -492,10 +499,13 @@ async function sendCommunication() {
 
   if (!type) { showComposeAlert('⚠️ Please select a communication type.'); return; }
   if (!title || !message) { showComposeAlert('⚠️ Please fill title and message.'); return; }
+  const holidayTill = type === 'holiday' ? document.getElementById('c-holiday-till').value : '';
+  if (type === 'holiday' && !holidayTill) { showComposeAlert('⚠️ Please choose the last day of the holiday.'); return; }
 
   const { data: newComm, error } = await supabase.from('communications').insert([{
     school_id: SCHOOL_ID, type, title, message,
     target_class: target, priority,
+    ...(holidayTill ? { event_date: holidayTill } : {}),
     sender_name: 'Admin',
     created_at: new Date().toISOString(),
   }]).select('id');
@@ -513,6 +523,8 @@ function clearCompose() {
   document.querySelectorAll('.type-chip').forEach(c => c.style.borderColor = 'var(--border)');
   document.getElementById('c-title').value = '';
   document.getElementById('c-message').value = '';
+  const hTill = document.getElementById('c-holiday-till'); if (hTill) hTill.value = '';
+  const hRow = document.getElementById('c-holiday-row'); if (hRow) hRow.classList.add('hidden');
   document.getElementById('c-target').value = 'all';
   document.getElementById('c-priority').value = 'normal';
   document.getElementById('wa-preview').textContent = 'Select type and fill in the details to see WhatsApp preview...';
@@ -527,6 +539,8 @@ function showComposeAlert(msg) {
 // ── WHATSAPP PREVIEW ──
 function updateWAPreview() {
   const type = document.querySelector('input[name="comm-type"]:checked')?.value || '';
+  const hr = document.getElementById('c-holiday-row');
+  if (hr) hr.classList.toggle('hidden', type !== 'holiday');
   const title = document.getElementById('c-title').value || 'Notice Title';
   const message = document.getElementById('c-message').value || 'Message content...';
   const target = document.getElementById('c-target').value;
