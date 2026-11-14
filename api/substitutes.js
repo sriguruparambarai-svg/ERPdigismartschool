@@ -1,17 +1,14 @@
 // DigiSmart ERP — Substitute teachers on autopilot (Nov 2026)
-// Every school morning at 9:30 AM the ERP checks which teachers are absent today
-// (marked absent, on approved staff leave, or not checked in while others have),
-// takes their periods from the master timetable, finds who is free in each of
-// those periods, and tells the owner in the Owner App — one alert with every
-// absent teacher's periods and 1–3 suggested free teachers for each.
-// Free = present today, no class (and not helping a class) in that period;
-// teachers with fewer periods today are suggested first.
-// Only schools with a master timetable and at least one Owner App person. Nothing
-// is sent when every teacher is present.
+// Which teachers are absent today (marked absent, on approved staff leave, or not
+// checked in while others have), their periods from the master timetable, and who
+// is free in each of those periods — 1–3 suggestions, present teachers with fewer
+// periods today first. Shown to the PRINCIPAL in TeachBot's My School's Academics
+// (Periods tab), which asks through the door below; the owner is not alerted —
+// this is the school admin's job.
 //
-// GET /api/substitutes                    (Vercel cron 04:00 UTC = 9:30 AM IST, Bearer CRON_SECRET)
-// GET /api/substitutes?key=…&school=…&dry=1&date=YYYY-MM-DD   → test run, nothing saved or sent
-// POST { token (owner / staff), action: 'today' } → today's suggestion (for the ERP, any time)
+// POST header x-teachbot-key: <TEACHBOT_LINK_KEY>  { school_id, date? } → { ok, absent, att_used }
+// POST { token (ERP owner / staff), date? }                              → the same, for the ERP
+// GET  /api/substitutes?key=<CRON_SECRET>&school=…&date=YYYY-MM-DD       → test run
 
 const crypto = require('crypto');
 const { sb, enc, getServiceKey, sendToSubs, pushReady } = require('./_push');
@@ -177,11 +174,24 @@ module.exports = async (req, res) => {
     let body;
     try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); }
     catch (e) { return res.status(400).json({ ok: false, error: 'Invalid request.' }); }
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(body.date || '')) ? String(body.date) : istTodayIso();
+    // TeachBot's My School's Academics
+    if (req.headers['x-teachbot-key'] !== undefined) {
+      const want = process.env.TEACHBOT_LINK_KEY || '';
+      const got = String(req.headers['x-teachbot-key'] || '');
+      if (!want || got.length !== want.length || !crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want))) {
+        return res.status(401).json({ ok: false, error: 'TeachBot link key is missing or does not match.' });
+      }
+      const sid = String(body.school_id || '');
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(sid)) return res.status(400).json({ ok: false, error: 'ERP school id missing.' });
+      try { return res.status(200).json(Object.assign({ ok: true, date: day }, await plan(sid, day))); }
+      catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e) }); }
+    }
     const s = verifyToken(body.token);
     if (!s || !s.sid || s.role === 'parent') return res.status(401).json({ ok: false, error: 'Please log in again.' });
     try {
-      const r = await plan(String(s.sid), istTodayIso());
-      return res.status(200).json(Object.assign({ ok: true, date: istTodayIso() }, r));
+      const r = await plan(String(s.sid), day);
+      return res.status(200).json(Object.assign({ ok: true, date: day }, r));
     } catch (e) { return res.status(500).json({ ok: false, error: String(e.message || e) }); }
   }
 
@@ -192,8 +202,8 @@ module.exports = async (req, res) => {
   if (!secret || (auth !== 'Bearer ' + secret && String(q.key || '') !== secret)) {
     return res.status(401).json({ ok: false, error: 'Not allowed.' });
   }
-  const dry = q.dry === '1';
-  const day = dry && /^\d{4}-\d{2}-\d{2}$/.test(String(q.date || '')) ? String(q.date) : istTodayIso();
+  const dry = true;   // the owner is no longer alerted — GET is a test run only
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(q.date || '')) ? String(q.date) : istTodayIso();
   const out = { ok: true, date: day, dry, schools: {} };
   try {
     const ids = q.school ? [String(q.school)]
