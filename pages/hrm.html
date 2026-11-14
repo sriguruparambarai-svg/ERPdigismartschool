@@ -159,6 +159,9 @@ input:checked + .toggle-slider:before{transform:translateX(20px)}
           </div>
         </div>
 
+        <!-- Nov 2026: owner's approval in the Owner App (api/salary-run.js) -->
+        <div id="sal-approval" style="margin-bottom:14px"></div>
+
         <div id="salary-summary" class="hidden">
           <div class="summary-band" id="salary-band"></div>
         </div>
@@ -592,6 +595,13 @@ async function loadStatutorySettings() {
   const { data } = await secureHrm.from('hrm_settings').select('*').eq('school_id', SCHOOL_ID).single();
   if (data) {
     statutorySettings = { ...statutorySettings, ...data };
+    // Nov 2026: the sheet reads pf / esi / pfEmpPct / esiEmpPct — fill them from the saved
+    // settings too (before, PF and ESI were only applied after pressing Save in the same visit)
+    statutorySettings.pf = !!data.pf_enabled; statutorySettings.esi = !!data.esi_enabled; statutorySettings.tds = !!data.tds_enabled;
+    if (data.pf_emp_pct != null) statutorySettings.pfEmpPct = Number(data.pf_emp_pct);
+    if (data.pf_er_pct != null) statutorySettings.pfErPct = Number(data.pf_er_pct);
+    if (data.esi_emp_pct != null) statutorySettings.esiEmpPct = Number(data.esi_emp_pct);
+    if (data.esi_er_pct != null) statutorySettings.esiErPct = Number(data.esi_er_pct);
     document.getElementById('pf-enabled').checked = data.pf_enabled || false;
     document.getElementById('esi-enabled').checked = data.esi_enabled || false;
     document.getElementById('tds-enabled').checked = data.tds_enabled || false;
@@ -993,6 +1003,7 @@ async function loadSalarySheet() {
     if(procMap[s.id]?.status==='paid') totalPaid+=procMap[s.id].net_salary||0;
   });
 
+  loadSalaryApproval(month, totalNet);
   document.getElementById('salary-summary').classList.remove('hidden');
   document.getElementById('salary-band').innerHTML = `
     <div class="sband-item"><div class="sband-label">Total Staff</div><div class="sband-value">${staffList.length}</div></div>
@@ -1205,6 +1216,52 @@ async function saveLopDays(staffId, month, days, net) {
     }]);
   }
   showToast(days > 0 ? days + ' day deduction saved.' : 'Full pay saved — no deduction.', 'success');
+}
+
+// ══ OWNER'S APPROVAL (Nov 2026) ══
+// On the month's last day the ERP prepares this sheet and the owner approves it in the
+// Owner App. Here the office sees where it stands and can send it (again) after changes.
+async function salaryRunCall(action, month) {
+  try {
+    const r = await fetch('/api/salary-run', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action: action, month: month }) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'No connection.' }; }
+}
+async function loadSalaryApproval(month, totalNetNow) {
+  const box = document.getElementById('sal-approval');
+  if (!box) return;
+  // only the full staff list can be sent for approval
+  const dept = document.getElementById('sal-dept').value;
+  const out = await salaryRunCall('status', month);
+  if (!out || !out.ok) { box.innerHTML = ''; return; }
+  const r = out.run;
+  const esc2 = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const when = d => d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+  const btn = dept ? '<span style="font-size:12px;color:var(--text-muted)">Choose "All departments" to send for approval.</span>'
+    : `<button class="btn btn-gold btn-sm" onclick="sendSalaryForApproval('${month}')">📱 ${r ? 'Send to owner again' : 'Send to owner for approval'}</button>`;
+  let html, bg = '#FFF8F0', bd = '#F0D9A8';
+  if (!r) {
+    html = `<b>Owner's approval:</b> not sent yet. The ERP sends it by itself on the last day of the month, or send it now.`;
+  } else if (r.status === 'approved') {
+    const changed = !dept && Math.abs((Number(r.totals && r.totals.net) || 0) - totalNetNow) >= 1;
+    bg = changed ? '#FFF4F2' : '#F1FAF3'; bd = changed ? '#E8B4AC' : '#BFE3C8';
+    html = `<b style="color:#2D7A3A">✅ Approved by ${esc2(r.decided_by || 'owner')}</b> · ${esc2(when(r.decided_at))} · ₹${Number(r.totals && r.totals.net || 0).toLocaleString('en-IN')}` +
+      (changed ? `<div style="color:#A32D2D;font-weight:600;margin-top:4px">The sheet has changed since it was approved (now ₹${totalNetNow.toLocaleString('en-IN')}). Send it to the owner again.</div>` : '');
+  } else if (r.status === 'sent_back') {
+    bg = '#FFF4F2'; bd = '#E8B4AC';
+    html = `<b style="color:#A32D2D">↩ Sent back by ${esc2(r.decided_by || 'owner')}</b> · ${esc2(when(r.decided_at))}<div style="margin-top:4px">“${esc2(r.note || '')}”</div><div style="font-size:12px;color:var(--text-muted)">Make the change in the sheet below, then send it again.</div>`;
+  } else {
+    html = `<b>⏳ Waiting for the owner's approval</b> · sent ${esc2(when(r.prepared_at))} · ₹${Number(r.totals && r.totals.net || 0).toLocaleString('en-IN')}`;
+  }
+  box.innerHTML = `<div style="background:${bg};border:1.5px solid ${bd};border-radius:10px;padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px"><div style="flex:1;min-width:240px">${html}</div>${btn}</div>`;
+}
+async function sendSalaryForApproval(month) {
+  if (!confirm('Send this month\'s salary sheet to the owner\'s phone for approval?')) return;
+  const out = await salaryRunCall('send', month);
+  if (!out || !out.ok) { showToast((out && out.error) || 'Could not send.', 'error'); return; }
+  showToast('Sent to the owner for approval.', 'success');
+  loadSalarySheet();
 }
 
 function calcNet(st, lopDays = 0) {

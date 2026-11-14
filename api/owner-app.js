@@ -18,6 +18,8 @@
 // POST { token, action: 'unsubscribe' | 'status', endpoint }
 // POST { token, action: 'alerts' }                    → the inbox (last 60 alerts)
 // POST { token, action: 'fee_history', date }         → the list behind a fee-reminder alert
+// POST { token, action: 'salary_get', month }          → the month's salary sheet prepared by the ERP (api/salary-run.js)
+// POST { token, action: 'salary_decide', month, decision: 'approve'|'send_back', note }
 
 const crypto = require('crypto');
 const { sb, enc, getServiceKey } = require('./_push');
@@ -221,6 +223,23 @@ module.exports = async (req, res) => {
       const rows = await sb('GET', 'fee_auto_reminders?school_id=eq.' + enc(schoolId) + '&sent_on=eq.' + day +
         '&select=student_id,student_name,student_class,mobile,kind,lines,total,has_app,seen_at&order=student_class.asc,student_name.asc') || [];
       return res.status(200).json({ ok: true, date: day, list: rows });
+    }
+
+    if (action === 'salary_get' || action === 'salary_decide') {
+      const month = String(body.month || '');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ ok: false, error: 'Month missing.' });
+      const salary = require('./salary-run');
+      if (action === 'salary_decide') {
+        const decision = body.decision === 'approve' ? 'approve' : body.decision === 'send_back' ? 'send_back' : '';
+        if (!decision) return res.status(400).json({ ok: false, error: 'Please choose Approve or Send back.' });
+        const r = await salary.decide(schoolId, month, decision, body.note, user.name);
+        if (r.error) return res.status(400).json({ ok: false, error: r.error });
+      }
+      const run = await salary.getRun(schoolId, month);
+      if (!run) return res.status(200).json({ ok: true, run: null });
+      return res.status(200).json({ ok: true, month_name: salary.monthName(month), run: {
+        month: run.month, status: run.status, rows: run.rows || [], totals: run.totals || {}, prepared_at: run.prepared_at,
+        prepared_by: run.prepared_by, decided_at: run.decided_at, decided_by: run.decided_by, note: run.note } });
     }
 
     return res.status(400).json({ ok: false, error: 'Unknown action.' });

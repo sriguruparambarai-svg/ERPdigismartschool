@@ -31,6 +31,10 @@
     {
       "path": "/api/evening-report",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/salary-run",
+      "schedule": "30 13 * * *"
     }
   ],
   "rewrites": [
@@ -69,6 +73,9 @@
       "maxDuration": 60
     },
     "api/evening-report.js": {
+      "maxDuration": 300
+    },
+    "api/salary-run.js": {
       "maxDuration": 300
     },
     "api/substitutes.js": {

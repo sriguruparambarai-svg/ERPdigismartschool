@@ -378,8 +378,9 @@ async function loadInbox() {
   }
   inboxRows = rows;
   box.innerHTML = rows.map(a => {
-    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : '🔔';
-    return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(String(a.alert_date).slice(0, 10)) + '\')">' +
+    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : '🔔';
+    const arg = a.kind === 'salary' && a.data && a.data.month ? a.data.month : String(a.alert_date).slice(0, 10);
+    return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(arg) + '\')">' +
       '<div class="inbox-ico">' + ico + '</div>' +
       '<div class="inbox-main"><div class="inbox-title">' + esc(a.title || 'Alert') + '</div>' +
       '<div class="inbox-body">' + esc(a.body || '') + '</div>' +
@@ -479,8 +480,65 @@ async function openSubstitutes(date) {
     '<div class="muted" style="margin:8px 4px 20px">Suggested teachers are present today and have no class in that period; those with fewer periods today come first.</div>';
 }
 
+// ── Salary for approval (api/salary-run.js prepares it on the month's last day) ──
+let salMonth = '';
+async function openSalary(month) {
+  salMonth = month;
+  show('view-detail');
+  history.replaceState(null, '', '/owner/index.html?alert=salary&month=' + month);
+  document.getElementById('d-title').textContent = 'Salary';
+  document.getElementById('d-sub').textContent = month;
+  document.getElementById('d-chips').innerHTML = '';
+  document.getElementById('d-stats').innerHTML = '';
+  document.querySelector('.refresh-note').style.display = 'none';
+  document.getElementById('d-list').innerHTML = '<div class="empty">Loading…</div>';
+  drawSalary(await ownerApi('salary_get', { month }));
+}
+function drawSalary(out) {
+  const list = document.getElementById('d-list');
+  if (!out || !out.ok) { list.innerHTML = '<div class="empty">' + esc((out && out.error) || 'Could not load the salary.') + '</div>'; return; }
+  const r = out.run;
+  if (!r) { list.innerHTML = '<div class="empty">This month\'s salary has not been prepared yet.</div>'; return; }
+  document.getElementById('d-sub').textContent = out.month_name || r.month;
+  const t = r.totals || {};
+  document.getElementById('d-stats').innerHTML =
+    '<div class="stat"><div class="n">' + inr(t.net) + '</div><div class="l">Net salary to pay</div></div>' +
+    '<div class="stat"><div class="n">' + (t.staff || 0) + '</div><div class="l">Staff</div></div>' +
+    '<div class="stat"><div class="n">' + (t.lop_staff || 0) + '</div><div class="l">With loss of pay</div></div>' +
+    '<div class="stat"><div class="n">' + inr(t.lop_amount) + '</div><div class="l">Loss of pay deducted</div></div>';
+  const when = d => d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+  let head = '';
+  if (r.status === 'approved') head = '<div class="card" style="border-color:#BFE3C8;background:#F1FAF3"><b style="color:var(--green)">✅ Approved</b> by ' + esc(r.decided_by || 'owner') + ' · ' + esc(when(r.decided_at)) + '<div class="muted">The office can now pay.</div></div>';
+  else if (r.status === 'sent_back') head = '<div class="card" style="border-color:#F0D9A8;background:#FFF8E8"><b style="color:var(--amber)">↩ Sent back to the office</b> · ' + esc(when(r.decided_at)) + '<div style="margin-top:4px">' + esc(r.note || '') + '</div><div class="muted">It comes back here when the office sends it again.</div></div>';
+  else head = '<div class="card" style="border-color:#F0D9A8;background:#FFF8E8"><b>⏳ Waiting for your approval</b><div class="muted">Prepared ' + esc(when(r.prepared_at)) + (r.prepared_by && r.prepared_by !== 'auto' ? ' · sent by ' + esc(r.prepared_by) : ' by the ERP') + '. Loss of pay = days absent − approved paid leave (or the days the office typed).</div></div>';
+  const rows = r.rows || [];
+  const table = '<div class="tbl-wrap"><table class="fee"><thead><tr><th>Name</th><th style="text-align:right">Gross</th><th style="text-align:right">LOP</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th></tr></thead><tbody>' +
+    rows.map(x => { const ded = (x.pf || 0) + (x.esi || 0) + (x.other || 0) + (x.lop_ded || 0);
+      return '<tr><td><b>' + esc(x.name) + '</b>' + (x.role ? '<br><span class="muted" style="font-size:11px">' + esc(x.role) + '</span>' : '') + (x.paid ? '<br><span style="color:var(--green);font-size:11px">Paid</span>' : '') + '</td>' +
+        '<td class="amt" style="font-weight:600">' + inr(x.gross) + '</td>' +
+        '<td class="amt" style="color:' + (x.lop_days ? 'var(--red)' : 'var(--muted)') + '">' + (x.lop_days ? x.lop_days + ' d<br><span style="font-size:10.5px;font-weight:600">' + esc(x.lop_note || '') + '</span>' : '—') + '</td>' +
+        '<td class="amt" style="color:var(--red);font-weight:600">' + (ded ? inr(ded) : '—') + '</td>' +
+        '<td class="amt">' + inr(x.net) + '</td></tr>'; }).join('') +
+    '<tr class="tot"><td>Total · ' + rows.length + ' staff</td><td class="amt">' + inr(t.gross) + '</td><td></td><td class="amt">' + inr((t.gross || 0) - (t.net || 0)) + '</td><td class="amt">' + inr(t.net) + '</td></tr></tbody></table></div>';
+  const miss = (t.missing && t.missing.length) ? '<div class="muted" style="margin:8px 4px">Not included (no salary set in HRM): ' + esc(t.missing.join(', ')) + '</div>' : '';
+  const act = r.status === 'waiting'
+    ? '<div class="card" style="margin-top:12px"><button class="btn" onclick="salaryDecide(\'approve\')">✅ Approve ' + esc(inr(t.net)) + '</button>' +
+      '<div style="margin-top:12px"><textarea id="sal-note" rows="2" placeholder="Something to change? Write it for the office…" style="width:100%;padding:10px;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px"></textarea>' +
+      '<button class="btn-light" style="width:100%;margin-top:6px;padding:10px" onclick="salaryDecide(\'send_back\')">↩ Send back to office</button></div></div>'
+    : '';
+  list.innerHTML = head + table + miss + act + '<div style="height:20px"></div>';
+}
+async function salaryDecide(decision) {
+  const note = (document.getElementById('sal-note') || {}).value || '';
+  if (decision === 'send_back' && !note.trim()) { alert('Please write what the office should change.'); return; }
+  if (decision === 'approve' && !confirm('Approve this month\'s salary?')) return;
+  drawSalary(await ownerApi('salary_decide', { month: salMonth, decision, note }));
+  loadInbox();
+}
+
 // ── One day's fee reminders ──
 async function openAlert(kind, date) {
+  if (kind === 'salary') { openSalary(date); return; }
   if (kind === 'evening_report') { openEvening(date); return; }
   if (kind === 'substitutes') { openSubstitutes(date); return; }
   if (kind !== 'fee_reminders') return;
@@ -554,6 +612,7 @@ function startApp() {
   initAlerts();
   loadInbox();
   const q = new URLSearchParams(location.search);
+  if (q.get('alert') === 'salary' && /^\d{4}-\d{2}$/.test(q.get('month') || '')) openSalary(q.get('month'));
   if (['fee_reminders', 'evening_report', 'substitutes'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
 }
 (function boot() {
