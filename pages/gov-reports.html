@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Government Reports — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs2 button{border:1.5px solid var(--border);background:#fff;border-radius:20px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
+.tabs2 button.on{background:var(--maroon);border-color:var(--maroon);color:#F5E6C8}
+.s-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px}
+.s-head{font-size:15px;font-weight:700;color:var(--maroon);margin-bottom:6px}
+.s-meta{font-size:12.5px;color:#7A6F66;line-height:1.6}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th,table.t td{padding:7px;border-bottom:1px solid #F0EDE8;text-align:left;white-space:nowrap}
+table.t th{font-size:11px;color:#9B928A;text-transform:uppercase;background:#FBF8F3;position:sticky;top:0}
+table.t td.r,table.t th.r{text-align:right}
+table.t tr.tot td{font-weight:800;background:#FBF3E6}
+.miss{background:#FBE9E9;color:#A32D2D;border-radius:6px;padding:0 5px}
+.pill{font-size:11px;font-weight:700;border-radius:20px;padding:2px 9px}
+.pill.g{background:#E6F2E8;color:#2D7A3A}.pill.r{background:#FBE9E9;color:#A32D2D}
+.scroll{overflow:auto;max-height:520px;border:1px solid var(--border);border-radius:10px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Government Reports</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Office → Government Reports</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="tabs2" id="tabs">
+        <button data-t="emis" class="on">🏛 EMIS / UDISE+ students</button>
+        <button data-t="strength">👥 Class & gender strength</button>
+        <button data-t="rte">📘 RTE 25%</button>
+        <button data-t="staff">🧑‍🏫 Staff details</button>
+      </div>
+      <div id="out"><div class="s-meta">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+// Government reports (Nov 2026) — data from api/gov-reports.js, tables and Excel made here
+let STU = null, STAFF = null, SCHOOL = '', tab = 'emis';
+const LADDER = ['PreKG', 'LKG', 'UKG', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12'];
+const ord = c => { const i = LADDER.indexOf(c); return i === -1 ? 99 : i; };
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function dmy(d) { if (!d) return ''; const p = String(d).slice(0, 10).split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : d; }
+function age(d) { if (!d) return ''; const b = new Date(d), n = new Date(); let a = n.getFullYear() - b.getFullYear(); if (n < new Date(n.getFullYear(), b.getMonth(), b.getDate())) a--; return isNaN(a) ? '' : a; }
+const gen = g => { const t = String(g || '').toLowerCase(); return t.startsWith('m') || t === 'boy' ? 'Boy' : t.startsWith('f') || t === 'girl' ? 'Girl' : t ? g : ''; };
+async function call(action) {
+  try {
+    const r = await fetch('/api/gov-reports', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action }) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'No connection.' }; }
+}
+function download(name, sheets) {
+  const wb = XLSX.utils.book_new();
+  sheets.forEach(s => {
+    const ws = XLSX.utils.aoa_to_sheet([[SCHOOL + ' — ' + s.title], []].concat([s.head]).concat(s.rows));
+    ws['!cols'] = s.head.map((h, i) => ({ wch: Math.min(40, Math.max(String(h).length + 2, ...s.rows.slice(0, 200).map(r => String(r[i] == null ? '' : r[i]).length + 1))) }));
+    XLSX.utils.book_append_sheet(wb, ws, s.sheet || 'Report');
+  });
+  XLSX.writeFile(wb, name + '.xlsx');
+}
+function table(head, rows, opts) {
+  opts = opts || {};
+  return '<div class="scroll"><table class="t"><thead><tr>' + head.map((h, i) => '<th' + ((opts.right || []).indexOf(i) !== -1 ? ' class="r"' : '') + '>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr' + (r._tot ? ' class="tot"' : '') + '>' + head.map((h, i) => { const v = r[i]; const blank = (opts.need || []).indexOf(i) !== -1 && (v === '' || v == null);
+      return '<td' + ((opts.right || []).indexOf(i) !== -1 ? ' class="r"' : '') + '>' + (blank ? '<span class="miss">missing</span>' : esc(v)) + '</td>'; }).join('') + '</tr>').join('') + '</tbody></table></div>';
+}
+
+document.getElementById('tabs').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  tab = b.dataset.t; show();
+};
+async function show() {
+  const out = document.getElementById('out');
+  if (tab === 'staff') {
+    if (!STAFF) { out.innerHTML = '<div class="s-meta">Loading…</div>'; const r = await call('staff'); if (!r.ok) { out.innerHTML = '<div class="s-card">' + esc(r.error) + '</div>'; return; } STAFF = r.staff; SCHOOL = r.school; }
+    return drawStaff();
+  }
+  if (!STU) { out.innerHTML = '<div class="s-meta">Loading…</div>'; const r = await call('students'); if (!r.ok) { out.innerHTML = '<div class="s-card">' + esc(r.error) + '</div>'; return; } STU = r.students.sort((a, b) => ord(a.class) - ord(b.class) || String(a.section).localeCompare(String(b.section)) || String(a.full_name).localeCompare(String(b.full_name))); SCHOOL = r.school; }
+  if (tab === 'emis') drawEmis(); else if (tab === 'strength') drawStrength(); else drawRte();
+}
+
+// ── EMIS / UDISE+ ──
+const EMIS_HEAD = ['S.No', 'EMIS No', 'Admission No', 'Student Name', 'Name (Tamil)', 'Class', 'Section', 'Gender', 'Date of Birth', 'Age', 'Aadhaar', 'Religion', 'Community',
+  'Mother Tongue', 'Blood Group', 'Father Name', 'Mother Name', 'Father Occupation', 'Mobile', 'Address', 'City / Village', 'District', 'Pincode', 'Date of Admission', 'Previous School', 'TC No', 'RTE'];
+const EMIS_NEED = [1, 7, 8, 10, 11, 12, 15, 16, 18];
+function emisRows() {
+  return STU.map((s, i) => [i + 1, s.emis_id, s.admission_no, s.full_name, s.full_name_tamil, s.class, s.section, gen(s.gender), dmy(s.dob), age(s.dob), s.aadhar, s.religion, s.caste,
+    s.mother_tongue, s.blood_group, s.father_name, s.mother_name, s.father_occupation, s.mobile, s.address, s.city, s.district, s.pincode, dmy(s.admission_date), s.prev_school, s.tc_number, s.is_rte ? 'Yes' : 'No']);
+}
+function drawEmis() {
+  const rows = emisRows();
+  const gaps = {};
+  rows.forEach(r => EMIS_NEED.forEach(i => { if (r[i] === '' || r[i] == null) gaps[EMIS_HEAD[i]] = (gaps[EMIS_HEAD[i]] || 0) + 1; }));
+  const g = Object.keys(gaps);
+  document.getElementById('out').innerHTML = '<div class="s-card"><div class="s-head">🏛 EMIS / UDISE+ student data — ' + rows.length + ' children</div>' +
+    '<div class="s-meta">Every active child\'s details in one sheet, class by class, ready for EMIS entry. Fill anything marked <span class="miss">missing</span> in Admission before entering EMIS.</div>' +
+    (g.length ? '<div style="margin:10px 0"><span class="pill r">Missing</span> ' + g.map(k => esc(k) + ': ' + gaps[k]).join(' · ') + '</div>' : '<div style="margin:10px 0"><span class="pill g">✓ Nothing missing in the main fields</span></div>') +
+    '<button class="btn btn-gold btn-sm" onclick="download(\'EMIS student data\', [{ title: \'EMIS / UDISE+ student data\', sheet: \'Students\', head: EMIS_HEAD, rows: emisRows() }])">⬇ Download Excel</button></div>' +
+    table(EMIS_HEAD, rows, { need: EMIS_NEED });
+}
+
+// ── Class & gender strength ──
+function strengthData() {
+  const classes = Array.from(new Set(STU.map(s => s.class))).sort((a, b) => ord(a) - ord(b));
+  const comms = Array.from(new Set(STU.map(s => String(s.caste || '').trim().toUpperCase() || 'Not given'))).sort();
+  const head = ['Class', 'Sections', 'Boys', 'Girls', 'Total'].concat(comms).concat(['RTE']);
+  const tot = { b: 0, g: 0, t: 0, c: {}, r: 0 };
+  const rows = classes.map(c => {
+    const k = STU.filter(s => s.class === c);
+    const b = k.filter(s => gen(s.gender) === 'Boy').length, g = k.filter(s => gen(s.gender) === 'Girl').length, r = k.filter(s => s.is_rte).length;
+    tot.b += b; tot.g += g; tot.t += k.length; tot.r += r;
+    const row = [c, Array.from(new Set(k.map(s => s.section).filter(Boolean))).join(', ') || '—', b, g, k.length];
+    comms.forEach(cm => { const n = k.filter(s => (String(s.caste || '').trim().toUpperCase() || 'Not given') === cm).length; tot.c[cm] = (tot.c[cm] || 0) + n; row.push(n); });
+    row.push(r); return row;
+  });
+  const t = ['Total', '', tot.b, tot.g, tot.t].concat(comms.map(cm => tot.c[cm])).concat([tot.r]); t._tot = true;
+  return { head, rows: rows.concat([t]) };
+}
+function drawStrength() {
+  const d = strengthData();
+  const right = d.head.map((h, i) => i >= 2 ? i : -1).filter(i => i >= 0);
+  document.getElementById('out').innerHTML = '<div class="s-card"><div class="s-head">👥 Class & gender strength</div>' +
+    '<div class="s-meta">Boys, girls and community (as typed in Admission → Community) for each class. "Not given" means the community is blank.</div>' +
+    '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="const d=strengthData();download(\'Class strength\', [{ title: \'Class & gender strength\', sheet: \'Strength\', head: d.head, rows: d.rows }])">⬇ Download Excel</button></div>' +
+    table(d.head, d.rows, { right });
+}
+
+// ── RTE 25% ──
+function rteData() {
+  const classes = Array.from(new Set(STU.map(s => s.class))).sort((a, b) => ord(a) - ord(b));
+  const head = ['Class', 'Total children', 'RTE children', 'RTE %', '25% of class', 'Short by'];
+  let T = 0, R = 0;
+  const rows = classes.map(c => { const k = STU.filter(s => s.class === c), r = k.filter(s => s.is_rte).length; T += k.length; R += r;
+    const need = Math.ceil(k.length * 0.25); return [c, k.length, r, k.length ? Math.round(r * 1000 / k.length) / 10 + '%' : '0%', need, Math.max(0, need - r)]; });
+  const t = ['Total', T, R, T ? Math.round(R * 1000 / T) / 10 + '%' : '0%', Math.ceil(T * 0.25), '']; t._tot = true;
+  const list = STU.filter(s => s.is_rte).map((s, i) => [i + 1, s.full_name, s.class, s.section, gen(s.gender), dmy(s.dob), s.admission_no, s.emis_id, s.father_name, s.mobile, dmy(s.admission_date)]);
+  return { head, rows: rows.concat([t]), lhead: ['S.No', 'Student Name', 'Class', 'Section', 'Gender', 'Date of Birth', 'Admission No', 'EMIS No', 'Father Name', 'Mobile', 'Date of Admission'], list };
+}
+function drawRte() {
+  const d = rteData();
+  document.getElementById('out').innerHTML = '<div class="s-card"><div class="s-head">📘 RTE 25% — ' + d.list.length + ' RTE children</div>' +
+    '<div class="s-meta">RTE children (ticked "RTE" in Admission) against 25% of each class. The 25% rule applies to the entry class (LKG / Class 1) each year — "Short by" helps check it.</div>' +
+    '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="const d=rteData();download(\'RTE 25 percent\', [{ title: \'RTE 25% — class-wise\', sheet: \'Class-wise\', head: d.head, rows: d.rows }, { title: \'RTE children\', sheet: \'RTE list\', head: d.lhead, rows: d.list }])">⬇ Download Excel</button></div>' +
+    table(d.head, d.rows, { right: [1, 2, 3, 4, 5] }) + '<div class="s-card" style="margin-top:14px"><div class="s-head">RTE children</div>' + (d.list.length ? table(d.lhead, d.list) : '<div class="s-meta">No child is marked RTE.</div>') + '</div>';
+}
+
+// ── Staff ──
+const STAFF_HEAD = ['S.No', 'Employee ID', 'Name', 'Gender', 'Date of Birth', 'Role / Designation', 'Department', 'Qualification', 'Date of Joining', 'Employment Type', 'Mobile', 'Email', 'Aadhaar', 'Address'];
+function staffRows() {
+  return STAFF.map((s, i) => [i + 1, s.employee_id, s.name, gen(s.gender).replace('Boy', 'Male').replace('Girl', 'Female'), dmy(s.dob), s.role, s.department, s.qualification, dmy(s.date_of_joining),
+    String(s.employment_type || '').replace('_', ' '), s.mobile, s.email, s.aadhar, s.address]);
+}
+function drawStaff() {
+  const rows = staffRows();
+  document.getElementById('out').innerHTML = '<div class="s-card"><div class="s-head">🧑‍🏫 Staff details — ' + rows.length + ' staff</div>' +
+    '<div class="s-meta">From HRM → Staff. Fill anything marked <span class="miss">missing</span> there. Bank details are never included.</div>' +
+    '<button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="download(\'Staff details\', [{ title: \'Staff details\', sheet: \'Staff\', head: STAFF_HEAD, rows: staffRows() }])">⬇ Download Excel</button></div>' +
+    table(STAFF_HEAD, rows, { need: [2, 3, 4, 5, 7, 8, 10] });
+}
+
+document.addEventListener('DOMContentLoaded', () => { renderSidebar('admission'); show(); });
+</script>
+</body>
+</html>

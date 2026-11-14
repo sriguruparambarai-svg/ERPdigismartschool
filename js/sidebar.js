@@ -103,6 +103,7 @@ async function renderSidebar(activePage) {
     { group: 'Office', items: [
       { id: 'frontoffice', icon: '🏢', label: 'Front Office', href: 'frontoffice.html' },
       { id: 'transport', icon: '🚌', label: 'Transport & GPS', href: 'transport.html' },
+      { id: 'admission', icon: '🏛', label: 'Government Reports', href: 'gov-reports.html' },
     ]},
   ];
 
