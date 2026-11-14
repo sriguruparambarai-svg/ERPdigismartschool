@@ -100,6 +100,7 @@ function planForChild(stu, items, cfg, todayIso) {
     if (g.group === 'fee') text = g.period + ' fees' + (g.heads.length ? ' (' + g.heads.join(', ') + ')' : '');
     else if (g.group === 'van') text = g.period === 'One-Time' ? 'Van fee (one-time plan)' : 'Van fee – ' + g.period;
     else if (g.group === 'arrears') text = 'Previous year balance (' + String(g.period).replace(/^Balance /, '') + ')';
+    else if (g.group === 'store') text = 'Books / uniform from school store (' + String(g.period).replace(/^Store /, 'bill ') + ')';
     else text = 'Late fee – ' + g.period;
     const amount = Math.round(g.amount * 100) / 100;
     return { text, amount, due: g.due || null, overdue: !!(g.due && g.group !== 'late' && daysBetween(todayIso, String(g.due).slice(0, 10)) < 0) };

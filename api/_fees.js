@@ -11,6 +11,10 @@ const LATE_FEE_NAME = 'Late Fee';
 const ARREARS_ID = '00000000-0000-4000-8000-0000000000fd';
 const ARREARS_NAME = 'Previous Year Balance';
 function arrearsPeriod(fromYear) { return 'Balance ' + fromYear; }
+// Nov 2026: books, uniforms … a child took from the school store (table store_sales)
+const STORE_ID = '00000000-0000-4000-8000-0000000000fc';
+const STORE_NAME = 'Store';
+function storePeriod(billNo) { return 'Store ' + billNo; }
 const VAN_ONETIME_PERIOD = 'One-Time';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -97,7 +101,7 @@ function makeContext(settings, heads) {
 // One child's dues, worked out from data already loaded.
 // structureRows: this class's fee_structure rows; overrides, payments: this child's rows;
 // scheme: active 5-Year Scheme row or null; van: student_transport row or null.
-function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van, arrears, arrearsPayments) {
+function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van, arrears, arrearsPayments, storeSales) {
   const { collectionMode, termConfig, monthStart, lateCfg, vanMonths, periods, heads, headById } = ctx;
 
   let structure = (structureRows || []).map(s => Object.assign({}, s, { period_amounts: parseJson(s.period_amounts, null) }));
@@ -123,6 +127,7 @@ function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van, arr
   (payments || []).forEach(p => {
     const amt = parseFloat(p.amount_paid) || 0;
     if (p.fee_head_id === ARREARS_ID) return;   // counted against the carried-forward balance below
+    if (p.fee_head_id === STORE_ID) return;     // counted against the store bill below
     if (p.fee_head_id === LATE_FEE_ID) { lateFeePaid[p.period] = (lateFeePaid[p.period] || 0) + amt; return; }
     const key = p.fee_head_id + '_' + p.period;
     paidMap[key] = (paidMap[key] || 0) + amt;
@@ -270,6 +275,23 @@ function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van, arr
     });
   }
 
+  // ── Store bills (books, uniforms …) this year ──
+  if (Array.isArray(storeSales) && storeSales.length) {
+    const paidS = {};
+    (payments || []).forEach(p => { if (p.fee_head_id === STORE_ID) paidS[p.period] = (paidS[p.period] || 0) + (parseFloat(p.amount_paid) || 0); });
+    storeSales.forEach(sale => {
+      if (sale.cancelled) return;
+      const per = storePeriod(sale.bill_no);
+      const bal = money((parseFloat(sale.total) || 0) - (paidS[per] || 0));
+      if (bal <= 0) return;
+      const t = new Date(sale.created_at || Date.now());
+      const day = isNaN(t.getTime()) ? null : new Date(t.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);   // India date
+      const what = (Array.isArray(sale.items) ? sale.items : []).map(x => x.name).slice(0, 3).join(', ');
+      items.push({ key: 'store|' + sale.bill_no, group: 'store', fee_head_id: STORE_ID, fee_head_name: STORE_NAME,
+        period: per, label: STORE_NAME + ' · ' + (what || sale.bill_no), amount: bal, due: day || null });
+    });
+  }
+
   // ── Previous year balance (carried forward at promotion) ──
   if (Array.isArray(arrears) && arrears.length) {
     const paidA = {};
@@ -314,6 +336,11 @@ async function computeDues(sb, schoolId, studentId) {
     if (arrears.length) arrearsPay = await sb('GET', 'fee_payments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
       '&fee_head_id=eq.' + ARREARS_ID + '&is_cancelled=not.is.true&select=fee_head_id,period,amount_paid') || [];
   } catch (e) { arrears = []; }   // table not there yet
+  let storeSales = [];
+  try {
+    storeSales = await sb('GET', 'store_sales?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
+      '&cancelled=is.false&academic_year=eq.' + encodeURIComponent(fy) + '&select=bill_no,total,items,created_at,cancelled&order=created_at.asc') || [];
+  } catch (e) { storeSales = []; }   // table not there yet
 
   let scheme = null;
   try {
@@ -326,7 +353,7 @@ async function computeDues(sb, schoolId, studentId) {
     van = (await sb('GET', 'student_transport?student_id=eq.' + enc(studentId) + '&select=*&limit=1') || [])[0] || null;
   } catch (e) { van = null; }
 
-  return duesFrom(ctx, stu, structure, overrides, payments, scheme, van, arrears, arrearsPay);
+  return duesFrom(ctx, stu, structure, overrides, payments, scheme, van, arrears, arrearsPay, storeSales);
 }
 
 // Reads a whole table in pages of 1000 (the database hands back at most 1000 rows at a time)
@@ -366,6 +393,9 @@ async function computeSchoolDues(sb, schoolId) {
     if (arrearsRows.length) arrearsPay = await getAll(sb, 'fee_payments?school_id=eq.' + sid + '&fee_head_id=eq.' + ARREARS_ID +
       '&is_cancelled=not.is.true&select=student_id,fee_head_id,period,amount_paid&order=id');
   } catch (e) { arrearsRows = []; arrearsPay = []; }
+  let storeRows = [];
+  try { storeRows = await getAll(sb, 'store_sales?school_id=eq.' + sid + '&cancelled=is.false&academic_year=eq.' + encodeURIComponent(fy) + '&select=student_id,bill_no,total,items,created_at,cancelled&order=created_at'); }
+  catch (e) { storeRows = []; }
   let schemes = [];
   try { schemes = await getAll(sb, 'scheme_enrollments?school_id=eq.' + sid + '&status=eq.active&select=student_id,free_van,free_uniform,free_books&order=student_id'); } catch (e) { schemes = []; }
   let vans = [];
@@ -379,14 +409,15 @@ async function computeSchoolDues(sb, schoolId) {
   const vanBy = by(vans, 'student_id');
   const arrBy = by(arrearsRows, 'student_id');
   const arrPayBy = by(arrearsPay, 'student_id');
+  const storeBy = by(storeRows, 'student_id');
 
   const out = students.map(stu => {
     const id = String(stu.id);
     return duesFrom(ctx, stu, structByClass[String(stu.class)] || [], ovBy[id] || [], payBy[id] || [],
-      (schBy[id] || [])[0] || null, (vanBy[id] || [])[0] || null, arrBy[id] || [], arrPayBy[id] || []);
+      (schBy[id] || [])[0] || null, (vanBy[id] || [])[0] || null, arrBy[id] || [], arrPayBy[id] || [], storeBy[id] || []);
   });
   return { ctx, settings, fee_year: fy, results: out };
 }
 
 module.exports = { computeDues, computeSchoolDues, duesFrom, makeContext, reminderConfig, istToday, MONTHS, LATE_FEE_ID, LATE_FEE_NAME, VAN_ONETIME_PERIOD,
-  ARREARS_ID, ARREARS_NAME, arrearsPeriod, feeYear, nextYear, readYearPayments };
+  ARREARS_ID, ARREARS_NAME, arrearsPeriod, feeYear, nextYear, readYearPayments, STORE_ID, STORE_NAME, storePeriod };

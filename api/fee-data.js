@@ -24,7 +24,8 @@ const ALLOWED_TABLES = [
   'fee_payments',
   'student_fee_overrides',
   'fee_reminders',
-  'fee_arrears'          // Nov 2026: read only here — made by api/promotion.js
+  'fee_arrears',         // Nov 2026: read only here — made by api/promotion.js
+  'store_sales'          // Nov 2026: read only here — made by api/store.js
 ];
 const ALLOWED_ACTIONS = ['select', 'insert', 'update', 'delete'];
 const ALLOWED_FILTER_OPS = ['eq', 'in', 'gte', 'lte'];
@@ -106,8 +107,8 @@ module.exports = async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Update/delete needs a filter.' });
   }
 
-  if (q.table === 'fee_arrears' && q.action !== 'select') {
-    return res.status(403).json({ ok: false, error: 'The previous year balance is set by the year-end promotion.' });
+  if ((q.table === 'fee_arrears' || q.table === 'store_sales') && q.action !== 'select') {
+    return res.status(403).json({ ok: false, error: q.table === 'store_sales' ? 'Store bills are made in Store & Stock.' : 'The previous year balance is set by the year-end promotion.' });
   }
 
   // ── Extra rules for Fee Collection Only staff ──
@@ -156,7 +157,7 @@ module.exports = async (req, res) => {
       return fy;
     } catch (e) { return feeYear(null); }
   }
-  if (q.table === 'fee_payments' && q.action === 'select' && q.thisYear && !q.orFilter) {
+  if ((q.table === 'fee_payments' || q.table === 'store_sales') && q.action === 'select' && q.thisYear && !q.orFilter) {
     const fy = await schoolYear();
     yearFilter = 'or=(academic_year.is.null,academic_year.eq.' + encodeURIComponent(fy) + ')';
     params.push(yearFilter);

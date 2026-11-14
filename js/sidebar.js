@@ -85,6 +85,7 @@ async function renderSidebar(activePage) {
     { group: 'Fees & Accounts', items: [
       { id: 'fee', icon: '💰', label: 'Fee Management', href: 'fee.html' },
       { id: 'billing', icon: '🧾', label: 'Billing & Accounts', href: 'billing.html' },
+      { id: 'store', icon: '🏪', label: 'Store & Stock', href: 'store.html' },
     ]},
     { group: 'Staff', items: [
       { id: 'face', icon: '🧑‍🏫', label: 'Staff Attendance', href: 'face-attendance.html' },

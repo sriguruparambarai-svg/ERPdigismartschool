@@ -151,8 +151,16 @@ module.exports = async (req, res) => {
         '&school_id=eq.' + encodeURIComponent(schoolId) +
         '&is_cancelled=not.is.true' + // cancelled receipts never count as paid
         '&select=receipt_no,amount_paid,payment_date,payment_mode,fee_head_id,period&order=payment_date.desc';
-      const payments = (await feesLib.readYearPayments(sb, payBase, feesLib.feeYear(feeSet)) || [])
-        .filter(p => p.fee_head_id !== feesLib.ARREARS_ID);
+      const yearPays = await feesLib.readYearPayments(sb, payBase, feesLib.feeYear(feeSet)) || [];
+      const payments = yearPays.filter(p => p.fee_head_id !== feesLib.ARREARS_ID && p.fee_head_id !== feesLib.STORE_ID);
+      // Books / uniforms from the school store this year
+      let storeRows = [];
+      try {
+        storeRows = await sb('GET', 'store_sales?student_id=eq.' + encodeURIComponent(studentId) + '&school_id=eq.' + encodeURIComponent(schoolId) +
+          '&cancelled=is.false&academic_year=eq.' + encodeURIComponent(feesLib.feeYear(feeSet)) + '&select=bill_no,total,items,created_at&order=created_at.asc') || [];
+      } catch (e) { storeRows = []; }
+      const storePaid = {};
+      yearPays.filter(p => p.fee_head_id === feesLib.STORE_ID).forEach(p => { storePaid[p.period] = (storePaid[p.period] || 0) + (parseFloat(p.amount_paid) || 0); });
       // Previous year balance carried forward at the year-end promotion
       let arrearsRows = [], arrearsPaid = {};
       try {
@@ -250,9 +258,15 @@ module.exports = async (req, res) => {
         const tot = parseFloat(a.amount) || 0, pd = arrearsPaid[feesLib.arrearsPeriod(a.from_year)] || 0;
         if (tot > 0) breakdown.unshift({ name: 'Previous year balance (' + a.from_year + ')', total: tot, paid: pd, balance: Math.max(tot - pd, 0), waived: false });
       });
+      storeRows.forEach(b => {
+        const tot = parseFloat(b.total) || 0, pd = storePaid[feesLib.storePeriod(b.bill_no)] || 0;
+        const what = (Array.isArray(b.items) ? b.items : []).map(x => x.name + (x.size ? ' (' + x.size + ')' : '')).join(', ');
+        if (tot > 0) breakdown.push({ name: 'School store: ' + (what || b.bill_no), total: tot, paid: pd, balance: Math.max(tot - pd, 0), waived: false });
+      });
       const totalFee = breakdown.reduce((s, r) => s + r.total, 0);
       const totalPaid = payments.reduce((s, r) => s + (parseFloat(r.amount_paid) || 0), 0)
-        + arrearsRows.reduce((s, a) => s + (arrearsPaid[feesLib.arrearsPeriod(a.from_year)] || 0), 0);
+        + arrearsRows.reduce((s, a) => s + (arrearsPaid[feesLib.arrearsPeriod(a.from_year)] || 0), 0)
+        + storeRows.reduce((s, b) => s + (storePaid[feesLib.storePeriod(b.bill_no)] || 0), 0);
       const schemeFree = scheme
         ? ['School Fees', scheme.free_van && 'Van', scheme.free_uniform && 'Uniform', scheme.free_books && 'Books'].filter(Boolean)
         : [];

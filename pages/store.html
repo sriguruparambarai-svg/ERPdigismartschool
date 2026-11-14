@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Store & Stock — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs2 button{border:1.5px solid var(--border);background:#fff;border-radius:20px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
+.tabs2 button.on{background:var(--maroon);border-color:var(--maroon);color:#F5E6C8}
+.s-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px}
+.s-head{font-size:15px;font-weight:700;color:var(--maroon);margin-bottom:6px}
+.s-meta{font-size:12.5px;color:#7A6F66;line-height:1.6}
+.row2{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row2 .form-group{margin:0}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th,table.t td{padding:8px;border-bottom:1px solid #F0EDE8;text-align:left;vertical-align:middle}
+table.t th{font-size:11px;color:#9B928A;text-transform:uppercase}
+.r{text-align:right}
+.pill{font-size:11px;font-weight:700;border-radius:20px;padding:2px 9px;white-space:nowrap}
+.pill.g{background:#E6F2E8;color:#2D7A3A}.pill.a{background:#FBF1DC;color:#8A6410}.pill.r{background:#FBE9E9;color:#A32D2D}.pill.n{background:#F1ECE6;color:#6B5D55}
+.found{border:1px solid var(--border);border-radius:10px;margin-top:6px;max-height:240px;overflow:auto}
+.found div{padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F5F0EA}
+.found div:hover{background:#FBF6EE}
+.cart td input{width:64px}
+.big{font-size:20px;font-weight:800;color:var(--maroon)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#FBF6EE;border:1px solid var(--border);border-radius:12px;padding:12px}
+.stat b{display:block;font-size:19px;color:var(--maroon)}.stat span{font-size:12px;color:#5C534B}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Store & Stock</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Fees & Accounts → Store & Stock</div>
+      </div>
+      <div class="topbar-right"><span class="s-meta" id="fy"></span></div>
+    </div>
+    <div class="page-body">
+      <div class="tabs2" id="tabs">
+        <button data-t="give" class="on">🎒 Give to a child</button>
+        <button data-t="items">📦 Items & stock</button>
+        <button data-t="sets">🧺 Class sets</button>
+        <button data-t="bills">🧾 Bills</button>
+        <button data-t="report">📊 Report</button>
+      </div>
+
+      <!-- GIVE -->
+      <div id="t-give">
+        <div class="s-card">
+          <div class="s-head">Find the child</div>
+          <input id="g-q" class="form-control" placeholder="Type name or admission number" oninput="findKids()" style="max-width:380px">
+          <div id="g-found" class="found hidden"></div>
+        </div>
+        <div id="g-kid"></div>
+        <div class="s-card">
+          <div class="s-head">🧺 Give a set to the whole class</div>
+          <div class="s-meta">Every child in the class who has not had this set yet gets it, each with their own bill added to fees.</div>
+          <div class="row2" style="margin-top:10px">
+            <select id="gc-set" class="form-control" style="max-width:320px"></select>
+            <button class="btn btn-gold btn-sm" onclick="sellClass()">Give to the whole class</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ITEMS -->
+      <div id="t-items" class="hidden">
+        <div class="s-card">
+          <div class="s-head" id="i-title">➕ Add an item</div>
+          <input type="hidden" id="i-id">
+          <div class="row2">
+            <div class="form-group"><label class="form-label">Name</label><input id="i-name" class="form-control" placeholder="e.g. English Reader Class 3" style="width:240px"></div>
+            <div class="form-group"><label class="form-label">Type</label>
+              <select id="i-cat" class="form-control"><option value="books">Book / workbook</option><option value="notebooks">Notebook</option><option value="stationery">Stationery</option><option value="uniform">Uniform</option><option value="supplies">School supply (not sold)</option></select></div>
+            <div class="form-group"><label class="form-label">Size</label><input id="i-size" class="form-control" placeholder="uniform: 28, M…" style="width:90px"></div>
+            <div class="form-group"><label class="form-label">For class</label><select id="i-class" class="form-control"><option value="">Any</option></select></div>
+            <div class="form-group"><label class="form-label">Selling price ₹</label><input id="i-price" type="number" min="0" class="form-control" style="width:100px"></div>
+            <div class="form-group"><label class="form-label">Buying price ₹</label><input id="i-cost" type="number" min="0" class="form-control" style="width:100px"></div>
+            <div class="form-group" id="i-open-wrap"><label class="form-label">Stock now</label><input id="i-stock" type="number" min="0" class="form-control" style="width:90px"></div>
+            <div class="form-group"><label class="form-label">Warn below</label><input id="i-min" type="number" min="0" class="form-control" style="width:80px"></div>
+            <button class="btn btn-gold btn-sm" onclick="saveItem()">Save</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearItem()">Clear</button>
+          </div>
+        </div>
+        <div class="s-card">
+          <div class="row2" style="margin-bottom:10px">
+            <select id="i-filter" class="form-control" style="max-width:200px" onchange="drawItems()"><option value="">All types</option><option value="books">Books</option><option value="notebooks">Notebooks</option><option value="stationery">Stationery</option><option value="uniform">Uniforms</option><option value="supplies">School supplies</option><option value="low">⚠️ Low stock</option></select>
+            <input id="i-search" class="form-control" placeholder="Search" oninput="drawItems()" style="max-width:220px">
+          </div>
+          <div id="i-list" style="overflow-x:auto"></div>
+        </div>
+      </div>
+
+      <!-- SETS -->
+      <div id="t-sets" class="hidden">
+        <div class="s-card">
+          <div class="s-head" id="st-title">➕ Make a class set</div>
+          <input type="hidden" id="st-id">
+          <div class="row2">
+            <div class="form-group"><label class="form-label">Class</label><select id="st-class" class="form-control"></select></div>
+            <div class="form-group"><label class="form-label">Set name</label><input id="st-name" class="form-control" placeholder="e.g. Class 3 full set" style="width:220px"></div>
+          </div>
+          <div class="s-meta" style="margin:10px 0 6px">Tick the items and how many of each:</div>
+          <div id="st-items" style="max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:6px 10px"></div>
+          <div class="row2" style="margin-top:10px"><span class="big" id="st-total">₹0</span>
+            <button class="btn btn-gold btn-sm" onclick="saveSet()">Save set</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearSet()">Clear</button></div>
+        </div>
+        <div class="s-card"><div class="s-head">Sets</div><div id="st-list"></div></div>
+      </div>
+
+      <!-- BILLS -->
+      <div id="t-bills" class="hidden">
+        <div class="s-card">
+          <div class="row2"><div class="form-group"><label class="form-label">From</label><input id="b-from" type="date" class="form-control"></div>
+            <div class="form-group"><label class="form-label">To</label><input id="b-to" type="date" class="form-control"></div>
+            <button class="btn btn-secondary btn-sm" onclick="loadBills()">Show</button></div>
+        </div>
+        <div class="s-card"><div id="b-list" style="overflow-x:auto"></div></div>
+      </div>
+
+      <!-- REPORT -->
+      <div id="t-report" class="hidden"><div id="r-body"></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+// Store & Stock (Nov 2026) — everything goes through api/store.js
+let D = { items: [], sets: [], classes: [] };
+let kid = null, cart = [];
+const CAT = { books: '📘 Book', notebooks: '📓 Notebook', stationery: '✏️ Stationery', uniform: '👕 Uniform', supplies: '🧽 Supply' };
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function inr(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+const nm = it => it.name + (it.size ? ' (' + it.size + ')' : '');
+async function call(action, extra) {
+  try {
+    const r = await fetch('/api/store', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action }, extra || {})) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'No connection.' }; }
+}
+function fail(out) { showToast((out && out.error) || 'Something went wrong.', 'error'); }
+
+document.getElementById('tabs').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  ['give', 'items', 'sets', 'bills', 'report'].forEach(t => document.getElementById('t-' + t).classList.toggle('hidden', t !== b.dataset.t));
+  if (b.dataset.t === 'bills') loadBills();
+  if (b.dataset.t === 'report') loadReport();
+};
+
+async function load() {
+  const out = await call('load');
+  if (!out.ok) { document.querySelector('.page-body').innerHTML = '<div class="s-card">' + esc(out.error) + (/store_items|relation/i.test(out.error || '') ? '<br>Please run step-store.sql in Supabase first.' : '') + '</div>'; return; }
+  D = out;
+  document.getElementById('fy').textContent = 'Year ' + out.fee_year;
+  const clsOpts = out.classes.map(c => '<option>' + esc(c) + '</option>').join('');
+  document.getElementById('i-class').innerHTML = '<option value="">Any</option>' + clsOpts;
+  document.getElementById('st-class').innerHTML = clsOpts;
+  document.getElementById('gc-set').innerHTML = out.sets.length ? out.sets.map(s => '<option value="' + s.id + '">' + esc(s.class_name + ' — ' + s.name) + ' (' + inr(setTotal(s)) + ')</option>').join('') : '<option value="">Make a class set first</option>';
+  drawItems(); drawSetItems(); drawSets();
+  if (kid) openKid(kid.id);
+}
+const itemById = id => D.items.find(i => i.id === id);
+function setTotal(s) { return (s.items || []).reduce((a, l) => a + (itemById(l.item_id) ? Number(itemById(l.item_id).price) * l.qty : 0), 0); }
+
+// ── GIVE ──
+let findTimer = null;
+function findKids() {
+  clearTimeout(findTimer);
+  findTimer = setTimeout(async () => {
+    const q = document.getElementById('g-q').value.trim(), box = document.getElementById('g-found');
+    if (q.length < 2) { box.classList.add('hidden'); return; }
+    const out = await call('find', { q });
+    if (!out.ok) return;
+    box.innerHTML = out.students.length ? out.students.map(s => '<div onclick="openKid(\'' + s.id + '\')"><b>' + esc(s.full_name) + '</b> · ' + esc(s.class) + (s.section ? ' ' + esc(s.section) : '') + ' · ' + esc(s.admission_no || '') + '</div>').join('') : '<div>No child found.</div>';
+    box.classList.remove('hidden');
+  }, 250);
+}
+async function openKid(id) {
+  document.getElementById('g-found').classList.add('hidden');
+  const out = await call('student', { student_id: id });
+  if (!out.ok) return fail(out);
+  kid = out.student; cart = [];
+  const sales = out.sales || [];
+  document.getElementById('g-kid').innerHTML = '<div class="s-card"><div class="s-head">🎒 ' + esc(kid.full_name) + ' · ' + esc(kid.class) + (kid.section ? ' ' + esc(kid.section) : '') + '</div>' +
+    (out.sets.length ? '<div class="row2" style="margin-bottom:12px">' + out.sets.map(s => {
+      const had = sales.some(x => x.set_id === s.id && !x.cancelled);
+      return '<button class="btn ' + (had ? 'btn-secondary' : 'btn-gold') + ' btn-sm" onclick="addSet(\'' + s.id + '\')">' + (had ? '✓ ' : '') + esc(s.name) + ' · ' + inr(setTotal(s)) + (had ? ' (already given)' : '') + '</button>'; }).join('') + '</div>' : '<div class="s-meta" style="margin-bottom:10px">No set for ' + esc(kid.class) + ' yet — make one in Class sets, or add items below.</div>') +
+    '<div class="row2"><select id="g-item" class="form-control" style="max-width:340px"><option value="">Add one item…</option>' +
+    D.items.filter(i => i.for_sale && i.active).map(i => '<option value="' + i.id + '">' + esc(nm(i)) + ' · ' + inr(i.price) + ' · stock ' + i.stock + '</option>').join('') +
+    '</select><button class="btn btn-secondary btn-sm" onclick="addItem()">Add</button></div>' +
+    '<div id="g-cart" style="margin-top:12px"></div>' +
+    (sales.length ? '<div class="s-meta" style="margin-top:14px"><b>This year\'s bills:</b><br>' + sales.map(x => esc(x.bill_no) + ' · ' + esc(String(x.created_at).slice(0, 10)) + ' · ' + inr(x.total) + (x.cancelled ? ' <span class="pill n">cancelled</span>' : '')).join('<br>') + '</div>' : '') + '</div>';
+  drawCart();
+  window._setFor = out.sets;
+}
+function addSet(id) {
+  const s = (window._setFor || []).find(x => x.id === id); if (!s) return;
+  s.items.forEach(l => addLine(l.item_id, l.qty)); window._cartSet = id; drawCart();
+}
+function addItem() { const v = document.getElementById('g-item').value; if (v) { addLine(v, 1); drawCart(); } }
+function addLine(id, qty) { const l = cart.find(x => x.item_id === id); if (l) l.qty += qty; else cart.push({ item_id: id, qty }); }
+function drawCart() {
+  const box = document.getElementById('g-cart'); if (!box) return;
+  if (!cart.length) { box.innerHTML = ''; return; }
+  let total = 0;
+  box.innerHTML = '<table class="t cart"><thead><tr><th>Item</th><th class="r">Price</th><th>Qty</th><th class="r">Amount</th><th>Stock</th><th></th></tr></thead><tbody>' +
+    cart.map((l, i) => { const it = itemById(l.item_id) || {}; const amt = Number(it.price) * l.qty; total += amt;
+      return '<tr><td>' + esc(nm(it)) + '</td><td class="r">' + inr(it.price) + '</td><td><input type="number" min="1" value="' + l.qty + '" class="form-control" onchange="cart[' + i + '].qty=Math.max(1,parseInt(this.value)||1);drawCart()"></td>' +
+        '<td class="r">' + inr(amt) + '</td><td>' + (it.stock < l.qty ? '<span class="pill r">only ' + it.stock + '</span>' : '<span class="pill g">' + it.stock + '</span>') + '</td>' +
+        '<td><button class="btn btn-secondary btn-sm" onclick="cart.splice(' + i + ',1);drawCart()">✕</button></td></tr>'; }).join('') +
+    '</tbody></table><div class="row2" style="margin-top:10px;justify-content:space-between"><span class="big">Total ' + inr(total) + '</span>' +
+    '<button class="btn btn-gold" onclick="sell()">✅ Give & add ' + inr(total) + ' to fees</button></div>' +
+    '<div class="s-meta">The amount is added to ' + esc(kid.full_name) + '\'s fees — paid at the fee counter or online, and shown in the parent app.</div>';
+}
+async function sell(allowShort) {
+  if (!kid || !cart.length) return;
+  const out = await call('sell', { student_id: kid.id, lines: cart, set_id: window._cartSet || null, allow_short: !!allowShort });
+  if (!out.ok) {
+    if (out.short && confirm(out.error + '\n\nGive anyway? (stock will go below zero)')) return sell(true);
+    return fail(out);
+  }
+  showToast('Bill ' + out.sale.bill_no + ' — ' + inr(out.sale.total) + ' added to fees.', 'success');
+  window._cartSet = null; await load();
+}
+async function sellClass(allowShort) {
+  const id = document.getElementById('gc-set').value; if (!id) return;
+  const s = D.sets.find(x => x.id === id);
+  if (!allowShort && !confirm('Give "' + s.name + '" to every child in ' + s.class_name + ' who has not had it yet?\nEach child gets a bill of ' + inr(setTotal(s)) + ' added to fees.')) return;
+  const out = await call('sell_class', { set_id: id, allow_short: !!allowShort });
+  if (!out.ok) {
+    if (out.short && confirm(out.error + '\n\nGive anyway? (stock will go below zero)')) return sellClass(true);
+    return fail(out);
+  }
+  showToast(out.done ? out.done + ' children given the set' + (out.skipped ? ' (' + out.skipped + ' already had it)' : '') : (out.note || 'Nothing to do.'), 'success');
+  load();
+}
+
+// ── ITEMS ──
+function drawItems() {
+  const f = document.getElementById('i-filter').value, q = document.getElementById('i-search').value.toLowerCase();
+  const rows = D.items.filter(i => (!f || (f === 'low' ? i.stock <= i.min_stock : i.category === f)) && (!q || nm(i).toLowerCase().indexOf(q) !== -1));
+  document.getElementById('i-list').innerHTML = rows.length ? '<table class="t"><thead><tr><th>Item</th><th>Type</th><th>Class</th><th class="r">Price</th><th class="r">Stock</th><th></th></tr></thead><tbody>' +
+    rows.map(i => '<tr' + (i.active ? '' : ' style="opacity:.5"') + '><td><b>' + esc(nm(i)) + '</b></td><td>' + (CAT[i.category] || i.category) + '</td><td>' + esc(i.class_name || '—') + '</td>' +
+      '<td class="r">' + (i.for_sale ? inr(i.price) : '—') + '</td><td class="r">' + (i.stock <= i.min_stock ? '<span class="pill r">' + i.stock + ' low</span>' : '<span class="pill g">' + i.stock + '</span>') + '</td>' +
+      '<td style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="stockIn(\'' + i.id + '\')">+ Received</button> ' +
+      (i.category === 'supplies' ? '<button class="btn btn-secondary btn-sm" onclick="useIt(\'' + i.id + '\')">− Used</button> ' : '') +
+      '<button class="btn btn-secondary btn-sm" onclick="countIt(\'' + i.id + '\')">Count</button> <button class="btn btn-secondary btn-sm" onclick="editItem(\'' + i.id + '\')">Edit</button></td></tr>').join('') +
+    '</tbody></table>' : '<div class="s-meta">No items yet. Add your books, notebooks, uniforms and supplies above.</div>';
+}
+function editItem(id) {
+  const i = itemById(id); if (!i) return;
+  document.getElementById('i-title').textContent = '✏️ Change ' + nm(i);
+  document.getElementById('i-id').value = i.id; document.getElementById('i-name').value = i.name; document.getElementById('i-cat').value = i.category;
+  document.getElementById('i-size').value = i.size || ''; document.getElementById('i-class').value = i.class_name || '';
+  document.getElementById('i-price').value = i.price; document.getElementById('i-cost').value = i.cost; document.getElementById('i-min').value = i.min_stock;
+  document.getElementById('i-open-wrap').classList.add('hidden'); window.scrollTo(0, 0);
+}
+function clearItem() {
+  ['i-id', 'i-name', 'i-size', 'i-price', 'i-cost', 'i-stock', 'i-min'].forEach(x => { document.getElementById(x).value = ''; });
+  document.getElementById('i-title').textContent = '➕ Add an item'; document.getElementById('i-open-wrap').classList.remove('hidden');
+}
+async function saveItem() {
+  const item = { id: document.getElementById('i-id').value || null, name: document.getElementById('i-name').value, category: document.getElementById('i-cat').value,
+    size: document.getElementById('i-size').value, class_name: document.getElementById('i-class').value, price: document.getElementById('i-price').value,
+    cost: document.getElementById('i-cost').value, stock: document.getElementById('i-stock').value, min_stock: document.getElementById('i-min').value };
+  const out = await call('item_save', { item });
+  if (!out.ok) return fail(out);
+  showToast('Saved.', 'success'); clearItem(); load();
+}
+async function stockIn(id) {
+  const i = itemById(id); const q = prompt('How many ' + nm(i) + ' received?'); if (!q) return;
+  const c = prompt('Buying price per piece ₹ (leave empty to keep ' + i.cost + ')', '');
+  const out = await call('stock_in', { item_id: id, qty: q, cost: c || 0 }); if (!out.ok) return fail(out); load();
+}
+async function useIt(id) {
+  const i = itemById(id); const q = prompt('How many ' + nm(i) + ' used by the school?'); if (!q) return;
+  const out = await call('use', { item_id: id, qty: q, note: prompt('For what? (optional)', '') || '' }); if (!out.ok) return fail(out); load();
+}
+async function countIt(id) {
+  const i = itemById(id); const q = prompt('How many ' + nm(i) + ' are actually on the shelf? (now shows ' + i.stock + ')', i.stock); if (q === null) return;
+  const out = await call('adjust', { item_id: id, stock: q, note: 'Counted on the shelf' }); if (!out.ok) return fail(out); load();
+}
+
+// ── SETS ──
+function drawSetItems(sel) {
+  sel = sel || {};
+  const items = D.items.filter(i => i.for_sale && i.active);
+  document.getElementById('st-items').innerHTML = items.length ? items.map(i => '<label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px">' +
+    '<input type="checkbox" class="st-on" data-id="' + i.id + '"' + (sel[i.id] ? ' checked' : '') + ' onchange="setSum()"> <span style="flex:1">' + esc(nm(i)) + (i.class_name ? ' <span class="pill n">' + esc(i.class_name) + '</span>' : '') + ' · ' + inr(i.price) + '</span>' +
+    '<input type="number" min="1" value="' + (sel[i.id] || 1) + '" class="form-control st-qty" data-id="' + i.id + '" style="width:64px" oninput="setSum()"></label>').join('') : '<div class="s-meta">Add items first.</div>';
+  setSum();
+}
+function setSum() {
+  let t = 0;
+  document.querySelectorAll('.st-on:checked').forEach(c => { const it = itemById(c.dataset.id); const q = parseInt(document.querySelector('.st-qty[data-id="' + c.dataset.id + '"]').value) || 1; t += Number(it.price) * q; });
+  document.getElementById('st-total').textContent = inr(t);
+}
+async function saveSet() {
+  const items = Array.from(document.querySelectorAll('.st-on:checked')).map(c => ({ item_id: c.dataset.id, qty: parseInt(document.querySelector('.st-qty[data-id="' + c.dataset.id + '"]').value) || 1 }));
+  const out = await call('set_save', { set: { id: document.getElementById('st-id').value || null, class_name: document.getElementById('st-class').value, name: document.getElementById('st-name').value, items } });
+  if (!out.ok) return fail(out);
+  showToast('Set saved.', 'success'); clearSet(); load();
+}
+function clearSet() { document.getElementById('st-id').value = ''; document.getElementById('st-name').value = ''; document.getElementById('st-title').textContent = '➕ Make a class set'; drawSetItems(); }
+function editSet(id) {
+  const s = D.sets.find(x => x.id === id); if (!s) return;
+  document.getElementById('st-id').value = s.id; document.getElementById('st-class').value = s.class_name; document.getElementById('st-name').value = s.name;
+  document.getElementById('st-title').textContent = '✏️ Change ' + s.name;
+  const sel = {}; s.items.forEach(l => { sel[l.item_id] = l.qty; }); drawSetItems(sel); window.scrollTo(0, 0);
+}
+async function delSet(id) { if (!confirm('Delete this set? Bills already made stay.')) return; const out = await call('set_delete', { id }); if (!out.ok) return fail(out); load(); }
+function drawSets() {
+  document.getElementById('st-list').innerHTML = D.sets.length ? '<table class="t"><thead><tr><th>Class</th><th>Set</th><th>Items</th><th class="r">Price</th><th></th></tr></thead><tbody>' +
+    D.sets.map(s => '<tr><td>' + esc(s.class_name) + '</td><td><b>' + esc(s.name) + '</b></td><td style="font-size:12px">' + s.items.map(l => { const it = itemById(l.item_id); return it ? esc(nm(it)) + (l.qty > 1 ? ' ×' + l.qty : '') : ''; }).filter(Boolean).join(', ') + '</td>' +
+      '<td class="r"><b>' + inr(setTotal(s)) + '</b></td><td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="editSet(\'' + s.id + '\')">Edit</button> <button class="btn btn-secondary btn-sm" onclick="delSet(\'' + s.id + '\')">Delete</button></td></tr>').join('') + '</tbody></table>'
+    : '<div class="s-meta">No sets yet.</div>';
+}
+
+// ── BILLS ──
+async function loadBills() {
+  const out = await call('sales', { from: document.getElementById('b-from').value, to: document.getElementById('b-to').value });
+  const box = document.getElementById('b-list');
+  if (!out.ok) { box.innerHTML = esc(out.error); return; }
+  box.innerHTML = out.sales.length ? '<table class="t"><thead><tr><th>Bill</th><th>Date</th><th>Child</th><th>Items</th><th class="r">Amount</th><th>Paid</th><th></th></tr></thead><tbody>' +
+    out.sales.map(x => '<tr' + (x.cancelled ? ' style="opacity:.5"' : '') + '><td>' + esc(x.bill_no) + '</td><td>' + esc(String(x.created_at).slice(0, 10)) + '</td><td><b>' + esc(x.student_name) + '</b><br><span class="s-meta">' + esc(x.student_class) + '</span></td>' +
+      '<td style="font-size:12px">' + (x.items || []).map(l => esc(l.name + (l.size ? ' (' + l.size + ')' : '') + (l.qty > 1 ? ' ×' + l.qty : ''))).join(', ') + '</td><td class="r"><b>' + inr(x.total) + '</b></td>' +
+      '<td>' + (x.cancelled ? '<span class="pill n">Cancelled</span>' : x.paid >= x.total ? '<span class="pill g">Paid</span>' : x.paid > 0 ? '<span class="pill a">' + inr(x.paid) + '</span>' : '<span class="pill r">Not paid</span>') + '</td>' +
+      '<td>' + (!x.cancelled && !x.paid ? '<button class="btn btn-secondary btn-sm" onclick="cancelBill(\'' + x.id + '\')">Cancel</button>' : '') + '</td></tr>').join('') + '</tbody></table>'
+    : '<div class="s-meta">No bills.</div>';
+}
+async function cancelBill(id) { if (!confirm('Cancel this bill? The items go back into stock and the amount leaves the child\'s fees.')) return; const out = await call('cancel', { sale_id: id }); if (!out.ok) return fail(out); showToast('Bill cancelled.', 'success'); loadBills(); load(); }
+
+// ── REPORT ──
+async function loadReport() {
+  const box = document.getElementById('r-body'); box.innerHTML = '<div class="s-meta">Loading…</div>';
+  const r = await call('report'); if (!r.ok) { box.innerHTML = esc(r.error); return; }
+  box.innerHTML = '<div class="stats"><div class="stat"><b>' + inr(r.billed) + '</b><span>Given to children (' + esc(r.fee_year) + ')</span></div>' +
+    '<div class="stat"><b>' + inr(r.stock_value) + '</b><span>Stock value (buying price)</span></div><div class="stat"><b>' + inr(r.sale_value) + '</b><span>Stock value (selling price)</span></div>' +
+    '<div class="stat"><b>' + r.low.length + '</b><span>Items low in stock</span></div></div>' +
+    (r.low.length ? '<div class="s-card"><div class="s-head">⚠️ Low stock — order soon</div>' + r.low.map(l => esc(l.name + (l.size ? ' (' + l.size + ')' : '')) + ': <b>' + l.stock + '</b> left').join('<br>') + '</div>' : '') +
+    (r.coverage.length ? '<div class="s-card"><div class="s-head">🧺 Sets given</div><table class="t"><thead><tr><th>Class</th><th>Set</th><th class="r">Given</th><th class="r">Not yet</th></tr></thead><tbody>' +
+      r.coverage.map(c => '<tr><td>' + esc(c.class_name) + '</td><td>' + esc(c.set) + '</td><td class="r">' + c.given + ' / ' + c.children + '</td><td class="r">' + (c.children - c.given > 0 ? '<span class="pill r">' + (c.children - c.given) + '</span>' : '<span class="pill g">0</span>') + '</td></tr>').join('') + '</tbody></table></div>' : '') +
+    '<div class="s-card"><div class="s-head">Given this year, item by item</div>' + (r.sold.length ? '<table class="t"><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Amount</th></tr></thead><tbody>' +
+      r.sold.map(x => '<tr><td>' + esc(x.name + (x.size ? ' (' + x.size + ')' : '')) + '</td><td class="r">' + x.qty + '</td><td class="r">' + inr(x.amount) + '</td></tr>').join('') + '</tbody></table>' : '<div class="s-meta">Nothing yet.</div>') + '</div>';
+}
+
+document.addEventListener('DOMContentLoaded', () => { renderSidebar('store'); load(); });
+</script>
+</body>
+</html>
