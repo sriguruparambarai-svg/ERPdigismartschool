@@ -439,6 +439,8 @@ function startApp() {
   if (q.get('alert') === 'fee_reminders' && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert('fee_reminders', q.get('date'));
 }
 (function boot() {
+  // Ready to install as an app from the very first screen (Chrome checks this before login)
+  if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(function () {}); }
   try { session = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); } catch (e) { session = null; }
   if (session && session.token) startApp(); else show('view-login');
   document.getElementById('li-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
