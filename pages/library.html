@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Library — DigiSmart ERP</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.tabs2{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs2 button{border:1.5px solid var(--border);background:#fff;border-radius:20px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit}
+.tabs2 button.on{background:var(--maroon);border-color:var(--maroon);color:#F5E6C8}
+.s-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;margin-bottom:14px}
+.s-head{font-size:15px;font-weight:700;color:var(--maroon);margin-bottom:6px}
+.s-meta{font-size:12.5px;color:#7A6F66;line-height:1.6}
+.row2{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row2 .form-group{margin:0}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th,table.t td{padding:8px;border-bottom:1px solid #F0EDE8;text-align:left;vertical-align:middle}
+table.t th{font-size:11px;color:#9B928A;text-transform:uppercase}
+.pill{font-size:11px;font-weight:700;border-radius:20px;padding:2px 9px;white-space:nowrap}
+.pill.g{background:#E6F2E8;color:#2D7A3A}.pill.a{background:#FBF1DC;color:#8A6410}.pill.r{background:#FBE9E9;color:#A32D2D}.pill.n{background:#F1ECE6;color:#6B5D55}
+.found{border:1px solid var(--border);border-radius:10px;margin-top:6px;max-height:220px;overflow:auto}
+.found div{padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #F5F0EA}
+.found div:hover{background:#FBF6EE}
+.picked{background:#F1FAF3;border:1.5px solid #BFE3C8;border-radius:10px;padding:8px 12px;font-size:13px;margin-top:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#FBF6EE;border:1px solid var(--border);border-radius:12px;padding:12px}
+.stat b{display:block;font-size:20px;color:var(--maroon)}.stat span{font-size:12px;color:#5C534B}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="erp-layout">
+  <nav class="sidebar" id="sidebar"></nav>
+  <div class="main-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Library</div>
+        <div class="breadcrumb" style="margin-left:10px;padding-left:10px;border-left:1px solid #E8E0D5;color:#9B928A;font-size:12px">Academics → Library</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="stats" id="stats"></div>
+      <div class="tabs2" id="tabs">
+        <button data-t="lend" class="on">📖 Lend & return</button>
+        <button data-t="books">📚 Books</button>
+        <button data-t="overdue">⏰ Overdue</button>
+        <button data-t="history">🗂 History & report</button>
+      </div>
+
+      <div id="t-lend">
+        <div class="s-card">
+          <div class="s-head">Lend a book</div>
+          <div class="row2">
+            <div class="form-group" style="flex:1;min-width:240px"><label class="form-label">Book</label>
+              <input id="l-book" class="form-control" placeholder="Type the title" oninput="findBook()">
+              <div id="l-books" class="found hidden"></div><div id="l-book-pick"></div></div>
+            <div class="form-group" style="flex:1;min-width:240px"><label class="form-label">To (student or staff)</label>
+              <input id="l-who" class="form-control" placeholder="Type the name" oninput="findWho()">
+              <div id="l-whos" class="found hidden"></div><div id="l-who-pick"></div></div>
+            <div class="form-group"><label class="form-label">Return by</label><input id="l-due" type="date" class="form-control"></div>
+            <button class="btn btn-gold" onclick="lend()">📖 Lend</button>
+          </div>
+        </div>
+        <div class="s-card">
+          <div class="row2" style="justify-content:space-between;margin-bottom:8px"><div class="s-head" style="margin:0">Books out now</div>
+            <input id="o-q" class="form-control" placeholder="Search name or book" oninput="drawOpen()" style="max-width:240px"></div>
+          <div id="o-list" style="overflow-x:auto"></div>
+        </div>
+      </div>
+
+      <div id="t-books" class="hidden">
+        <div class="s-card">
+          <div class="s-head" id="b-title">➕ Add a book</div>
+          <input type="hidden" id="b-id">
+          <div class="row2">
+            <div class="form-group"><label class="form-label">Title</label><input id="b-t" class="form-control" style="width:260px"></div>
+            <div class="form-group"><label class="form-label">Author</label><input id="b-a" class="form-control" style="width:180px"></div>
+            <div class="form-group"><label class="form-label">Subject</label><input id="b-s" class="form-control" placeholder="Story, Science…" style="width:140px"></div>
+            <div class="form-group"><label class="form-label">For class</label><input id="b-c" class="form-control" placeholder="optional" style="width:110px"></div>
+            <div class="form-group"><label class="form-label">Copies</label><input id="b-n" type="number" min="0" value="1" class="form-control" style="width:80px"></div>
+            <div class="form-group"><label class="form-label">Shelf</label><input id="b-sh" class="form-control" placeholder="A-3" style="width:80px"></div>
+            <button class="btn btn-gold btn-sm" onclick="saveBook()">Save</button>
+            <button class="btn btn-secondary btn-sm" onclick="clearBook()">Clear</button>
+          </div>
+        </div>
+        <div class="s-card">
+          <input id="bk-q" class="form-control" placeholder="Search books" oninput="drawBooks()" style="max-width:280px;margin-bottom:10px">
+          <div id="bk-list" style="overflow-x:auto"></div>
+        </div>
+      </div>
+
+      <div id="t-overdue" class="hidden"><div class="s-card"><div class="s-meta" style="margin-bottom:8px">Books not returned by the date. Parents see their child's book and its date in the parent app.</div><div id="od-list" style="overflow-x:auto"></div></div></div>
+      <div id="t-history" class="hidden"><div id="h-body"></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="../js/config.js"></script>
+<script src="../js/sidebar.js"></script>
+<script>
+// Library (Nov 2026) — api/library.js
+let D = { books: [] }, OPEN = [], pickBook = null, pickWho = null;
+function esc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function nice(d) { return d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : ''; }
+function istToday() { return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10); }
+function plus(d, n) { return new Date(new Date(d + 'T00:00:00Z').getTime() + n * 864e5).toISOString().slice(0, 10); }
+async function call(action, extra) {
+  try {
+    const r = await fetch('/api/library', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ token: sessionStorage.getItem('digismart_session_token') || '', action }, extra || {})) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'No connection.' }; }
+}
+function fail(o) { showToast((o && o.error) || 'Something went wrong.', 'error'); }
+document.getElementById('tabs').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+  ['lend', 'books', 'overdue', 'history'].forEach(t => document.getElementById('t-' + t).classList.toggle('hidden', t !== b.dataset.t));
+  if (b.dataset.t === 'overdue') loadOverdue();
+  if (b.dataset.t === 'history') loadHistory();
+};
+
+async function load() {
+  const out = await call('load');
+  if (!out.ok) { document.querySelector('.page-body').innerHTML = '<div class="s-card">' + esc(out.error) + (/library_|relation/i.test(out.error || '') ? '<br>Please run step-library.sql in Supabase first.' : '') + '</div>'; return; }
+  D = out;
+  document.getElementById('stats').innerHTML = '<div class="stat"><b>' + out.books.length + '</b><span>Titles</span></div><div class="stat"><b>' + out.copies + '</b><span>Copies</span></div>' +
+    '<div class="stat"><b>' + out.open + '</b><span>Lent out now</span></div><div class="stat"><b' + (out.overdue ? ' style="color:#A32D2D"' : '') + '>' + out.overdue + '</b><span>Overdue</span></div>';
+  drawBooks();
+  const o = await call('loans', { show: 'open' }); OPEN = o.ok ? o.loans : []; drawOpen();
+}
+
+// ── Lend ──
+let t1 = null, t2 = null;
+function findBook() {
+  const q = document.getElementById('l-book').value.toLowerCase().trim(), box = document.getElementById('l-books');
+  if (q.length < 2) { box.classList.add('hidden'); return; }
+  const rows = D.books.filter(b => (b.title + ' ' + (b.author || '')).toLowerCase().indexOf(q) !== -1).slice(0, 15);
+  box.innerHTML = rows.length ? rows.map(b => '<div onclick="chooseBook(\'' + b.id + '\')"><b>' + esc(b.title) + '</b>' + (b.author ? ' · ' + esc(b.author) : '') +
+    ' · ' + (b.available ? '<span class="pill g">' + b.available + ' available</span>' : '<span class="pill r">all out</span>') + '</div>').join('') : '<div>No book found.</div>';
+  box.classList.remove('hidden');
+}
+function chooseBook(id) {
+  pickBook = D.books.find(b => b.id === id); document.getElementById('l-books').classList.add('hidden');
+  document.getElementById('l-book').value = '';
+  document.getElementById('l-book-pick').innerHTML = '<div class="picked">📗 <b>' + esc(pickBook.title) + '</b> · ' + pickBook.available + ' of ' + pickBook.copies + ' available</div>';
+}
+function findWho() {
+  clearTimeout(t2);
+  t2 = setTimeout(async () => {
+    const q = document.getElementById('l-who').value.trim(), box = document.getElementById('l-whos');
+    if (q.length < 2) { box.classList.add('hidden'); return; }
+    const out = await call('people', { q }); if (!out.ok) return;
+    window._people = out.people;
+    box.innerHTML = out.people.length ? out.people.map((p, i) => '<div onclick="chooseWho(' + i + ')"><b>' + esc(p.name) + '</b> · ' + esc(p.sub) + '</div>').join('') : '<div>Nobody found.</div>';
+    box.classList.remove('hidden');
+  }, 250);
+}
+function chooseWho(i) {
+  pickWho = window._people[i]; document.getElementById('l-whos').classList.add('hidden'); document.getElementById('l-who').value = '';
+  const has = OPEN.filter(l => (pickWho.type === 'student' ? l.student_id : l.staff_id) === pickWho.id);
+  document.getElementById('l-who-pick').innerHTML = '<div class="picked">' + (pickWho.type === 'staff' ? '🧑‍🏫' : '🎒') + ' <b>' + esc(pickWho.name) + '</b> · ' + esc(pickWho.sub) +
+    (has.length ? '<br><span class="pill a">already has: ' + has.map(l => esc(l.book_title)).join(', ') + '</span>' : '') + '</div>';
+}
+async function lend() {
+  if (!pickBook) return showToast('Choose the book.', 'error');
+  if (!pickWho) return showToast('Choose who is borrowing.', 'error');
+  const out = await call('issue', { book_id: pickBook.id, borrower_type: pickWho.type, borrower_id: pickWho.id, due_on: document.getElementById('l-due').value });
+  if (!out.ok) return fail(out);
+  showToast('Lent — return by ' + nice(out.due_on) + '.', 'success');
+  pickBook = pickWho = null; document.getElementById('l-book-pick').innerHTML = document.getElementById('l-who-pick').innerHTML = '';
+  load();
+}
+function loanRows(rows, t) {
+  return rows.length ? '<table class="t"><thead><tr><th>Book</th><th>Borrower</th><th>Lent</th><th>Return by</th><th></th></tr></thead><tbody>' +
+    rows.map(l => '<tr><td><b>' + esc(l.book_title) + '</b></td><td>' + esc(l.borrower_name) + '<br><span class="s-meta">' + esc(l.borrower_class || '') + '</span></td>' +
+      '<td>' + nice(l.issued_on) + '</td><td>' + (l.due_on < t ? '<span class="pill r">' + nice(l.due_on) + ' · late</span>' : '<span class="pill g">' + nice(l.due_on) + '</span>') + '</td>' +
+      '<td style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="giveBack(\'' + l.id + '\')">✓ Returned</button> <button class="btn btn-secondary btn-sm" onclick="lost(\'' + l.id + '\',' + (l.student_id ? 1 : 0) + ')">Lost</button></td></tr>').join('') + '</tbody></table>'
+    : '<div class="s-meta">Nothing here.</div>';
+}
+function drawOpen() {
+  const q = (document.getElementById('o-q').value || '').toLowerCase();
+  document.getElementById('o-list').innerHTML = loanRows(OPEN.filter(l => !q || (l.book_title + ' ' + l.borrower_name).toLowerCase().indexOf(q) !== -1), istToday());
+}
+async function giveBack(id) { const out = await call('return', { loan_id: id }); if (!out.ok) return fail(out); showToast('Returned.', 'success'); load(); if (!document.getElementById('t-overdue').classList.contains('hidden')) loadOverdue(); }
+async function lost(id, isStudent) {
+  if (!confirm('Mark this book as lost? One copy is removed from the library.')) return;
+  let charge = 0;
+  if (isStudent) { const c = prompt('Charge the child for the book? Type the amount in ₹ (it is added to fees), or leave empty for no charge.', ''); charge = parseInt(c) || 0; }
+  const out = await call('lost', { loan_id: id, charge }); if (!out.ok) return fail(out);
+  showToast(out.charged ? 'Marked lost — ₹' + charge + ' added to fees.' : 'Marked lost.', 'success'); load();
+}
+
+// ── Books ──
+function drawBooks() {
+  const q = (document.getElementById('bk-q').value || '').toLowerCase();
+  const rows = D.books.filter(b => !q || (b.title + ' ' + (b.author || '') + ' ' + (b.subject || '')).toLowerCase().indexOf(q) !== -1);
+  document.getElementById('bk-list').innerHTML = rows.length ? '<table class="t"><thead><tr><th>Title</th><th>Author</th><th>Subject</th><th>Class</th><th>Shelf</th><th>Copies</th><th>Available</th><th></th></tr></thead><tbody>' +
+    rows.map(b => '<tr><td><b>' + esc(b.title) + '</b></td><td>' + esc(b.author || '') + '</td><td>' + esc(b.subject || '') + '</td><td>' + esc(b.class_name || '') + '</td><td>' + esc(b.shelf || '') + '</td>' +
+      '<td>' + b.copies + '</td><td>' + (b.available ? '<span class="pill g">' + b.available + '</span>' : '<span class="pill r">0</span>') + '</td>' +
+      '<td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" onclick="editBook(\'' + b.id + '\')">Edit</button> <button class="btn btn-secondary btn-sm" onclick="delBook(\'' + b.id + '\')">Delete</button></td></tr>').join('') + '</tbody></table>'
+    : '<div class="s-meta">No books yet. Add them above.</div>';
+}
+function editBook(id) {
+  const b = D.books.find(x => x.id === id); if (!b) return;
+  document.getElementById('b-title').textContent = '✏️ Change ' + b.title;
+  document.getElementById('b-id').value = b.id; document.getElementById('b-t').value = b.title; document.getElementById('b-a').value = b.author || '';
+  document.getElementById('b-s').value = b.subject || ''; document.getElementById('b-c').value = b.class_name || ''; document.getElementById('b-n').value = b.copies; document.getElementById('b-sh').value = b.shelf || '';
+  window.scrollTo(0, 0);
+}
+function clearBook() { ['b-id', 'b-t', 'b-a', 'b-s', 'b-c', 'b-sh'].forEach(x => { document.getElementById(x).value = ''; }); document.getElementById('b-n').value = 1; document.getElementById('b-title').textContent = '➕ Add a book'; }
+async function saveBook() {
+  const out = await call('book_save', { book: { id: document.getElementById('b-id').value || null, title: document.getElementById('b-t').value, author: document.getElementById('b-a').value,
+    subject: document.getElementById('b-s').value, class_name: document.getElementById('b-c').value, copies: document.getElementById('b-n').value, shelf: document.getElementById('b-sh').value } });
+  if (!out.ok) return fail(out); showToast('Saved.', 'success'); clearBook(); load();
+}
+async function delBook(id) { if (!confirm('Delete this book from the library list?')) return; const out = await call('book_delete', { id }); if (!out.ok) return fail(out); load(); }
+
+async function loadOverdue() {
+  const out = await call('loans', { show: 'overdue' });
+  document.getElementById('od-list').innerHTML = out.ok ? loanRows(out.loans, out.today) : esc(out.error);
+}
+async function loadHistory() {
+  const box = document.getElementById('h-body'); box.innerHTML = '<div class="s-meta">Loading…</div>';
+  const [r, all] = await Promise.all([call('report'), call('loans', { show: 'all' })]);
+  if (!r.ok) { box.innerHTML = esc(r.error); return; }
+  box.innerHTML = '<div class="stats"><div class="stat"><b>' + r.total + '</b><span>Books lent in the last year</span></div><div class="stat"><b>' + r.lost + '</b><span>Lost</span></div></div>' +
+    '<div class="row2" style="align-items:flex-start"><div class="s-card" style="flex:1;min-width:280px"><div class="s-head">Most read</div>' + (r.top.length ? r.top.map(t => esc(t.title) + ' — <b>' + t.times + '</b>').join('<br>') : '<span class="s-meta">Nothing yet.</span>') + '</div>' +
+    '<div class="s-card" style="flex:1;min-width:280px"><div class="s-head">Reading by class</div>' + (r.by_class.length ? r.by_class.map(c => esc(c.class_name) + ' — <b>' + c.times + '</b> books').join('<br>') : '<span class="s-meta">Nothing yet.</span>') + '</div></div>' +
+    '<div class="s-card"><div class="s-head">All lending (latest first)</div>' + (all.ok && all.loans.length ? '<table class="t"><thead><tr><th>Book</th><th>Borrower</th><th>Lent</th><th>Returned</th></tr></thead><tbody>' +
+      all.loans.map(l => '<tr><td>' + esc(l.book_title) + '</td><td>' + esc(l.borrower_name) + ' <span class="s-meta">' + esc(l.borrower_class || '') + '</span></td><td>' + nice(l.issued_on) + '</td><td>' +
+        (l.lost ? '<span class="pill r">Lost</span>' : l.returned_on ? nice(l.returned_on) : '<span class="pill a">Still out</span>') + '</td></tr>').join('') + '</tbody></table>' : '<div class="s-meta">Nothing yet.</div>') + '</div>';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderSidebar('library');
+  document.getElementById('l-due').value = plus(istToday(), 14);
+  load();
+});
+</script>
+</body>
+</html>

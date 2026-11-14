@@ -477,6 +477,16 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, is_birthday: true, name: first, message: message });
     }
 
+    // ══ LIBRARY — books this child has borrowed and not returned (Nov 2026) ══
+    if (action === 'library') {
+      let rows = [];
+      try {
+        rows = await sb('GET', 'library_loans?school_id=eq.' + encodeURIComponent(schoolId) + '&student_id=eq.' + encodeURIComponent(studentId) +
+          '&returned_on=is.null&lost=is.false&select=book_title,issued_on,due_on&order=due_on.asc&limit=10') || [];
+      } catch (e) { rows = []; }   // no library yet
+      return res.status(200).json({ ok: true, books: rows, today: new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10) });
+    }
+
     // ══ FEE REMINDER — the latest automatic reminder (api/fee-reminders.js), last 10 days ══
     // Shown only while fees are still due; opening it marks it "seen" for the owner's list.
     if (action === 'fee_reminder') {
