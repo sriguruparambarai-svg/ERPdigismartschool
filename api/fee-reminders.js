@@ -270,7 +270,8 @@ module.exports = async (req, res) => {
   const session = verifyToken(body.token);
   if (!session || !session.sid) return res.status(401).json({ ok: false, error: 'Session expired. Please log in again.' });
   const mods = Array.isArray(session.mods) ? session.mods : [];
-  if (!(session.role === 'owner' || session.role === 'owner_app' || mods.indexOf('fee') !== -1)) {
+  // (The Owner App reads its lists through api/owner-app.js, which checks the person's own password.)
+  if (!(session.role === 'owner' || mods.indexOf('fee') !== -1)) {
     return res.status(403).json({ ok: false, error: 'Only the owner or Fee Management (Full) staff can see fee reminders.' });
   }
   const schoolId = String(session.sid);

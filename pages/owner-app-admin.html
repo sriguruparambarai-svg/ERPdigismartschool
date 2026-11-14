@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owner App People · DigiSmart Super Admin</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --maroon: #6B1A1A; --gold: #C9A84C; --sandal: #E8C99A; --cream: #FBF6EE; --ink: #2A1E1A; --muted: #8A7D74; --line: #EADFCF; --red: #A32D2D; --green: #2D7A3A; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cream); color: var(--ink); font-family: 'Segoe UI', system-ui, sans-serif; }
+  .top { background: linear-gradient(135deg, #6B1A1A, #4E1212); color: #fff; padding: 16px 20px; }
+  .top h1 { margin: 0; font-size: 18px; }
+  .top div { color: var(--sandal); font-size: 12.5px; margin-top: 3px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 18px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 10px; font-size: 15px; }
+  label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin: 8px 0 4px; }
+  input, select { width: 100%; padding: 10px; border: 1.5px solid var(--line); border-radius: 9px; font-size: 14px; font-family: inherit; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 180px; }
+  .btn { background: linear-gradient(135deg, #6B1A1A, #4E1212); color: #F5E6C8; border: none; border-radius: 9px; padding: 10px 16px; font-weight: 700; font-size: 14px; cursor: pointer; margin-top: 12px; }
+  .btn-sm { padding: 6px 11px; font-size: 12.5px; margin: 0; }
+  .btn-light { background: #fff; color: var(--maroon); border: 1.5px solid var(--maroon); }
+  .btn-red { background: #fff; color: var(--red); border: 1.5px solid var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .pill { font-size: 11.5px; font-weight: 700; border-radius: 20px; padding: 3px 9px; white-space: nowrap; }
+  .p-wait { background: #FFF2D6; color: #9A6A00; }
+  .p-on { background: #E5F3E8; color: var(--green); }
+  .p-lock { background: #FBE7E7; color: var(--red); }
+  .pinbox { background: #FFF8E8; border: 2px dashed var(--gold); border-radius: 12px; padding: 14px; margin-top: 12px; }
+  .pin { font-size: 30px; font-weight: 800; letter-spacing: .25em; color: var(--maroon); }
+  .note { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  .err { color: var(--red); font-size: 13px; margin-top: 8px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Owner App People</h1>
+  <div>DigiSmart super admin only · give each school owner a one-time starting PIN</div>
+</div>
+<div class="wrap">
+
+  <div class="card" id="key-card">
+    <h2>🔑 Super admin key</h2>
+    <div class="note">The key saved in Vercel as SUPER_ADMIN_KEY (or CRON_SECRET if SUPER_ADMIN_KEY is not set). It is kept only until this tab is closed.</div>
+    <label for="key">Key</label>
+    <input id="key" type="password" autocomplete="off">
+    <button class="btn" onclick="useKey()">Open</button>
+    <div class="err" id="key-err"></div>
+  </div>
+
+  <div id="main" class="hidden">
+    <div class="card">
+      <h2>🏫 School</h2>
+      <select id="school" onchange="loadPeople()"></select>
+    </div>
+
+    <div class="card">
+      <h2>➕ Add a person</h2>
+      <div class="row">
+        <div><label for="p-name">Name</label><input id="p-name" placeholder="e.g. Chairman — Mr. Ramesh"></div>
+        <div><label for="p-phone">Mobile number (to log in)</label><input id="p-phone" inputmode="numeric" maxlength="14" placeholder="10-digit number"></div>
+      </div>
+      <button class="btn" onclick="addPerson()">Add and make starting PIN</button>
+      <div class="err" id="add-err"></div>
+      <div id="pin-out"></div>
+    </div>
+
+    <div class="card">
+      <h2>👥 People with the Owner App</h2>
+      <div id="people" class="note">Choose a school.</div>
+    </div>
+
+    <div class="note" style="padding:0 4px 20px">
+      How it works: the person opens <b>erp.digismartschool.com/owner</b>, logs in with their mobile number and the starting PIN, and must make their own password at once.
+      The starting PIN then stops working. Nobody — not the school office, not DigiSmart — can see their password.
+      <b>Reset</b> sends their phone a warning, logs them out and gives a new starting PIN.
+    </div>
+  </div>
+</div>
+
+<script>
+let KEY = '';
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+async function call(action, extra) {
+  try {
+    const r = await fetch('/api/owner-app-admin', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ key: KEY, action }, extra || {})) });
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'No connection.' }; }
+}
+async function useKey() {
+  KEY = document.getElementById('key').value.trim();
+  const out = await call('schools');
+  if (!out.ok) { document.getElementById('key-err').textContent = out.error || 'Could not open.'; return; }
+  try { sessionStorage.setItem('ds_sa_key', KEY); } catch (e) {}
+  document.getElementById('key-card').classList.add('hidden');
+  document.getElementById('main').classList.remove('hidden');
+  document.getElementById('school').innerHTML = '<option value="">— Choose a school —</option>' +
+    out.schools.map(s => '<option value="' + esc(s.school_id) + '">' + esc(s.name || s.school_id) + '</option>').join('');
+}
+function pinBox(o, what) {
+  return '<div class="pinbox"><div class="note">' + what + ' — give this to <b>' + esc(o.name) + '</b> (' + esc(o.phone) + ') by phone call or in person:</div>' +
+    '<div class="pin">' + esc(o.pin) + '</div>' +
+    '<div class="note">It is shown only now and works only once. Open <b>erp.digismartschool.com/owner</b> → mobile number + this PIN → make own password.</div></div>';
+}
+async function addPerson() {
+  const err = document.getElementById('add-err'); err.textContent = '';
+  const sid = document.getElementById('school').value;
+  const out = await call('add', { school_id: sid, name: document.getElementById('p-name').value, phone: document.getElementById('p-phone').value });
+  if (!out.ok) { err.textContent = out.error || 'Could not add.'; return; }
+  document.getElementById('pin-out').innerHTML = pinBox(out, 'Starting PIN');
+  document.getElementById('p-name').value = ''; document.getElementById('p-phone').value = '';
+  loadPeople(true);
+}
+async function loadPeople(keepPin) {
+  if (!keepPin) document.getElementById('pin-out').innerHTML = '';
+  const box = document.getElementById('people');
+  const sid = document.getElementById('school').value;
+  if (!sid) { box.textContent = 'Choose a school.'; return; }
+  box.textContent = 'Loading…';
+  const out = await call('list', { school_id: sid });
+  if (!out.ok) { box.textContent = out.error || 'Could not load.'; return; }
+  if (!out.people.length) { box.textContent = 'Nobody added yet for this school.'; return; }
+  const now = Date.now();
+  box.innerHTML = '<table><thead><tr><th>Name</th><th>Mobile</th><th>Status</th><th></th></tr></thead><tbody>' +
+    out.people.map(p => {
+      const locked = p.locked_until && new Date(p.locked_until).getTime() > now;
+      const st = locked ? '<span class="pill p-lock">Locked 15 min (wrong tries)</span>'
+        : p.must_change ? '<span class="pill p-wait">Waiting for first login</span>'
+        : '<span class="pill p-on">Active' + (p.last_login ? ' · last ' + esc(new Date(p.last_login).toLocaleDateString('en-IN')) : '') + '</span>';
+      return '<tr><td>' + esc(p.name) + '</td><td>' + esc(p.phone) + '</td><td>' + st + '</td>' +
+        '<td style="white-space:nowrap;text-align:right"><button class="btn btn-sm btn-light" onclick="resetPerson(\'' + esc(p.id) + '\',\'' + esc(p.name) + '\')">Reset</button> ' +
+        '<button class="btn btn-sm btn-red" onclick="removePerson(\'' + esc(p.id) + '\',\'' + esc(p.name) + '\')">Remove</button></td></tr>';
+    }).join('') + '</tbody></table>';
+}
+async function resetPerson(id, name) {
+  if (!confirm('Reset ' + name + '\'s Owner App password?\n\nTheir phone gets a warning and is logged out. You get a new starting PIN to give them.')) return;
+  const out = await call('reset', { id });
+  if (!out.ok) { alert(out.error || 'Could not reset.'); return; }
+  document.getElementById('pin-out').innerHTML = pinBox(out, 'New starting PIN');
+  loadPeople(true);
+  window.scrollTo(0, 0);
+}
+async function removePerson(id, name) {
+  if (!confirm('Remove ' + name + ' from the Owner App? Their phone gets a notice and is logged out.')) return;
+  const out = await call('remove', { id });
+  if (!out.ok) { alert(out.error || 'Could not remove.'); return; }
+  loadPeople();
+}
+(function () {
+  try { const k = sessionStorage.getItem('ds_sa_key'); if (k) { document.getElementById('key').value = k; useKey(); } } catch (e) {}
+  document.getElementById('key').addEventListener('keydown', e => { if (e.key === 'Enter') useKey(); });
+})();
+</script>
+</body>
+</html>

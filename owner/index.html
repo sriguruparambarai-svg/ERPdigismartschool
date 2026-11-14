@@ -114,11 +114,26 @@
     <img class="login-logo" src="/assets/icons/owner-192.png" alt="">
     <h2>Owner App</h2>
     <p class="muted">Your school on autopilot — every alert, on your phone.</p>
-    <div class="field"><label for="li-email">School owner email</label><input id="li-email" type="email" autocomplete="username" inputmode="email"></div>
-    <div class="field"><label for="li-pass">Password</label><input id="li-pass" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="li-phone">Mobile number</label><input id="li-phone" type="tel" autocomplete="username" inputmode="numeric" maxlength="14"></div>
+    <div class="field"><label for="li-pass">Password (first time: the starting PIN)</label><input id="li-pass" type="password" autocomplete="current-password"></div>
     <div class="err" id="li-err"></div>
     <button class="btn" id="li-btn" onclick="doLogin()">Log in</button>
-    <p class="muted" style="margin:14px 0 0">Use the same email and password as the school's ERP owner login.</p>
+    <p class="muted" style="margin:14px 0 0">First time? Use the starting PIN DigiSmart gave you. You will then make your own password that only you know.</p>
+  </div>
+</div>
+
+<!-- ══ MAKE / CHANGE MY PASSWORD ══ -->
+<div id="view-setpass" class="login hidden">
+  <div class="login-box">
+    <img class="login-logo" src="/assets/icons/owner-192.png" alt="">
+    <h2 id="sp-title">Make your own password</h2>
+    <p class="muted" id="sp-sub">Only you will know it — not the school office, not DigiSmart. The starting PIN stops working now.</p>
+    <div class="field hidden" id="sp-old-wrap"><label for="sp-old">Present password</label><input id="sp-old" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="sp-new">New password (at least 6 letters or numbers)</label><input id="sp-new" type="password" autocomplete="new-password"></div>
+    <div class="field"><label for="sp-new2">Type it again</label><input id="sp-new2" type="password" autocomplete="new-password"></div>
+    <div class="err" id="sp-err"></div>
+    <button class="btn" id="sp-btn" onclick="savePassword()">Save my password</button>
+    <p class="muted hidden" id="sp-cancel" style="margin:14px 0 0;cursor:pointer;text-decoration:underline" onclick="show('view-home')">Cancel</p>
   </div>
 </div>
 
@@ -128,6 +143,7 @@
     <div class="top-row">
       <h1 id="school-name">My School</h1>
       <button class="icon-btn" onclick="loadInbox()">↻</button>
+      <button class="icon-btn" onclick="openChangePassword()">🔑</button>
       <button class="icon-btn" onclick="logout()">Log out</button>
     </div>
     <div class="sub">Owner App · your school on autopilot</div>
@@ -188,38 +204,80 @@ function niceDate(iso) {
   return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 function todayIso() { return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10); }
-function show(id) { ['view-login', 'view-home', 'view-detail'].forEach(v => document.getElementById(v).classList.toggle('hidden', v !== id)); window.scrollTo(0, 0); }
+function show(id) { ['view-login', 'view-setpass', 'view-home', 'view-detail'].forEach(v => document.getElementById(v).classList.toggle('hidden', v !== id)); window.scrollTo(0, 0); }
 
 async function api(path, payload) {
   try {
     const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const out = await r.json().catch(() => ({ ok: false, error: 'Unexpected reply (' + r.status + ')' }));
-    if (r.status === 401 && payload.action !== 'login') { logout(true); }
+    if (r.status === 401 && ['login', 'set_password', 'change_password'].indexOf(payload.action) === -1) { logout(true); }
     return out;
   } catch (e) { return { ok: false, error: 'No internet connection. Please try again.' }; }
 }
 function ownerApi(action, extra) { return api('/api/owner-app', Object.assign({ action, token: session && session.token }, extra || {})); }
 
-// ── Login ──
+// ── Login: mobile number + own password (first time: the starting PIN) ──
+let setupPass = null;   // short pass that only allows making the first password
 async function doLogin() {
-  const email = document.getElementById('li-email').value.trim();
+  const phone = document.getElementById('li-phone').value.trim();
   const password = document.getElementById('li-pass').value;
   const err = document.getElementById('li-err');
   const btn = document.getElementById('li-btn');
   err.textContent = '';
-  if (!email || !password) { err.textContent = 'Please type your email and password.'; return; }
+  if (!phone || !password) { err.textContent = 'Please type your mobile number and password.'; return; }
   btn.disabled = true; btn.textContent = 'Logging in…';
-  const out = await api('/api/owner-app', { action: 'login', email, password });
+  const out = await api('/api/owner-app', { action: 'login', phone, password });
   btn.disabled = false; btn.textContent = 'Log in';
   if (!out.ok) { err.textContent = out.error || 'Login failed.'; return; }
-  session = { token: out.token, school: out.school || {} };
+  document.getElementById('li-pass').value = '';
+  if (out.must_change) { setupPass = out.setup; openSetPassword(false); return; }
+  saveSession(out);
+}
+function saveSession(out) {
+  session = { token: out.token, school: out.school || {}, name: out.name || '' };
   try { localStorage.setItem(TOKEN_KEY, JSON.stringify(session)); } catch (e) {}
   startApp();
+}
+// change=false → first login (must make a password); change=true → change it later
+function openSetPassword(change) {
+  document.getElementById('sp-title').textContent = change ? 'Change my password' : 'Make your own password';
+  document.getElementById('sp-sub').textContent = change
+    ? 'Only you will know it. Your other phones will need the new password.'
+    : 'Only you will know it — not the school office, not DigiSmart. The starting PIN stops working now.';
+  document.getElementById('sp-old-wrap').classList.toggle('hidden', !change);
+  document.getElementById('sp-cancel').classList.toggle('hidden', !change);
+  ['sp-old', 'sp-new', 'sp-new2'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('sp-err').textContent = '';
+  document.getElementById('sp-btn').dataset.change = change ? '1' : '';
+  show('view-setpass');
+}
+function openChangePassword() { openSetPassword(true); }
+async function savePassword() {
+  const change = document.getElementById('sp-btn').dataset.change === '1';
+  const p1 = document.getElementById('sp-new').value, p2 = document.getElementById('sp-new2').value;
+  const err = document.getElementById('sp-err');
+  err.textContent = '';
+  if (p1.length < 6) { err.textContent = 'Your password must have at least 6 letters or numbers.'; return; }
+  if (p1 !== p2) { err.textContent = 'The two passwords are not the same.'; return; }
+  const btn = document.getElementById('sp-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const out = change
+    ? await ownerApi('change_password', { old_password: document.getElementById('sp-old').value, password: p1 })
+    : await api('/api/owner-app', { action: 'set_password', setup: setupPass, password: p1 });
+  btn.disabled = false; btn.textContent = 'Save my password';
+  if (!out.ok) {
+    err.textContent = out.error || 'Could not save.';
+    if (!change && /log in again/i.test(out.error || '')) setTimeout(() => show('view-login'), 1800);
+    return;
+  }
+  setupPass = null;
+  saveSession(out);
+  alert(change ? '✅ Password changed.' : '✅ Your password is saved. Use your mobile number and this password from now on.');
 }
 function logout(expired) {
   session = null;
   try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
-  document.getElementById('li-err').textContent = expired ? 'Please log in again.' : '';
+  document.getElementById('li-err').textContent = expired ? 'Please log in again. (If your password was reset, use the new starting PIN.)' : '';
   show('view-login');
 }
 
@@ -329,7 +387,7 @@ async function openAlert(kind, date) {
   document.getElementById('d-stats').innerHTML = '';
   document.getElementById('d-chips').innerHTML = '';
   document.getElementById('d-list').innerHTML = '<div class="empty">Loading…</div>';
-  const out = await api('/api/fee-reminders', { token: session.token, action: 'history', date });
+  const out = await ownerApi('fee_history', { date });
   if (!out || !out.ok) { document.getElementById('d-list').innerHTML = '<div class="empty">' + esc((out && out.error) || 'Could not load the list.') + '</div>'; return; }
   detailRows = out.list || [];
   detailFilter = 'all';
