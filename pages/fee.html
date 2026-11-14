@@ -336,6 +336,55 @@
           </div>
         </div>
 
+        <!-- Automatic Fee Reminders (api/fee-reminders.js) — the ERP on autopilot -->
+        <div class="card" style="margin-bottom:16px;border:1.5px solid #C9A84C">
+          <div class="card-header">
+            <div>
+              <div class="card-title">🤖 Automatic Fee Reminders</div>
+              <div class="card-subtitle">The ERP reminds parents on its own — before and after every due date — with each unpaid month / term and its amount. The owner gets the full list in the Owner App every time.</div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer">
+              <input type="checkbox" id="ar-on" style="width:18px;height:18px"> On
+            </label>
+          </div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Days before due date</label>
+              <input type="text" id="ar-before" class="form-control" value="5, 0" style="width:130px;margin-top:4px" title="0 = on the due day">
+              <div style="font-size:11px;color:var(--text-muted)">0 = on the due day</div>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">First reminder after due date</label>
+              <input type="number" id="ar-after-first" class="form-control" min="1" max="60" value="3" style="width:110px;margin-top:4px">
+              <div style="font-size:11px;color:var(--text-muted)">days after</div>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Then repeat every</label>
+              <input type="number" id="ar-after-every" class="form-control" min="1" max="60" value="7" style="width:110px;margin-top:4px">
+              <div style="font-size:11px;color:var(--text-muted)">days, until paid</div>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Van fee due day (each month)</label>
+              <input type="number" id="ar-van-day" class="form-control" min="1" max="28" value="10" style="width:110px;margin-top:4px">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">One-time van plan due date</label>
+              <input type="date" id="ar-van-onetime" class="form-control" style="width:160px;margin-top:4px">
+            </div>
+          </div>
+          <div style="font-size:12px;color:#8B5E00;background:#FFF8F0;padding:8px 12px;border-radius:8px;margin-top:12px;line-height:1.6">
+            Class fee due dates come from <b>Fee Collection Periods</b> (term due dates) or the <b>Late Fee</b> due day (monthly schools).
+            Reminders go every morning at 10 AM through the parent app. A child gets at most one reminder in 3 days, and none once the fee is paid.
+            Owner App: <b>erp.digismartschool.com/owner</b> — log in with the owner email and turn on alerts.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+            <button class="btn btn-gold btn-sm" onclick="saveAutoReminders()">Save Reminder Settings</button>
+            <button class="btn btn-secondary btn-sm" onclick="previewAutoReminders()">👁 See who gets a reminder on</button>
+            <input type="date" id="ar-preview-date" class="form-control" style="width:160px">
+          </div>
+          <div id="ar-preview" style="margin-top:12px"></div>
+        </div>
+
         <!-- Late Fee Rules -->
         <div class="card" style="margin-bottom:16px">
           <div class="card-header">
@@ -1083,6 +1132,7 @@ async function loadSettings() {
     const tplBox = document.getElementById('reminder-template');
     if (tplBox) tplBox.value = data.reminder_template || DEFAULT_REMINDER_TEMPLATE;
     if (data.late_fee_config) lateFeeConfig = Object.assign({}, lateFeeConfig, data.late_fee_config);
+    fillAutoReminders(data.auto_reminders);
     if (data.tally_config) {
       const tc2 = data.tally_config;
       if (tc2.company)     document.getElementById('tx-company').value = tc2.company;
@@ -1356,6 +1406,71 @@ async function saveLateFeeRules() {
   if (error) { showToast('Could not save: ' + error.message, 'error'); return; }
   lateFeeConfig = cfg;
   showToast(cfg.enabled ? 'Late fee rules saved.' : 'Late fee switched off.', 'success');
+}
+
+// ══ AUTOMATIC FEE REMINDERS ══
+// Settings live in fee_settings.auto_reminders; the morning job (api/fee-reminders.js) reads them.
+function arEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function fillAutoReminders(c) {
+  if (typeof c === 'string') { try { c = JSON.parse(c); } catch (e) { c = null; } }
+  c = Object.assign({ on: false, before: [5, 0], after_first: 3, after_every: 7, van_due_day: 10, van_onetime_due: '' }, c || {});
+  document.getElementById('ar-on').checked = !!c.on;
+  document.getElementById('ar-before').value = (Array.isArray(c.before) ? c.before : [5, 0]).join(', ');
+  document.getElementById('ar-after-first').value = c.after_first;
+  document.getElementById('ar-after-every').value = c.after_every;
+  document.getElementById('ar-van-day').value = c.van_due_day;
+  document.getElementById('ar-van-onetime').value = c.van_onetime_due || '';
+}
+function readAutoReminders() {
+  const before = document.getElementById('ar-before').value.split(/[^0-9]+/).filter(Boolean)
+    .map(n => parseInt(n, 10)).filter(n => n >= 0 && n <= 60);
+  const uniq = before.filter((n, i) => before.indexOf(n) === i).sort((a, b) => b - a);
+  return {
+    on: document.getElementById('ar-on').checked,
+    before: uniq,
+    after_first: Math.max(1, parseInt(document.getElementById('ar-after-first').value, 10) || 3),
+    after_every: Math.max(1, parseInt(document.getElementById('ar-after-every').value, 10) || 7),
+    van_due_day: Math.min(28, Math.max(1, parseInt(document.getElementById('ar-van-day').value, 10) || 10)),
+    van_onetime_due: document.getElementById('ar-van-onetime').value || ''
+  };
+}
+async function saveAutoReminders() {
+  const cfg = readAutoReminders();
+  const { data: existing } = await secureFee.from('fee_settings').select('id').eq('school_id', SCHOOL_ID).single();
+  let error;
+  if (existing) {
+    ({ error } = await secureFee.from('fee_settings').update({ auto_reminders: cfg }).eq('school_id', SCHOOL_ID));
+  } else {
+    ({ error } = await secureFee.from('fee_settings').insert([{ school_id: SCHOOL_ID, auto_reminders: cfg }]));
+  }
+  if (error) { showToast('Could not save: ' + error.message, 'error'); return; }
+  fillAutoReminders(cfg);
+  showToast(cfg.on ? 'Automatic reminders are ON. Parents will be reminded every morning at 10 AM.' : 'Automatic reminders switched off.', 'success');
+}
+async function previewAutoReminders() {
+  const box = document.getElementById('ar-preview');
+  const date = document.getElementById('ar-preview-date').value || '';
+  box.innerHTML = '<div style="font-size:13px;color:var(--text-muted)">Working out… (uses the saved settings)</div>';
+  let out;
+  try {
+    const r = await fetch('/api/fee-reminders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action: 'preview', date: date })
+    });
+    out = await r.json();
+  } catch (e) { out = { ok: false, error: 'No connection.' }; }
+  if (!out || !out.ok) { box.innerHTML = '<div style="color:#A32D2D;font-size:13px">' + arEsc((out && out.error) || 'Could not work it out.') + '</div>'; return; }
+  const list = out.list || [];
+  const inrF = n => '\u20b9' + Number(n || 0).toLocaleString('en-IN');
+  if (!list.length) { box.innerHTML = '<div style="font-size:13px;color:#2D7A3A">Nobody would get a reminder on ' + arEsc(out.date) + '.</div>'; return; }
+  box.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:8px">' + list.length + ' parent' + (list.length === 1 ? '' : 's') +
+    ' would be reminded on ' + arEsc(out.date) + ' — ' + inrF(out.summary.total) + ' in all' +
+    (out.summary.no_app ? ' · ' + out.summary.no_app + ' without the parent app' : '') + '</div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Type</th><th>Months / terms</th><th style="text-align:right">Amount</th><th>App</th></tr></thead><tbody>' +
+    list.map(x => '<tr><td>' + arEsc(x.name) + '</td><td>' + arEsc(x.class) + '</td><td>' + (x.kind === 'after' ? '<span style="color:#A32D2D;font-weight:700">Overdue</span>' : 'Due soon') + '</td>' +
+      '<td style="font-size:12px">' + (x.lines || []).map(l => arEsc(l.text) + ': ' + inrF(l.amount)).join('<br>') + '</td>' +
+      '<td style="text-align:right;font-weight:700">' + inrF(x.total) + '</td><td>' + (x.has_app ? '📱' : '📵') + '</td></tr>').join('') +
+    '</tbody></table></div>';
 }
 
 // ── The actual sum ──

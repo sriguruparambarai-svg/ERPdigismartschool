@@ -93,7 +93,12 @@ self.addEventListener('notificationclick', event => {
     // If the parent app is already open, bring it to the front instead of a new window
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-        const open = list.find(c => c.url.includes('/parent/'));
+        // Owner App alerts open the Owner App; everything else the parent app
+        const forOwner = url.includes('/owner/');
+        const open = list.find(c => c.url.includes(forOwner ? '/owner/' : '/parent/'));
+        if (open && forOwner && open.navigate) {
+          return open.focus().then(w => (w || open).navigate(url)).catch(() => clients.openWindow(url));
+        }
         if (open) {
           // An alert about one child (…?child=) switches the open app to that child
           if (url.includes('child=') && open.navigate) {

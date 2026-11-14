@@ -433,6 +433,33 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, is_birthday: true, name: first, message: message });
     }
 
+    // ══ FEE REMINDER — the latest automatic reminder (api/fee-reminders.js), last 10 days ══
+    // Shown only while fees are still due; opening it marks it "seen" for the owner's list.
+    if (action === 'fee_reminder') {
+      const since = new Date(Date.now() + 5.5 * 3600 * 1000 - 10 * 86400000).toISOString().slice(0, 10);
+      let rows = [];
+      try {
+        rows = await sb('GET', 'fee_auto_reminders?school_id=eq.' + encodeURIComponent(schoolId) +
+          '&student_id=eq.' + encodeURIComponent(studentId) + '&sent_on=gte.' + since +
+          '&select=id,sent_on,kind,message,total,seen_at&order=sent_on.desc&limit=1') || [];
+      } catch (e) { rows = []; }   // table not there yet → no card
+      if (!rows.length) return res.status(200).json({ ok: true, reminder: null });
+      // Paid since the reminder? Then no card.
+      let dueNow = 0;
+      try {
+        const { computeDues } = require('./_fees');
+        const d = await computeDues(sb, schoolId, studentId);
+        dueNow = d.items.reduce(function (s, it) { return s + (Number(it.amount) || 0); }, 0);
+      } catch (e) { dueNow = Number(rows[0].total) || 0; }
+      if (dueNow <= 0) return res.status(200).json({ ok: true, reminder: null });
+      if (!rows[0].seen_at) {
+        try {
+          await sb('PATCH', 'fee_auto_reminders?id=eq.' + encodeURIComponent(rows[0].id), { seen_at: new Date().toISOString() });
+        } catch (e) { /* card still shows */ }
+      }
+      return res.status(200).json({ ok: true, reminder: { sent_on: rows[0].sent_on, kind: rows[0].kind, message: rows[0].message, due_now: dueNow } });
+    }
+
     // ══ SCHOOL GALLERY — albums for everyone or this child's class ══
     if (action === 'gallery') {
       const me = await sb('GET', 'students?id=eq.' + encodeURIComponent(studentId) +

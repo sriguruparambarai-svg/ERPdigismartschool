@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Owner App · DigiSmart</title>
+<meta name="theme-color" content="#6B1A1A">
+<link rel="manifest" href="/owner/manifest.json">
+<link rel="apple-touch-icon" href="/assets/icons/owner-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Owner App">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700;800&family=Noto+Sans+Tamil:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --maroon: #6B1A1A; --maroon-d: #4E1212; --gold: #C9A84C; --sandal: #E8C99A;
+    --cream: #FBF6EE; --ink: #2A1E1A; --muted: #8A7D74; --line: #EADFCF;
+    --red: #A32D2D; --green: #2D7A3A; --amber: #9A6A00;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--cream); color: var(--ink); font-family: 'Noto Sans', 'Noto Sans Tamil', system-ui, sans-serif; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .hidden { display: none !important; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* Top bar */
+  .top { background: linear-gradient(135deg, var(--maroon), var(--maroon-d)); color: var(--sandal); padding: calc(14px + env(safe-area-inset-top)) 16px 16px; }
+  .top-row { display: flex; align-items: center; gap: 10px; }
+  .top h1 { margin: 0; font-size: 17px; font-weight: 800; color: #fff; flex: 1; line-height: 1.25; }
+  .top .sub { font-size: 12px; color: var(--sandal); opacity: .9; margin-top: 2px; }
+  .icon-btn { background: rgba(255,255,255,.12); border: 1px solid rgba(232,201,154,.35); color: var(--sandal); border-radius: 10px; padding: 7px 10px; font-size: 13px; font-weight: 600; }
+
+  .wrap { max-width: 640px; margin: 0 auto; padding: 14px; }
+
+  /* Cards */
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  .card-title { font-weight: 800; font-size: 15px; margin-bottom: 4px; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .btn { background: linear-gradient(135deg, var(--maroon), var(--maroon-d)); color: #F5E6C8; border: none; border-radius: 11px; padding: 12px 16px; font-size: 14.5px; font-weight: 800; width: 100%; }
+  .btn:disabled { opacity: .6; }
+  .btn-light { background: #fff; color: var(--maroon); border: 1.5px solid var(--maroon); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
+
+  /* Login */
+  .login { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 24px; background: linear-gradient(160deg, var(--maroon), var(--maroon-d)); }
+  .login-box { background: #fff; border-radius: 18px; padding: 22px; max-width: 400px; width: 100%; margin: 0 auto; }
+  .login-logo { width: 72px; height: 72px; border-radius: 16px; display: block; margin: 0 auto 10px; }
+  .login h2 { text-align: center; margin: 0 0 4px; color: var(--maroon); font-size: 20px; }
+  .login p { text-align: center; margin: 0 0 18px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 700; margin-bottom: 5px; color: var(--muted); }
+  .field input { width: 100%; padding: 12px; border: 1.5px solid var(--line); border-radius: 10px; font-size: 15px; font-family: inherit; }
+  .field input:focus { outline: none; border-color: var(--gold); }
+  .err { color: var(--red); font-size: 13px; margin: 6px 0 10px; min-height: 18px; text-align: center; }
+
+  /* Alerts-on card */
+  .alert-card { background: #FFF6E3; border: 1px solid #F0D9A8; }
+  .alert-card .btn { margin-top: 10px; }
+  .steps { font-size: 13px; line-height: 1.7; margin-top: 8px; }
+
+  /* Status strip */
+  .status { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .dot.on { background: var(--green); box-shadow: 0 0 0 4px rgba(45,122,58,.15); }
+  .dot.off { background: #bbb; }
+
+  /* Inbox */
+  .section-h { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 18px 4px 8px; }
+  .inbox-item { display: flex; gap: 12px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 13px; margin-bottom: 10px; cursor: pointer; }
+  .inbox-item:active { background: #FFF9EF; }
+  .inbox-ico { width: 40px; height: 40px; border-radius: 11px; background: var(--maroon); color: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .inbox-main { flex: 1; min-width: 0; }
+  .inbox-title { font-weight: 800; font-size: 14.5px; }
+  .inbox-body { font-size: 13px; color: #4A3C35; margin-top: 3px; line-height: 1.4; }
+  .inbox-date { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+  .chev { color: var(--gold); font-size: 20px; align-self: center; }
+  .empty { text-align: center; padding: 28px 16px; color: var(--muted); font-size: 13.5px; }
+  .empty .big { font-size: 34px; margin-bottom: 6px; }
+
+  /* Detail */
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 11px; }
+  .stat .n { font-size: 19px; font-weight: 800; color: var(--maroon); }
+  .stat .l { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; -webkit-overflow-scrolling: touch; }
+  .chip { flex-shrink: 0; border: 1.5px solid var(--line); background: #fff; color: var(--ink); border-radius: 20px; padding: 6px 12px; font-size: 12.5px; font-weight: 700; }
+  .chip.active { background: var(--maroon); border-color: var(--maroon); color: var(--sandal); }
+  .row { background: #fff; border: 1px solid var(--line); border-radius: 13px; padding: 12px; margin-bottom: 9px; }
+  .row-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .row-name { font-weight: 800; font-size: 14.5px; }
+  .row-class { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .row-total { font-weight: 800; color: var(--red); font-size: 15px; white-space: nowrap; }
+  .lines { margin: 8px 0 6px; padding: 0; list-style: none; }
+  .lines li { display: flex; justify-content: space-between; gap: 10px; font-size: 12.8px; padding: 3px 0; border-bottom: 1px dashed #F0E6D8; }
+  .lines li:last-child { border-bottom: none; }
+  .lines .od { color: var(--red); }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+  .badge { font-size: 11.5px; font-weight: 700; border-radius: 20px; padding: 3px 9px; }
+  .b-after { background: #FBE7E7; color: var(--red); }
+  .b-before { background: #FFF2D6; color: var(--amber); }
+  .b-app { background: #E5F3E8; color: var(--green); }
+  .b-noapp { background: #F1ECE6; color: #6B5D55; }
+  .b-seen { background: #E5F3E8; color: var(--green); }
+  .b-unseen { background: #F1ECE6; color: #6B5D55; }
+  .call { margin-left: auto; text-decoration: none; background: var(--green); color: #fff; font-size: 12.5px; font-weight: 800; border-radius: 9px; padding: 6px 11px; }
+  .back { background: none; border: none; color: var(--sandal); font-size: 22px; padding: 0 6px 0 0; }
+  .refresh-note { text-align: center; font-size: 11.5px; color: var(--muted); margin: 8px 0 20px; }
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="view-login" class="login hidden">
+  <div class="login-box">
+    <img class="login-logo" src="/assets/icons/owner-192.png" alt="">
+    <h2>Owner App</h2>
+    <p class="muted">Your school on autopilot — every alert, on your phone.</p>
+    <div class="field"><label for="li-email">School owner email</label><input id="li-email" type="email" autocomplete="username" inputmode="email"></div>
+    <div class="field"><label for="li-pass">Password</label><input id="li-pass" type="password" autocomplete="current-password"></div>
+    <div class="err" id="li-err"></div>
+    <button class="btn" id="li-btn" onclick="doLogin()">Log in</button>
+    <p class="muted" style="margin:14px 0 0">Use the same email and password as the school's ERP owner login.</p>
+  </div>
+</div>
+
+<!-- ══ HOME (inbox) ══ -->
+<div id="view-home" class="hidden">
+  <div class="top">
+    <div class="top-row">
+      <h1 id="school-name">My School</h1>
+      <button class="icon-btn" onclick="loadInbox()">↻</button>
+      <button class="icon-btn" onclick="logout()">Log out</button>
+    </div>
+    <div class="sub">Owner App · your school on autopilot</div>
+  </div>
+  <div class="wrap">
+    <div class="card alert-card hidden" id="alert-card">
+      <div class="card-title">🔔 Turn on alerts</div>
+      <div class="muted" id="alert-text" style="color:#5A4A3F">Get a phone alert every time the ERP sends fee reminders, with the full list of parents and amounts.</div>
+      <div id="alert-action"><button class="btn" onclick="enableAlerts()">Turn on alerts</button></div>
+    </div>
+
+    <div class="card">
+      <div class="status">
+        <span class="dot off" id="fr-dot"></span>
+        <div style="flex:1">
+          <div style="font-weight:800;font-size:14px">Automatic fee reminders</div>
+          <div class="muted" id="fr-text">Checking…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-h">Alerts</div>
+    <div id="inbox"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<!-- ══ DETAIL (one day's fee reminders) ══ -->
+<div id="view-detail" class="hidden">
+  <div class="top">
+    <div class="top-row">
+      <button class="back" onclick="showHome()">←</button>
+      <h1 id="d-title">Fee reminders</h1>
+    </div>
+    <div class="sub" id="d-sub"></div>
+  </div>
+  <div class="wrap">
+    <div class="stats" id="d-stats"></div>
+    <div class="chips" id="d-chips"></div>
+    <div id="d-list"><div class="empty">Loading…</div></div>
+    <div class="refresh-note">"Seen" updates when the parent opens the parent app.</div>
+  </div>
+</div>
+
+<script>
+// ══ Owner App ══
+// Logs in once (30 days), turns on phone alerts, and shows every alert the
+// ERP raised on autopilot. Tapping a fee-reminder alert opens that day's full list.
+const TOKEN_KEY = 'ds_owner_app';
+let session = null;          // { token, school: { school_id, name } }
+let detailRows = [];
+let detailFilter = 'all';
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function inr(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+function niceDate(iso) {
+  const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(d.getTime())) return String(iso || '');
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+function todayIso() { return new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10); }
+function show(id) { ['view-login', 'view-home', 'view-detail'].forEach(v => document.getElementById(v).classList.toggle('hidden', v !== id)); window.scrollTo(0, 0); }
+
+async function api(path, payload) {
+  try {
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const out = await r.json().catch(() => ({ ok: false, error: 'Unexpected reply (' + r.status + ')' }));
+    if (r.status === 401 && payload.action !== 'login') { logout(true); }
+    return out;
+  } catch (e) { return { ok: false, error: 'No internet connection. Please try again.' }; }
+}
+function ownerApi(action, extra) { return api('/api/owner-app', Object.assign({ action, token: session && session.token }, extra || {})); }
+
+// ── Login ──
+async function doLogin() {
+  const email = document.getElementById('li-email').value.trim();
+  const password = document.getElementById('li-pass').value;
+  const err = document.getElementById('li-err');
+  const btn = document.getElementById('li-btn');
+  err.textContent = '';
+  if (!email || !password) { err.textContent = 'Please type your email and password.'; return; }
+  btn.disabled = true; btn.textContent = 'Logging in…';
+  const out = await api('/api/owner-app', { action: 'login', email, password });
+  btn.disabled = false; btn.textContent = 'Log in';
+  if (!out.ok) { err.textContent = out.error || 'Login failed.'; return; }
+  session = { token: out.token, school: out.school || {} };
+  try { localStorage.setItem(TOKEN_KEY, JSON.stringify(session)); } catch (e) {}
+  startApp();
+}
+function logout(expired) {
+  session = null;
+  try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+  document.getElementById('li-err').textContent = expired ? 'Please log in again.' : '';
+  show('view-login');
+}
+
+// ── Phone alerts ──
+function alertsSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function isIphone() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function isInstalled() { return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
+function keyToBytes(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+async function getSwReg() { await navigator.serviceWorker.register('/sw.js'); return navigator.serviceWorker.ready; }
+function setAlertsUi(state) {
+  const card = document.getElementById('alert-card');
+  const text = document.getElementById('alert-text');
+  const action = document.getElementById('alert-action');
+  if (state === 'on') { card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  if (state === 'iphone') {
+    text.textContent = 'On iPhone, alerts work only after adding this app to your Home Screen:';
+    action.innerHTML = '<div class="steps">1. Open this page in <b>Safari</b><br>2. Tap <b>Share</b> (square with arrow)<br>3. Tap <b>Add to Home Screen</b><br>4. Open Owner App from the Home Screen and tap Turn on alerts</div>';
+  } else if (state === 'blocked') {
+    text.textContent = 'Alerts are blocked for this app. Open phone Settings → Apps → Chrome (or Owner App) → Notifications, allow them, then come back.';
+    action.innerHTML = '<button class="btn" onclick="initAlerts()">I have allowed it</button>';
+  } else if (state === 'unsupported') {
+    text.textContent = 'This browser cannot show alerts. Please open the Owner App in Google Chrome.';
+    action.innerHTML = '';
+  } else {
+    text.textContent = 'Get a phone alert every time the ERP sends fee reminders, with the full list of parents and amounts.';
+    action.innerHTML = '<button class="btn" onclick="enableAlerts()">Turn on alerts</button>';
+  }
+}
+async function initAlerts() {
+  if (!alertsSupported()) { setAlertsUi(isIphone() && !isInstalled() ? 'iphone' : 'unsupported'); return; }
+  if (Notification.permission === 'denied') { setAlertsUi('blocked'); return; }
+  try {
+    const reg = await getSwReg();
+    const sub = await reg.pushManager.getSubscription();
+    if (sub && Notification.permission === 'granted') {
+      const st = await ownerApi('status', { endpoint: sub.endpoint });
+      if (st && st.ok && st.on) { setAlertsUi('on'); return; }
+      const out = await ownerApi('subscribe', { subscription: sub.toJSON() });
+      if (out && out.ok) { setAlertsUi('on'); return; }
+    }
+    setAlertsUi('off');
+  } catch (e) { setAlertsUi('off'); }
+}
+async function enableAlerts() {
+  if (!alertsSupported()) { setAlertsUi(isIphone() ? 'iphone' : 'unsupported'); return; }
+  const action = document.getElementById('alert-action');
+  action.innerHTML = '<button class="btn" disabled>Turning on…</button>';
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { setAlertsUi(perm === 'denied' ? 'blocked' : 'off'); return; }
+    const keyOut = await ownerApi('public_key');
+    if (!keyOut || !keyOut.ok) { alert((keyOut && keyOut.error) || 'Could not turn on alerts. Please try later.'); setAlertsUi('off'); return; }
+    const reg = await getSwReg();
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(keyOut.key) });
+    const out = await ownerApi('subscribe', { subscription: sub.toJSON() });
+    if (!out || !out.ok) { alert((out && out.error) || 'Could not turn on alerts. Please try again.'); setAlertsUi('off'); return; }
+    setAlertsUi('on');
+    alert('✅ Alerts are on. You will be told every time the ERP sends fee reminders.');
+  } catch (e) {
+    alert('Could not turn on alerts on this phone. Please try again in Google Chrome.');
+    setAlertsUi('off');
+  }
+}
+
+// ── Inbox ──
+function showHome() { show('view-home'); history.replaceState(null, '', '/owner/index.html'); }
+async function loadInbox() {
+  const box = document.getElementById('inbox');
+  box.innerHTML = '<div class="empty">Loading…</div>';
+  const out = await ownerApi('alerts');
+  if (!out || !out.ok) { box.innerHTML = '<div class="empty">' + esc((out && out.error) || 'Could not load alerts.') + '</div>'; return; }
+  if (out.school_name) document.getElementById('school-name').textContent = out.school_name;
+  const on = out.fee_reminders_on;
+  document.getElementById('fr-dot').className = 'dot ' + (on ? 'on' : 'off');
+  document.getElementById('fr-text').textContent = on
+    ? 'On — parents are reminded before and after every due date. You get the list each time.'
+    : 'Off — switch on in ERP → Fee Management → Settings → Automatic Fee Reminders.';
+  const rows = out.alerts || [];
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty"><div class="big">📭</div>No alerts yet. When the ERP sends fee reminders, they appear here.</div>';
+    return;
+  }
+  box.innerHTML = rows.map(a => {
+    const ico = a.kind === 'fee_reminders' ? '💰' : '🔔';
+    return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(String(a.alert_date).slice(0, 10)) + '\')">' +
+      '<div class="inbox-ico">' + ico + '</div>' +
+      '<div class="inbox-main"><div class="inbox-title">' + esc(a.title || 'Alert') + '</div>' +
+      '<div class="inbox-body">' + esc(a.body || '') + '</div>' +
+      '<div class="inbox-date">' + esc(niceDate(a.alert_date)) + '</div></div>' +
+      '<div class="chev">›</div></div>';
+  }).join('');
+}
+
+// ── One day's fee reminders ──
+async function openAlert(kind, date) {
+  if (kind !== 'fee_reminders') return;
+  show('view-detail');
+  history.replaceState(null, '', '/owner/index.html?alert=fee_reminders&date=' + date);
+  document.getElementById('d-title').textContent = 'Fee reminders';
+  document.getElementById('d-sub').textContent = niceDate(date);
+  document.getElementById('d-stats').innerHTML = '';
+  document.getElementById('d-chips').innerHTML = '';
+  document.getElementById('d-list').innerHTML = '<div class="empty">Loading…</div>';
+  const out = await api('/api/fee-reminders', { token: session.token, action: 'history', date });
+  if (!out || !out.ok) { document.getElementById('d-list').innerHTML = '<div class="empty">' + esc((out && out.error) || 'Could not load the list.') + '</div>'; return; }
+  detailRows = out.list || [];
+  detailFilter = 'all';
+  renderDetail();
+}
+function renderDetail() {
+  const rows = detailRows;
+  const total = rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  const after = rows.filter(r => r.kind === 'after').length;
+  const noApp = rows.filter(r => !r.has_app).length;
+  const seen = rows.filter(r => r.seen_at).length;
+  document.getElementById('d-stats').innerHTML =
+    '<div class="stat"><div class="n">' + rows.length + '</div><div class="l">Parents reminded</div></div>' +
+    '<div class="stat"><div class="n">' + inr(total) + '</div><div class="l">Total to collect</div></div>' +
+    '<div class="stat"><div class="n">' + after + '</div><div class="l">Overdue (past due date)</div></div>' +
+    '<div class="stat"><div class="n">' + seen + ' / ' + rows.length + '</div><div class="l">Seen by parents</div></div>';
+  const chips = [['all', 'All ' + rows.length], ['after', 'Overdue ' + after], ['before', 'Due soon ' + (rows.length - after)],
+    ['noapp', 'No parent app ' + noApp], ['unseen', 'Not seen ' + (rows.length - seen)]];
+  document.getElementById('d-chips').innerHTML = chips.map(c =>
+    '<button class="chip' + (detailFilter === c[0] ? ' active' : '') + '" onclick="setFilter(\'' + c[0] + '\')">' + esc(c[1]) + '</button>').join('');
+  const list = rows.filter(r => detailFilter === 'all' ||
+    (detailFilter === 'after' && r.kind === 'after') || (detailFilter === 'before' && r.kind === 'before') ||
+    (detailFilter === 'noapp' && !r.has_app) || (detailFilter === 'unseen' && !r.seen_at));
+  if (!list.length) { document.getElementById('d-list').innerHTML = '<div class="empty">Nobody in this list.</div>'; return; }
+  document.getElementById('d-list').innerHTML = list.map(r => {
+    const lines = Array.isArray(r.lines) ? r.lines : [];
+    return '<div class="row">' +
+      '<div class="row-head"><div><div class="row-name">' + esc(r.student_name) + '</div><div class="row-class">Class ' + esc(r.student_class) + '</div></div>' +
+      '<div class="row-total">' + inr(r.total) + '</div></div>' +
+      '<ul class="lines">' + lines.map(l => '<li class="' + (l.overdue ? 'od' : '') + '"><span>' + esc(l.text) +
+        (l.due && String(l.text).indexOf('Late fee') !== 0 ? ' · due ' + esc(niceDate(l.due).replace(/^\w+, /, '')) : '') + '</span><b>' + inr(l.amount) + '</b></li>').join('') + '</ul>' +
+      '<div class="badges">' +
+        (r.kind === 'after' ? '<span class="badge b-after">Overdue</span>' : '<span class="badge b-before">Due soon</span>') +
+        (r.has_app ? '<span class="badge b-app">📱 Alert sent</span>' : '<span class="badge b-noapp">📵 No parent app</span>') +
+        (r.seen_at ? '<span class="badge b-seen">✓ Seen</span>' : '<span class="badge b-unseen">Not seen</span>') +
+        (r.mobile ? '<a class="call" href="tel:' + esc(r.mobile) + '">📞 Call</a>' : '') +
+      '</div></div>';
+  }).join('');
+}
+function setFilter(f) { detailFilter = f; renderDetail(); }
+
+// ── Start ──
+function startApp() {
+  show('view-home');
+  if (session.school && session.school.name) document.getElementById('school-name').textContent = session.school.name;
+  initAlerts();
+  loadInbox();
+  const q = new URLSearchParams(location.search);
+  if (q.get('alert') === 'fee_reminders' && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert('fee_reminders', q.get('date'));
+}
+(function boot() {
+  try { session = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); } catch (e) { session = null; }
+  if (session && session.token) startApp(); else show('view-login');
+  document.getElementById('li-pass').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+})();
+</script>
+</body>
+</html>

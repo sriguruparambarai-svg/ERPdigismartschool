@@ -85,8 +85,19 @@ function resultsTamil(examName) {
   return examName + ' மதிப்பெண்கள் வந்துவிட்டன. பார்க்க இங்கே தொடவும்.';
 }
 
+// ── Automatic fee reminders (Nov 2026) ──
+// before: fee falls due soon; after: fee is overdue. Amount already formatted (₹12,800).
+function feeReminderTamil(kind, name, amountText, dueIso) {
+  if (kind === 'before') {
+    return name + ' – ' + taDate(dueIso) + ' அன்று செலுத்த வேண்டிய கட்டணம் ' + amountText
+      + '. குறித்த தேதிக்குள் செலுத்தவும். ஏற்கனவே செலுத்தியிருந்தால் இதைப் பொருட்படுத்த வேண்டாம்.';
+  }
+  return name + ' – செலுத்த வேண்டிய நிலுவைக் கட்டணம் ' + amountText
+    + '. விரைவில் செலுத்தவும். ஏற்கனவே செலுத்தியிருந்தால் இதைப் பொருட்படுத்த வேண்டாம்.';
+}
+
 module.exports = {
-  taDate, both,
+  taDate, both, feeReminderTamil,
   DISCIPLINE, DISCIPLINE_CODES, disciplineMessage,
   defaulterTamil, absentTamil, birthdayTamil, resultsTamil
 };

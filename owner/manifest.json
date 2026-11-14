@@ -1,0 +1,20 @@
+{
+  "id": "/owner/",
+  "name": "DigiSmart Owner App",
+  "short_name": "Owner App",
+  "description": "Everything your school's ERP does on autopilot — fee reminders and more, on your phone",
+  "start_url": "/owner/index.html?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#6B1A1A",
+  "theme_color": "#6B1A1A",
+  "lang": "en-IN",
+  "categories": ["education", "business"],
+  "icons": [
+    { "src": "/assets/icons/owner-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/owner-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/owner-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/assets/icons/owner-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

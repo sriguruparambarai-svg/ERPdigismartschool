@@ -24,13 +24,22 @@ function istToday() {
   return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
 }
 
-async function computeDues(sb, schoolId, studentId) {
-  const enc = encodeURIComponent;
-  const stu = (await sb('GET', 'students?id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
-    '&select=id,full_name,admission_no,class,section,mobile,father_name,admission_date,is_rte&limit=1') || [])[0];
-  if (!stu) throw new Error('Student not found');
+// Reminder settings saved in fee_settings.auto_reminders (Nov 2026).
+// The van due dates live here because van fee has no due date of its own.
+const DEFAULT_REMINDERS = { on: false, before: [5, 0], after_first: 3, after_every: 7, van_due_day: 10, van_onetime_due: '' };
+function reminderConfig(settings) {
+  const c = Object.assign({}, DEFAULT_REMINDERS, parseJson(settings && settings.auto_reminders, {}) || {});
+  if (!Array.isArray(c.before)) c.before = DEFAULT_REMINDERS.before.slice();
+  c.before = c.before.map(Number).filter(n => !isNaN(n) && n >= 0 && n <= 60);
+  c.after_first = Math.max(1, parseInt(c.after_first, 10) || 3);
+  c.after_every = Math.max(1, parseInt(c.after_every, 10) || 7);
+  c.van_due_day = Math.min(Math.max(parseInt(c.van_due_day, 10) || 10, 1), 28);
+  return c;
+}
 
-  const settings = (await sb('GET', 'fee_settings?school_id=eq.' + enc(schoolId) + '&select=*&limit=1') || [])[0] || {};
+// Everything about the school that does not change from child to child
+function makeContext(settings, heads) {
+  settings = settings || {};
   const collectionMode = settings.collection_mode || 'term';
   const termConfig = parseJson(settings.term_config, null) || [{ name: 'Term 1', due: '' }, { name: 'Term 2', due: '' }, { name: 'Term 3', due: '' }];
   const monthStart = settings.month_start != null ? Number(settings.month_start) : 5;
@@ -49,21 +58,24 @@ async function computeDues(sb, schoolId, studentId) {
     }
     return String(settings.custom_periods || '').split(',').map(s => s.trim()).filter(Boolean);
   }
-  const periods = getPeriods();
-
-  const heads = await sb('GET', 'fee_heads?school_id=eq.' + enc(schoolId) + '&select=id,name,category') || [];
+  heads = heads || [];
   const headById = {};
   heads.forEach(h => { headById[h.id] = h; });
+  return {
+    collectionMode, termConfig, monthStart, monthCount, lateCfg, vanMonths,
+    periods: getPeriods(), heads, headById, reminders: reminderConfig(settings)
+  };
+}
 
-  let structure = await sb('GET', 'fee_structure?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(stu.class) + '&select=*') || [];
-  structure = structure.map(s => Object.assign({}, s, { period_amounts: parseJson(s.period_amounts, null) }));
+// One child's dues, worked out from data already loaded.
+// structureRows: this class's fee_structure rows; overrides, payments: this child's rows;
+// scheme: active 5-Year Scheme row or null; van: student_transport row or null.
+function duesFrom(ctx, stu, structureRows, overrides, payments, scheme, van) {
+  const { collectionMode, termConfig, monthStart, lateCfg, vanMonths, periods, heads, headById } = ctx;
 
-  let overrides = [];
-  try {
-    overrides = await sb('GET', 'student_fee_overrides?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) + '&select=fee_head_id,total_amount,note') || [];
-  } catch (e) { overrides = []; }
+  let structure = (structureRows || []).map(s => Object.assign({}, s, { period_amounts: parseJson(s.period_amounts, null) }));
   // Same spreading rule as applyStudentOverrides() in fee.html
-  overrides.forEach(ov => {
+  (overrides || []).forEach(ov => {
     const s = structure.find(x => x.fee_head_id === ov.fee_head_id);
     if (!s) return;
     const customTotal = parseFloat(ov.total_amount) || 0;
@@ -79,22 +91,14 @@ async function computeDues(sb, schoolId, studentId) {
     if (s.annual_amount) s.annual_amount = customTotal;
   });
 
-  const payments = await sb('GET', 'fee_payments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
-    '&is_cancelled=not.is.true&select=fee_head_id,period,amount_paid') || [];
   const paidMap = {};
   const lateFeePaid = {};
-  payments.forEach(p => {
+  (payments || []).forEach(p => {
     const amt = parseFloat(p.amount_paid) || 0;
     if (p.fee_head_id === LATE_FEE_ID) { lateFeePaid[p.period] = (lateFeePaid[p.period] || 0) + amt; return; }
     const key = p.fee_head_id + '_' + p.period;
     paidMap[key] = (paidMap[key] || 0) + amt;
   });
-
-  let scheme = null;
-  try {
-    scheme = (await sb('GET', 'scheme_enrollments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
-      '&status=eq.active&select=free_van,free_uniform,free_books&limit=1') || [])[0] || null;
-  } catch (e) { scheme = null; }
 
   function isSchemeFree(headId) {
     if (!scheme) return false;
@@ -125,6 +129,36 @@ async function computeDues(sb, schoolId, studentId) {
     return t;
   }
 
+  // ── Due dates (same rules as the counter's late fee) ──
+  function periodDueDate(p) {
+    if (collectionMode === 'term') {
+      const t = termConfig.find(x => x.name === p);
+      return (t && t.due) ? t.due : null;
+    }
+    if (collectionMode === 'month') {
+      const mi = MONTHS.indexOf(p);
+      if (mi < 0) return null;
+      const d = istToday();
+      let startYear = d.getUTCFullYear();
+      if (d.getUTCMonth() < monthStart) startYear -= 1;
+      const year = mi >= monthStart ? startYear : startYear + 1;
+      const day = Math.min(Math.max(lateCfg.due_day || 10, 1), 28);
+      return year + '-' + String(mi + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+    }
+    return null;
+  }
+  // Van month due date: the school's van due day in that month of this van year
+  function vanMonthDue(m) {
+    const mi = MONTHS.indexOf(m);
+    const startIdx = MONTHS.indexOf(vanMonths[0]);
+    if (mi < 0 || startIdx < 0) return null;
+    const d = istToday();
+    let startYear = d.getUTCFullYear();
+    if (d.getUTCMonth() < startIdx) startYear -= 1;
+    const year = mi >= startIdx ? startYear : startYear + 1;
+    return year + '-' + String(mi + 1).padStart(2, '0') + '-' + String(ctx.reminders.van_due_day).padStart(2, '0');
+  }
+
   const items = [];
   const pendingByPeriod = {};
 
@@ -145,16 +179,13 @@ async function computeDues(sb, schoolId, studentId) {
       const name = s.fee_head_name || (h && h.name) || 'Fee';
       items.push({
         key: 'fee|' + s.fee_head_id + '|' + p, group: 'fee', fee_head_id: s.fee_head_id,
-        fee_head_name: name, period: p, label: name + ' · ' + (isPerPeriodRow(s) ? p : 'Full year'), amount: bal
+        fee_head_name: name, period: p, label: name + ' · ' + (isPerPeriodRow(s) ? p : 'Full year'), amount: bal,
+        due: periodDueDate(p)
       });
     });
   });
 
   // ── Van ──
-  let van = null;
-  try {
-    van = (await sb('GET', 'student_transport?student_id=eq.' + enc(studentId) + '&select=*&limit=1') || [])[0] || null;
-  } catch (e) { van = null; }
   const vanHead = heads.find(h => h.category === 'transport') || null;
   if (van && vanHead && !(scheme && scheme.free_van)) {
     const d = istToday();
@@ -164,7 +195,7 @@ async function computeDues(sb, schoolId, studentId) {
     if (van.van_plan === 'one_time' && van.van_plan_year === currentVanYear) {
       const planAmt = parseFloat(van.van_plan_amount) || 0;
       const bal = money(planAmt - (paidMap[vanHead.id + '_' + VAN_ONETIME_PERIOD] || 0));
-      if (bal > 0) items.push({ key: 'van|' + VAN_ONETIME_PERIOD, group: 'van', fee_head_id: vanHead.id, fee_head_name: vanName, period: VAN_ONETIME_PERIOD, label: vanName + ' · One-time plan ' + currentVanYear, amount: bal });
+      if (bal > 0) items.push({ key: 'van|' + VAN_ONETIME_PERIOD, group: 'van', fee_head_id: vanHead.id, fee_head_name: vanName, period: VAN_ONETIME_PERIOD, label: vanName + ' · One-time plan ' + currentVanYear, amount: bal, due: ctx.reminders.van_onetime_due || null });
     } else {
       const rate = parseFloat(van.monthly_fee) || 0;
       // Months charged — a mid-year joiner starts from the joining month
@@ -183,29 +214,12 @@ async function computeDues(sb, schoolId, studentId) {
       }
       if (rate > 0) months.forEach(m => {
         const bal = money(rate - (paidMap[vanHead.id + '_' + m] || 0));
-        if (bal > 0) items.push({ key: 'van|' + m, group: 'van', fee_head_id: vanHead.id, fee_head_name: vanName, period: m, label: vanName + ' · ' + m, amount: bal });
+        if (bal > 0) items.push({ key: 'van|' + m, group: 'van', fee_head_id: vanHead.id, fee_head_name: vanName, period: m, label: vanName + ' · ' + m, amount: bal, due: vanMonthDue(m) });
       });
     }
   }
 
   // ── Late fees (per overdue period, same rules as the counter) ──
-  function periodDueDate(p) {
-    if (collectionMode === 'term') {
-      const t = termConfig.find(x => x.name === p);
-      return (t && t.due) ? t.due : null;
-    }
-    if (collectionMode === 'month') {
-      const mi = MONTHS.indexOf(p);
-      if (mi < 0) return null;
-      const d = istToday();
-      let startYear = d.getUTCFullYear();
-      if (d.getUTCMonth() < monthStart) startYear -= 1;
-      const year = mi >= monthStart ? startYear : startYear + 1;
-      const day = Math.min(Math.max(lateCfg.due_day || 10, 1), 28);
-      return year + '-' + String(mi + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
-    }
-    return null;
-  }
   if (lateCfg.enabled) {
     Object.keys(pendingByPeriod).forEach(p => {
       const due = periodDueDate(p);
@@ -224,11 +238,90 @@ async function computeDues(sb, schoolId, studentId) {
       let fine = Math.round(base * units);
       if (lateCfg.max_amount > 0 && fine > lateCfg.max_amount) fine = lateCfg.max_amount;
       fine = Math.max(0, fine - (lateFeePaid[p] || 0));
-      if (fine > 0) items.push({ key: 'late|' + p, group: 'late', fee_head_id: LATE_FEE_ID, fee_head_name: LATE_FEE_NAME, period: p, label: LATE_FEE_NAME + ' · ' + p + ' (' + overdue + ' days past due)', amount: fine, is_late_fee: true });
+      if (fine > 0) items.push({ key: 'late|' + p, group: 'late', fee_head_id: LATE_FEE_ID, fee_head_name: LATE_FEE_NAME, period: p, label: LATE_FEE_NAME + ' · ' + p + ' (' + overdue + ' days past due)', amount: fine, is_late_fee: true, due: String(due).slice(0, 10) });
     });
   }
 
   return { student: stu, items };
 }
 
-module.exports = { computeDues, LATE_FEE_ID, LATE_FEE_NAME, VAN_ONETIME_PERIOD };
+async function computeDues(sb, schoolId, studentId) {
+  const enc = encodeURIComponent;
+  const stu = (await sb('GET', 'students?id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
+    '&select=id,full_name,admission_no,class,section,mobile,father_name,admission_date,is_rte&limit=1') || [])[0];
+  if (!stu) throw new Error('Student not found');
+
+  const settings = (await sb('GET', 'fee_settings?school_id=eq.' + enc(schoolId) + '&select=*&limit=1') || [])[0] || {};
+  const heads = await sb('GET', 'fee_heads?school_id=eq.' + enc(schoolId) + '&select=id,name,category') || [];
+  const ctx = makeContext(settings, heads);
+
+  const structure = await sb('GET', 'fee_structure?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(stu.class) + '&select=*') || [];
+
+  let overrides = [];
+  try {
+    overrides = await sb('GET', 'student_fee_overrides?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) + '&select=fee_head_id,total_amount,note') || [];
+  } catch (e) { overrides = []; }
+
+  const payments = await sb('GET', 'fee_payments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
+    '&is_cancelled=not.is.true&select=fee_head_id,period,amount_paid') || [];
+
+  let scheme = null;
+  try {
+    scheme = (await sb('GET', 'scheme_enrollments?student_id=eq.' + enc(studentId) + '&school_id=eq.' + enc(schoolId) +
+      '&status=eq.active&select=free_van,free_uniform,free_books&limit=1') || [])[0] || null;
+  } catch (e) { scheme = null; }
+
+  let van = null;
+  try {
+    van = (await sb('GET', 'student_transport?student_id=eq.' + enc(studentId) + '&select=*&limit=1') || [])[0] || null;
+  } catch (e) { van = null; }
+
+  return duesFrom(ctx, stu, structure, overrides, payments, scheme, van);
+}
+
+// Reads a whole table in pages of 1000 (the database hands back at most 1000 rows at a time)
+async function getAll(sb, path) {
+  let out = [];
+  for (let off = 0; off < 200000; off += 1000) {
+    const rows = await sb('GET', path + '&limit=1000&offset=' + off) || [];
+    out = out.concat(rows);
+    if (rows.length < 1000) break;
+  }
+  return out;
+}
+
+// Every active child's dues for one school, with a handful of reads instead of
+// seven per child. Uses the very same duesFrom() as the counter and online payment.
+async function computeSchoolDues(sb, schoolId) {
+  const enc = encodeURIComponent;
+  const sid = enc(schoolId);
+  const students = await getAll(sb, 'students?school_id=eq.' + sid + '&status=eq.active' +
+    '&select=id,full_name,admission_no,class,section,mobile,father_name,admission_date,is_rte&order=id');
+  const settings = (await sb('GET', 'fee_settings?school_id=eq.' + sid + '&select=*&limit=1') || [])[0] || {};
+  const heads = await sb('GET', 'fee_heads?school_id=eq.' + sid + '&select=id,name,category') || [];
+  const ctx = makeContext(settings, heads);
+  const structure = await getAll(sb, 'fee_structure?school_id=eq.' + sid + '&select=*&order=id');
+  let overrides = [];
+  try { overrides = await getAll(sb, 'student_fee_overrides?school_id=eq.' + sid + '&select=student_id,fee_head_id,total_amount,note&order=student_id'); } catch (e) { overrides = []; }
+  const payments = await getAll(sb, 'fee_payments?school_id=eq.' + sid + '&is_cancelled=not.is.true&select=student_id,fee_head_id,period,amount_paid&order=id');
+  let schemes = [];
+  try { schemes = await getAll(sb, 'scheme_enrollments?school_id=eq.' + sid + '&status=eq.active&select=student_id,free_van,free_uniform,free_books&order=student_id'); } catch (e) { schemes = []; }
+  let vans = [];
+  try { vans = await getAll(sb, 'student_transport?school_id=eq.' + sid + '&select=*&order=id'); } catch (e) { vans = []; }
+
+  const by = (rows, k) => { const m = {}; rows.forEach(r => { const id = String(r[k]); (m[id] = m[id] || []).push(r); }); return m; };
+  const structByClass = by(structure, 'class');
+  const ovBy = by(overrides, 'student_id');
+  const payBy = by(payments, 'student_id');
+  const schBy = by(schemes, 'student_id');
+  const vanBy = by(vans, 'student_id');
+
+  const out = students.map(stu => {
+    const id = String(stu.id);
+    return duesFrom(ctx, stu, structByClass[String(stu.class)] || [], ovBy[id] || [], payBy[id] || [],
+      (schBy[id] || [])[0] || null, (vanBy[id] || [])[0] || null);
+  });
+  return { ctx, settings, results: out };
+}
+
+module.exports = { computeDues, computeSchoolDues, duesFrom, makeContext, reminderConfig, istToday, MONTHS, LATE_FEE_ID, LATE_FEE_NAME, VAN_ONETIME_PERIOD };
