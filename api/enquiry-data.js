@@ -269,7 +269,8 @@ module.exports = async (req, res) => {
       if (patch.stage === 'admitted' || patch.stage === 'lost') patch.next_call = null;
 
       const note = str(body.note, 1000);
-      if (note || patch.stage) {
+      // Nov 2026: a new call-back date also counts as "called today" (dashboard card + owner's evening report)
+      if (note || patch.stage || patch.next_call !== undefined) {
         const hist = Array.isArray(old.history) ? old.history.slice(-49) : [];
         hist.push({ at: new Date().toISOString(), by, stage: patch.stage || old.stage, note });
         patch.history = hist;

@@ -90,6 +90,17 @@
         <div style="background:#C9A84C;color:#3E0D0D;font-weight:700;font-size:13px;padding:8px 14px;border-radius:20px;white-space:nowrap">Open →</div>
       </a>
 
+      <!-- ══ Admission calls due (Nov 2026) — owner and staff with Admission Enquiries ══ -->
+      <div id="fu-card" style="display:none;margin:0 0 16px;background:#fff;border:1.5px solid #E8B4AC;border-left:5px solid #A32D2D;border-radius:14px;padding:14px 18px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-size:26px">📞</div>
+          <div style="flex:1;min-width:200px"><div style="font-weight:700;font-size:15px;color:#6B1A1A" id="fu-title">Admission calls due today</div>
+            <div style="font-size:12px;color:#8a7d74;margin-top:2px" id="fu-sub"></div></div>
+          <a href="enquiries.html" style="background:#6B1A1A;color:#F5E6C8;font-weight:700;font-size:13px;padding:8px 14px;border-radius:20px;white-space:nowrap;text-decoration:none">Open Enquiries →</a>
+        </div>
+        <div id="fu-list" style="margin-top:10px"></div>
+      </div>
+
       <!-- ══ Staff Home (shown only to staff logins, not the owner) ══ -->
       <div id="staff-home" style="display:none">
         <div class="card" style="max-width:640px">
@@ -430,6 +441,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('school-name-display').textContent = schoolName;
   loadFestivalCard();   // 🪔 festival poster card (owner / principal with Social Media Posts)
   loadDailyPostersCard();   // 📅 this week's posters waiting (same people)
+  loadFollowUpCard();       // 📞 admission calls due / missed / new not called (owner + Admission Enquiries staff)
 
   // Staff logins stop here — task page only, no school figures loaded at all.
   if (IS_STAFF_DASH) {
@@ -463,6 +475,52 @@ async function loadFestivalCard() {
     document.getElementById('fw-today-title').textContent =
       (d.when === 'tomorrow' ? 'Tomorrow is ' : 'Today is ') + (names[d.festival] || 'a festival') + ' — your wishes poster is ready';
     document.getElementById('fw-today-card').style.display = 'flex';
+  } catch (e) { /* no card */ }
+}
+
+// 📞 Admission calls the office must make today (Nov 2026). The server answers only the owner and
+// staff with Admission Enquiries; anyone else simply sees nothing.
+//   due today / missed — call-back date today or earlier, nothing logged on it today
+//   new, not called   — new enquiry, never updated, more than 24 hours old
+async function loadFollowUpCard() {
+  try {
+    const r = await fetch('/api/enquiry-data', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', token: sessionStorage.getItem('digismart_session_token') || '' }) });
+    const d = await r.json();
+    if (!d.ok) return;
+    const ist = new Date(Date.now() + 5.5 * 3600 * 1000), today = ist.toISOString().slice(0, 10);
+    const startUtc = new Date(new Date(today + 'T00:00:00Z').getTime() - 5.5 * 3600 * 1000).toISOString();
+    const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const list = [];
+    let called = 0;
+    (d.rows || []).forEach(e => {
+      if (e.stage === 'admitted' || e.stage === 'lost') return;
+      const hist = Array.isArray(e.history) ? e.history : [];
+      if (hist.some(h => h && h.at && String(h.at) >= startUtc)) { called++; return; }
+      const neverCalled = e.stage === 'new' && !hist.length && (Date.now() - new Date(e.created_at).getTime()) > 24 * 3600 * 1000;
+      const nc = e.next_call ? String(e.next_call).slice(0, 10) : '';
+      if (neverCalled) list.push({ e, kind: 'new', late: Math.floor((Date.now() - new Date(e.created_at).getTime()) / 86400000) });
+      else if (nc && nc <= today) list.push({ e, kind: nc < today ? 'missed' : 'due', late: Math.round((new Date(today) - new Date(nc)) / 86400000) });
+    });
+    if (!list.length) return;
+    const order = { new: 0, missed: 1, due: 2 };
+    list.sort((a, b) => order[a.kind] - order[b.kind] || b.late - a.late);
+    const n = k => list.filter(x => x.kind === k).length;
+    document.getElementById('fu-title').textContent = list.length + ' admission call' + (list.length === 1 ? '' : 's') + ' to make today';
+    document.getElementById('fu-sub').textContent = [n('due') ? n('due') + ' due today' : '', n('missed') ? n('missed') + ' missed' : '',
+      n('new') ? n('new') + ' new not called for 24 hours+' : '', called ? called + ' already done today' : ''].filter(Boolean).join(' · ') +
+      ' — the owner sees calls not made in the evening report.';
+    const tag = x => x.kind === 'new' ? '<span style="background:#A32D2D;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700">New · not called</span>'
+      : x.kind === 'missed' ? '<span style="background:#FCEBEB;color:#A32D2D;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700">Missed ' + x.late + ' day' + (x.late > 1 ? 's' : '') + '</span>'
+      : '<span style="background:#FFF2D6;color:#9A6A00;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700">Due today</span>';
+    const show = list.slice(0, 8);
+    document.getElementById('fu-list').innerHTML = show.map(x => '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px dashed #F0E6D8;font-size:13px">' +
+      '<div style="flex:1;min-width:0"><b>' + esc(x.e.child_name || x.e.parent_name || 'Enquiry') + '</b>' + (x.e.class_wanted ? ' <span style="color:#8a7d74">· for ' + esc(x.e.class_wanted) + '</span>' : '') +
+      (x.e.parent_name && x.e.child_name ? ' <span style="color:#8a7d74">· ' + esc(x.e.parent_name) + '</span>' : '') + '</div>' + tag(x) +
+      (x.e.mobile ? '<a href="tel:' + esc(x.e.mobile) + '" style="color:#2D7A3A;font-weight:700;text-decoration:none;white-space:nowrap">📞 ' + esc(x.e.mobile) + '</a>' : '') + '</div>').join('') +
+      (list.length > show.length ? '<div style="font-size:12px;color:#8a7d74;padding-top:6px">+ ' + (list.length - show.length) + ' more in Admission Enquiries</div>' : '') +
+      '<div style="font-size:11.5px;color:#8a7d74;padding-top:6px">After calling, open the enquiry and press Update — it then counts as called today.</div>';
+    document.getElementById('fu-card').style.display = 'block';
   } catch (e) { /* no card */ }
 }
 

@@ -440,6 +440,21 @@ async function openEvening(date) {
         esc([e.class ? 'For ' + e.class : '', e.parent && e.child ? 'Parent: ' + e.parent : '', e.area, e.source].filter(Boolean).join(' · ')) + '</div></div></div>' +
         '<div class="badges">' + callBtn(e.mobile) + '</div></div>').join('')
     : '<div class="empty" style="padding:14px">No new enquiries today.</div>');
+  // Admission follow-up calls (Nov 2026)
+  const fu = r.followups;
+  if (fu) {
+    const nc = fu.not_called || [], nw = fu.new_waiting || [];
+    html += sec('📞 Admission follow-up calls · ' + (fu.called || 0) + ' of ' + (fu.due || 0) + ' made',
+      (!nc.length && !nw.length) ? '<div class="empty" style="padding:14px">✅ Every follow-up call due today was made.</div>' :
+      nc.map(e => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(e.child || e.parent) + '</div><div class="row-class">' +
+          esc([e.class ? 'For ' + e.class : '', e.parent && e.child ? 'Parent: ' + e.parent : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+          '<div class="row-total" style="font-size:13px">' + (e.late > 0 ? 'Missed ' + e.late + ' day' + (e.late > 1 ? 's' : '') : 'Not called today') + '</div></div>' +
+          '<div class="badges"><span class="badge b-after">Call not made</span>' + callBtn(e.mobile) + '</div></div>').join('') +
+      nw.map(e => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(e.child || e.parent) + '</div><div class="row-class">' +
+          esc([e.class ? 'For ' + e.class : '', 'enquired ' + niceDate(e.since).replace(/^\w+, /, '')].filter(Boolean).join(' · ')) + '</div></div>' +
+          '<div class="row-total" style="font-size:13px">New · never called</div></div>' +
+          '<div class="badges"><span class="badge b-after">Over 24 hours</span>' + callBtn(e.mobile) + '</div></div>').join(''));
+  }
   // Admissions
   html += sec('🎒 New admissions · ' + (ad.count || 0), (ad.list && ad.list.length)
     ? ad.list.map(s => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) +

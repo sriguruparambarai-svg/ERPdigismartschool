@@ -127,6 +127,38 @@ async function enquiriesToday(schoolId, day) {
   return { count: rows.length, list: rows.map(r => ({ child: r.child_name || '', parent: r.parent_name || '', class: r.class_wanted || '', mobile: r.mobile || '', source: r.source || '', area: r.area || '' })) };
 }
 
+// ── 3b. Admission follow-up calls (Nov 2026) ──
+// due   = open enquiries whose call-back date is today or earlier
+// called = the office logged something on it today (Admission Enquiries → Update)
+// new_waiting = new enquiries never called, more than 24 hours old
+async function followUps(schoolId, day) {
+  const startUtc = new Date(new Date(day + 'T00:00:00Z').getTime() - 5.5 * 3600 * 1000).toISOString();
+  const rows = await safe(sb('GET', 'admission_enquiries?school_id=eq.' + enc(schoolId) + '&stage=not.in.(admitted,lost)' +
+    '&select=parent_name,child_name,class_wanted,mobile,stage,next_call,history,created_at&limit=3000'), []) || [];
+  const calledToday = r => (Array.isArray(r.history) ? r.history : []).some(h => h && h.at && String(h.at) >= startUtc);
+  const dayMs = new Date(day + 'T00:00:00Z').getTime();
+  const who = r => ({ child: r.child_name || '', parent: r.parent_name || '', class: r.class_wanted || '', mobile: r.mobile || '' });
+  let due = 0, called = 0;
+  const notCalled = [], newWaiting = [];
+  rows.forEach(r => {
+    const c = calledToday(r);
+    const isDue = r.next_call && String(r.next_call).slice(0, 10) <= day;
+    const neverCalled = r.stage === 'new' && !(Array.isArray(r.history) && r.history.length) &&
+      (Date.now() - new Date(r.created_at).getTime()) > 24 * 3600 * 1000;
+    if (c) { called++; due++; return; }
+    if (neverCalled) { newWaiting.push(Object.assign(who(r), { since: String(r.created_at).slice(0, 10) })); return; }
+    // a brand-new enquiry (under 24 hours) is not yet a missed call
+    if (r.stage === 'new' && !(Array.isArray(r.history) && r.history.length)) return;
+    if (isDue) {
+      due++;
+      const late = Math.round((dayMs - new Date(String(r.next_call).slice(0, 10) + 'T00:00:00Z').getTime()) / 86400000);
+      notCalled.push(Object.assign(who(r), { late }));
+    }
+  });
+  notCalled.sort((a, b) => b.late - a.late);
+  return { due, called, not_called: notCalled, new_waiting: newWaiting };
+}
+
 // ── 4. New admissions today (students added to the ERP today) ──
 async function admissionsToday(schoolId, day) {
   const from = new Date(new Date(day + 'T00:00:00Z').getTime() - 5.5 * 3600 * 1000).toISOString();
@@ -138,10 +170,11 @@ async function admissionsToday(schoolId, day) {
 }
 
 async function buildReport(schoolId, day) {
-  const [fees, absent, enquiries, admissions] = await Promise.all([
-    feesToday(schoolId, day), longAbsent(schoolId, day), enquiriesToday(schoolId, day), admissionsToday(schoolId, day)
+  const [fees, absent, enquiries, admissions, followups] = await Promise.all([
+    feesToday(schoolId, day), longAbsent(schoolId, day), enquiriesToday(schoolId, day), admissionsToday(schoolId, day),
+    followUps(schoolId, day)
   ]);
-  return { date: day, fees, absent, enquiries, admissions };
+  return { date: day, fees, absent, enquiries, admissions, followups };
 }
 
 function summaryLine(r) {
@@ -150,6 +183,8 @@ function summaryLine(r) {
   if (r.absent.list.length) parts.push(r.absent.list.length + ' absent 3+ days');
   if (r.enquiries.count) parts.push(r.enquiries.count + ' new enquir' + (r.enquiries.count === 1 ? 'y' : 'ies'));
   if (r.admissions.count) parts.push(r.admissions.count + ' new admission' + (r.admissions.count === 1 ? '' : 's'));
+  const missed = (r.followups ? r.followups.not_called.length + r.followups.new_waiting.length : 0);
+  if (missed) parts.push(missed + ' admission call' + (missed === 1 ? '' : 's') + ' not made');
   return parts.join(' · ');
 }
 function nothingHappened(r) {
