@@ -1,21 +1,21 @@
 // DigiSmart ERP — Owner App people, for the DigiSmart SUPER ADMIN only (Nov 2026)
-// Used by pages/owner-app-admin.html. Not reachable with any school login —
-// the office (even with the ERP owner email) can never add themselves or reset an owner.
-// Guarded by the super admin key: Vercel setting SUPER_ADMIN_KEY (or CRON_SECRET if that is not set).
+// Used ONLY by the super admin panel in TeachBot (admin.html → TeachBot's api/owner-app-people.js,
+// which checks the super admin login first). Not reachable with any school login — the office
+// (even with the ERP owner email) can never add themselves or reset an owner.
+// Proved with header x-teachbot-key = TEACHBOT_LINK_KEY (same value in both Vercel projects).
 //
-// POST { key, action: 'schools' }                         → every school (id + name)
-// POST { key, action: 'list', school_id }                 → that school's Owner App people (no passwords)
-// POST { key, action: 'add', school_id, name, phone }     → new person + one-time starting PIN (shown once)
-// POST { key, action: 'reset', id }                       → new starting PIN; their phone is warned, then logged out
-// POST { key, action: 'remove', id }                      → person removed; their phone is logged out
+// POST { action: 'schools' }                         → every school (id + name)
+// POST { action: 'list', school_id }                 → that school's Owner App people (no passwords)
+// POST { action: 'add', school_id, name, phone }     → new person + one-time starting PIN (shown once)
+// POST { action: 'reset', id }                       → new starting PIN; their phone is warned, then logged out
+// POST { action: 'remove', id }                      → person removed; their phone is logged out
 
 const crypto = require('crypto');
 const { sb, enc, getServiceKey, sendToSubs, pushReady } = require('./_push');
 const { hashSecret } = require('./owner-app');
 
-function adminKey() { return process.env.SUPER_ADMIN_KEY || process.env.CRON_SECRET || ''; }
 function keyOk(k) {
-  const want = adminKey();
+  const want = process.env.TEACHBOT_LINK_KEY || '';
   if (!want || !k) return false;
   const a = Buffer.from(String(k)), b = Buffer.from(want);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
   let body;
   try { body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {}); }
   catch (e) { return res.status(400).json({ ok: false, error: 'Invalid request.' }); }
-  if (!keyOk(body.key)) return res.status(401).json({ ok: false, error: 'Wrong super admin key.' });
+  if (!keyOk(req.headers['x-teachbot-key'])) return res.status(401).json({ ok: false, error: 'Only the DigiSmart super admin panel can do this.' });
   const action = String(body.action || '');
 
   try {
