@@ -366,8 +366,9 @@ async function loadInbox() {
     box.innerHTML = '<div class="empty"><div class="big">📭</div>No alerts yet. When the ERP sends fee reminders, they appear here.</div>';
     return;
   }
+  inboxRows = rows;
   box.innerHTML = rows.map(a => {
-    const ico = a.kind === 'fee_reminders' ? '💰' : '🔔';
+    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : '🔔';
     return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(String(a.alert_date).slice(0, 10)) + '\')">' +
       '<div class="inbox-ico">' + ico + '</div>' +
       '<div class="inbox-main"><div class="inbox-title">' + esc(a.title || 'Alert') + '</div>' +
@@ -377,12 +378,73 @@ async function loadInbox() {
   }).join('');
 }
 
+// ── Evening report: everything is inside the alert itself ──
+let inboxRows = [];
+function sec(title, inner) { return '<div class="section-h">' + title + '</div>' + inner; }
+function callBtn(m) { return m ? '<a class="call" href="tel:' + esc(m) + '">📞 Call</a>' : ''; }
+async function openEvening(date) {
+  show('view-detail');
+  history.replaceState(null, '', '/owner/index.html?alert=evening_report&date=' + date);
+  document.getElementById('d-title').textContent = 'Today at school';
+  document.querySelector('.refresh-note').style.display = 'none';
+  document.getElementById('d-sub').textContent = niceDate(date);
+  document.getElementById('d-chips').innerHTML = '';
+  document.getElementById('d-stats').innerHTML = '';
+  const list = document.getElementById('d-list');
+  let a = inboxRows.find(x => x.kind === 'evening_report' && String(x.alert_date).slice(0, 10) === date);
+  if (!a) {
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    const out = await ownerApi('alerts');
+    inboxRows = (out && out.alerts) || [];
+    a = inboxRows.find(x => x.kind === 'evening_report' && String(x.alert_date).slice(0, 10) === date);
+  }
+  const r = a && a.data;
+  if (!r) { list.innerHTML = '<div class="empty">This report is not available.</div>'; return; }
+  const f = r.fees || {}, ab = r.absent || {}, en = r.enquiries || {}, ad = r.admissions || {};
+  const modes = Object.keys(f.by_mode || {}).map(m => esc(m.toUpperCase()) + ' ' + inr(f.by_mode[m])).join(' · ');
+  document.getElementById('d-stats').innerHTML =
+    '<div class="stat"><div class="n">' + inr(f.total) + '</div><div class="l">Fees collected today</div></div>' +
+    '<div class="stat"><div class="n">' + (ab.list || []).length + '</div><div class="l">Absent 3+ days in a row</div></div>' +
+    '<div class="stat"><div class="n">' + (en.count || 0) + '</div><div class="l">New enquiries</div></div>' +
+    '<div class="stat"><div class="n">' + (ad.count || 0) + '</div><div class="l">New admissions</div></div>';
+  let html = '';
+  // Fees
+  html += sec('💰 Fees collected · ' + inr(f.total), (f.list && f.list.length)
+    ? '<div class="muted" style="margin:0 4px 8px">' + (f.payers || 0) + ' paid · ' + (f.receipts || 0) + ' receipts' + (modes ? ' · ' + modes : '') + '</div>' +
+      f.list.map(p => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(p.name) + '</div><div class="row-class">Class ' + esc(p.class) + ' · ' + esc((p.modes || []).join(', ').toUpperCase()) + '</div></div>' +
+        '<div class="row-total" style="color:var(--green)">' + inr(p.amount) + '</div></div>' +
+        '<div class="muted" style="margin-top:6px">' + esc((p.items || []).join(', ')) + '</div></div>').join('')
+    : '<div class="empty" style="padding:14px">No fees collected today.</div>');
+  // Long absent
+  html += sec('🚫 Absent 3+ school days in a row', !ab.taken_today
+    ? '<div class="empty" style="padding:14px">Attendance was not taken today.</div>'
+    : (ab.list && ab.list.length)
+      ? ab.list.map(s => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) + ' · since ' + esc(niceDate(s.since).replace(/^\w+, /, '')) + '</div></div>' +
+          '<div class="row-total">' + s.days + ' days</div></div>' +
+          '<div class="badges">' + (s.leave ? '<span class="badge b-seen">Leave ' + esc(s.leave === 'approved' ? 'approved' : 'applied') + '</span>' : '<span class="badge b-after">No leave applied</span>') + callBtn(s.mobile) + '</div></div>').join('')
+      : '<div class="empty" style="padding:14px">✅ No child absent 3 days in a row. (' + (ab.absent_today || 0) + ' absent today.)</div>');
+  // Enquiries
+  html += sec('📝 New admission enquiries · ' + (en.count || 0), (en.list && en.list.length)
+    ? en.list.map(e => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(e.child || e.parent) + '</div><div class="row-class">' +
+        esc([e.class ? 'For ' + e.class : '', e.parent && e.child ? 'Parent: ' + e.parent : '', e.area, e.source].filter(Boolean).join(' · ')) + '</div></div></div>' +
+        '<div class="badges">' + callBtn(e.mobile) + '</div></div>').join('')
+    : '<div class="empty" style="padding:14px">No new enquiries today.</div>');
+  // Admissions
+  html += sec('🎒 New admissions · ' + (ad.count || 0), (ad.list && ad.list.length)
+    ? ad.list.map(s => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) +
+        (s.admission_no ? ' · Adm. no ' + esc(s.admission_no) : '') + (s.parent ? ' · ' + esc(s.parent) : '') + '</div></div></div></div>').join('')
+    : '<div class="empty" style="padding:14px">No new admissions today.</div>');
+  list.innerHTML = html;
+}
+
 // ── One day's fee reminders ──
 async function openAlert(kind, date) {
+  if (kind === 'evening_report') { openEvening(date); return; }
   if (kind !== 'fee_reminders') return;
   show('view-detail');
   history.replaceState(null, '', '/owner/index.html?alert=fee_reminders&date=' + date);
   document.getElementById('d-title').textContent = 'Fee reminders';
+  document.querySelector('.refresh-note').style.display = '';
   document.getElementById('d-sub').textContent = niceDate(date);
   document.getElementById('d-stats').innerHTML = '';
   document.getElementById('d-chips').innerHTML = '';
@@ -436,7 +498,7 @@ function startApp() {
   initAlerts();
   loadInbox();
   const q = new URLSearchParams(location.search);
-  if (q.get('alert') === 'fee_reminders' && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert('fee_reminders', q.get('date'));
+  if (['fee_reminders', 'evening_report'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
 }
 (function boot() {
   // Ready to install as an app from the very first screen (Chrome checks this before login)
