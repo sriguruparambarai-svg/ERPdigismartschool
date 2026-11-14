@@ -204,6 +204,19 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true, request: row });
     }
 
+    // ══ STAFF: which children have APPROVED leave on a date (Nov 2026) ══
+    // Used by the attendance page: those children come marked Absent with an "On leave" tag.
+    // Any staff login of the school may ask (teachers marking attendance); only ids come back.
+    if (action === 'on_leave') {
+      if (isParent(session)) return res.status(403).json({ ok: false, error: 'Staff only.' });
+      const date = String(body.date || '');
+      if (!validDate(date)) return res.status(400).json({ ok: false, error: 'Date missing.' });
+      const r = await sb('GET', 'leave_requests?school_code=eq.' + encodeURIComponent(schoolId)
+        + '&status=eq.approved&from_date=lte.' + date + '&to_date=gte.' + date + '&select=student_id,reason&limit=2000');
+      if (!r.ok) return res.status(500).json({ ok: false, error: 'Could not read leave: ' + r.raw });
+      return res.status(200).json({ ok: true, rows: (r.data || []).map(x => ({ student_id: x.student_id, reason: x.reason || '' })) });
+    }
+
     // ══ PARENT: this child's requests ══
     if (action === 'my_list') {
       if (!isParent(session)) return res.status(403).json({ ok: false, error: 'Parents only.' });

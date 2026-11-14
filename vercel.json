@@ -31,6 +31,10 @@
     {
       "path": "/api/evening-report",
       "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/substitutes",
+      "schedule": "0 4 * * *"
     }
   ],
   "rewrites": [
@@ -70,6 +74,9 @@
     },
     "api/evening-report.js": {
       "maxDuration": 300
+    },
+    "api/substitutes.js": {
+      "maxDuration": 120
     }
   }
 }

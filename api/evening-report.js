@@ -98,7 +98,7 @@ async function longAbsent(schoolId, day) {
   if (list.length) {
     // Has the parent applied for leave covering today?
     const ids = list.map(x => enc(x.student_id)).join(',');
-    const leaves = await safe(sb('GET', 'leave_requests?school_id=eq.' + enc(schoolId) + '&student_id=in.(' + ids + ')' +
+    const leaves = await safe(sb('GET', 'leave_requests?school_code=eq.' + enc(schoolId) + '&student_id=in.(' + ids + ')' +
       '&status=in.(pending,approved)&from_date=lte.' + day + '&to_date=gte.' + day + '&select=student_id,status'), []) || [];
     const lv = {};
     leaves.forEach(l => { lv[String(l.student_id)] = l.status; });

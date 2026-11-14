@@ -298,9 +298,20 @@ async function runAbsentJob(onlySchool) {
     subs = subs.concat(await sb('GET', 'push_subscriptions?student_id=in.(' + part + ')&select=id,school_id,student_id,endpoint,p256dh,auth') || []);
   }
 
+  // Nov 2026: no "absent" alert for a child whose leave the office approved — the parent already knows
+  const onLeave = new Set();
+  for (let i = 0; i < ids.length; i += 80) {
+    const part = ids.slice(i, i + 80).map(enc).join(',');
+    try {
+      (await sb('GET', 'leave_requests?student_id=in.(' + part + ')&status=eq.approved&from_date=lte.' + today
+        + '&to_date=gte.' + today + '&select=student_id') || []).forEach(l => onLeave.add(String(l.student_id)));
+    } catch (e) { /* if this fails, alerts go as before */ }
+  }
+
   const ta = await tamilSchools();
-  let sent = 0, skipped = 0, noPhone = 0;
+  let sent = 0, skipped = 0, noPhone = 0, leaveSkipped = 0;
   for (const a of absents) {
+    if (onLeave.has(String(a.student_id))) { leaveSkipped++; continue; }
     const mine = subs.filter(s => String(s.student_id) === String(a.student_id));
     if (!mine.length) { noPhone++; continue; }
     // Only once per child per day, even though the job runs twice
@@ -317,7 +328,7 @@ async function runAbsentJob(onlySchool) {
     }), true);
     sent += out.sent;
   }
-  return { date: today, absents: absents.length, sent, already_sent: skipped, no_alerts_on: noPhone };
+  return { date: today, absents: absents.length, sent, already_sent: skipped, no_alerts_on: noPhone, on_leave: leaveSkipped };
 }
 
 module.exports = async (req, res) => {

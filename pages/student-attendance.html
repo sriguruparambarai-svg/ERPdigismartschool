@@ -239,6 +239,7 @@ async function loadTodayStats() {
   }
 }
 
+let onLeave = {};   // student_id → reason, approved leave on the chosen date
 async function loadStudentsForAtt() {
   const cls = document.getElementById('sel-class').value;
   const sec = document.getElementById('sel-section').value;
@@ -261,6 +262,18 @@ async function loadStudentsForAtt() {
     const ids = studentsForAtt.map(s=>s.id);
     const { data: existing } = await supabase.from('student_attendance').select('student_id,status').eq('date',date).in('student_id',ids);
     if (existing) existing.forEach(r => { attStatus[r.student_id] = r.status; });
+    // Approved leave (parent app → office approved): comes marked Absent with an "On leave" tag (Nov 2026)
+    onLeave = {};
+    try {
+      const lr = await fetch('/api/leave-data', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: sessionStorage.getItem('digismart_session_token') || '', action: 'on_leave', date: date }) });
+      const lo = await lr.json();
+      if (lo && lo.ok) (lo.rows || []).forEach(x => {
+        if (ids.indexOf(x.student_id) === -1) return;
+        onLeave[x.student_id] = x.reason || 'Leave approved';
+        if (!attStatus[x.student_id]) attStatus[x.student_id] = 'absent';
+      });
+    } catch (e) { /* no tags if this fails */ }
   }
 
   renderAttList();
@@ -308,6 +321,7 @@ function renderAttList() {
           <div style="flex:1">
             <div style="font-weight:500;font-size:13px">${s.full_name}</div>
             <div style="font-size:11px;color:var(--text-muted)">${s.admission_no||''} ${s.full_name_tamil ? '· '+s.full_name_tamil : ''}</div>
+            ${onLeave[s.id] ? '<div style="display:inline-block;margin-top:3px;font-size:11px;font-weight:700;color:#2D7A3A;background:#E5F3E8;border-radius:10px;padding:1px 8px">🏖 On leave (approved)</div>' : ''}
           </div>
           <div style="display:flex;gap:6px">
             <button class="att-btn ${status==='present'?'present':''}" onclick="setStatus('${s.id}','present')">✓ Present</button>
@@ -348,7 +362,8 @@ function renderSummary() {
 }
 
 function markAll(status) {
-  studentsForAtt.forEach(s => setStatus(s.id, status));
+  // Children on approved leave stay Absent when "All Present" is pressed (tap them to change)
+  studentsForAtt.forEach(s => setStatus(s.id, (status === 'present' && onLeave[s.id]) ? 'absent' : status));
 }
 
 async function saveAttendance() {
