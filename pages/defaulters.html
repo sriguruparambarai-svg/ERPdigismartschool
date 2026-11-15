@@ -36,7 +36,7 @@
 .cs-line{border:1px solid #F0EDE8;border-radius:10px;padding:9px 10px;margin-top:8px}
 .cs-line .t{font-size:13px;font-weight:700;color:var(--maroon)}
 .cs-rolls{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-.cs-rolls button{min-width:34px;height:32px;border:1px solid var(--border);border-radius:7px;background:#fff;font-size:12.5px;font-weight:700;color:#3B332C;cursor:pointer}
+.cs-rolls button{min-width:34px;height:32px;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:#fff;font-size:12.5px;font-weight:700;color:#3B332C;cursor:pointer}
 .cs-rolls button.on{background:var(--maroon);border-color:var(--maroon);color:#fff}
 .cs-warn{background:#FFF4E0;border:1px solid #E8C99A;border-radius:8px;padding:8px 10px;font-size:12.5px;color:#6B4A00;margin-top:8px}
 .dsc-items{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
@@ -633,14 +633,15 @@ function csRender() {
     if (!e.data) return '<div class="d-card"><div class="cs-wrap">' + photo + '<div class="d-meta">Reading the marks…</div></div></div>';
     const d = e.data, kids = d.kids || [];
     const warn = (!d.class_found ? '<div class="cs-warn">No students found for “' + esc(d.class_label) + '” in ERP. Check the class name below (for example “Class 3” or “LKG B”).</div>' : '')
-      + (d.unclear ? '<div class="cs-warn">The app says: ' + esc(d.unclear) + '</div>' : '');
+      + (d.unclear ? '<div class="cs-warn">The app says: ' + esc(d.unclear) + '</div>' : '')
+      + (d.count_changed ? '<div class="cs-warn">This sheet was printed for ' + esc(d.printed_count) + ' children, but the class now has ' + kids.length + '. A child was added or removed since printing, so the numbers may not match — check every name carefully.</div>' : '');
     const lines = d.lines.map((l, i) => {
       const unk = (l.unknown || []).length ? '<div class="cs-warn">Marked on the sheet but not in this class: ' + esc(l.unknown.join(', ')) + '</div>' : '';
       const corr = l.type === 'homework' ? '<div style="margin-top:6px;font-size:12.5px">Corrected? <select class="form-control" style="display:inline-block;width:auto;padding:3px 6px" onchange="csSet(\'' + e.id + '\',' + i + ',\'corrected\',this.value)">'
         + ['', 'yes', 'no'].map(v => '<option value="' + v + '"' + (l.corrected === v ? ' selected' : '') + '>' + (v === 'yes' ? 'Yes' : v === 'no' ? 'No — not corrected' : 'Not ticked') + '</option>').join('') + '</select></div>' : '';
       return '<div class="cs-line"><div class="t">' + esc(csLineTitle(l)) + ' <span class="d-chip">' + l.rolls.length + ' marked</span></div>'
         + (l.lesson ? '<div class="d-meta">' + esc(l.lesson) + '</div>' : '')
-        + '<div class="cs-rolls">' + kids.map(k => '<button type="button" title="' + esc(k.name) + '" class="' + (l.rolls.indexOf(k.roll) !== -1 ? 'on' : '') + '" onclick="csToggle(\'' + e.id + '\',' + i + ',\'' + esc(k.roll) + '\')">' + esc(k.roll) + '</button>').join('') + '</div>'
+        + '<div class="cs-rolls">' + kids.map(k => '<button type="button" title="' + esc(k.name) + '" class="' + (l.rolls.indexOf(k.n) !== -1 ? 'on' : '') + '" onclick="csToggle(\'' + e.id + '\',' + i + ',\'' + esc(k.n) + '\')">' + esc(k.n) + ' <span style="font-weight:500">' + esc(String(k.name || '').split(/\s+/)[0]) + '</span></button>').join('') + '</div>'
         + unk + corr + '</div>';
     }).join('');
     return '<div class="d-card"><div class="cs-wrap">' + photo + '<div>'
@@ -649,7 +650,7 @@ function csRender() {
       + warn + lines
       + '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-primary" onclick="csSave(\'' + e.id + '\')">💾 Save this sheet</button>'
       + '<button class="btn btn-secondary" onclick="csDrop(\'' + e.id + '\')">✕ Remove</button></div>'
-      + '<div class="d-meta" style="margin-top:6px">Maroon = marked. Tap a number to add or remove it. Hold a number to see the child\'s name.</div>'
+      + '<div class="d-meta" style="margin-top:6px">Maroon = marked. Tap a child to add or remove them. The numbers are the same as on the printed sheet.</div>'
       + '</div></div></div>';
   }).join('');
 }

@@ -333,31 +333,35 @@ async function classKids(schoolId, cls, sec) {
   if (!stu.ok) throw new Error('Could not read students: ' + stu.raw);
   const list = (stu.data || []).map(s => ({ id: String(s.id), roll: String(s.roll_no == null ? '' : s.roll_no).trim(), name: clean(s.full_name, 80) }));
   list.sort((a, b) => ((parseInt(a.roll, 10) || 9999) - (parseInt(b.roll, 10) || 9999)) || a.name.localeCompare(b.name));
+  // Nov 2026: the sheet numbers children 1, 2, 3… in this same order (TeachBot reads the same ERP class list)
+  list.forEach((k, i) => { k.n = String(i + 1); });
   return list;
 }
 function rollsToKids(kids, rolls) {
   const byRoll = {};
-  kids.forEach(k => { const r = rollKey(k.roll); if (r) byRoll[r] = byRoll[r] ? 'two' : k; });
+  kids.forEach(k => { byRoll[k.n] = k; });
   const found = [], unknown = [];
   (Array.isArray(rolls) ? rolls : []).slice(0, 200).forEach(r => {
     const k = byRoll[rollKey(r)];
     if (k && k !== 'two') { if (found.indexOf(k) === -1) found.push(k); }
     else unknown.push(String(r));
   });
+  found.sort((a, b) => +a.n - +b.n);
   return { found, unknown };
 }
 async function readSheetPhoto(photoB64, mediaType) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Photo reading is not set up (ANTHROPIC_API_KEY missing in Vercel).');
-  const prompt = 'This is a photo of a printed "Daily Check Sheet" from a school. At the top right there is a code like "DCS·Class 3·2026-11-17" (class and date).\n'
-    + 'The sheet has rows. Each row has a small grey code on its right: "HW·<date>·<subject>" (homework), "TEST·<date>·<subject>" (class test, with two lines of boxes: "Not written / not prepared" then "Absent for the test"), or "DISC·<item>" (discipline).\n'
-    + 'Each row shows printed roll numbers in boxes. A teacher has put a pen mark (a cross ✗, tick, circle, slash or scribble) on SOME boxes. Find exactly which roll numbers have a pen mark on them. Ignore boxes with no pen mark. Look very carefully at every box; do not guess.\n'
-    + 'Homework rows also have "Corrected? ☐ Yes ☐ No" — say which box is ticked, or "blank".\n'
+  // Nov 2026: the sheets are registers — one row per child (number + name), one column per homework / test / item
+  const prompt = 'This is a photo of a printed school check sheet (Homework Check, Class Test Check or Discipline Check). At the top right there is a code like "DCS·Class 3·2026-11-17·n23" (class, date, and n = how many children).\n'
+    + 'The sheet is a table. Each ROW is one child: the first column has the child\'s number (1, 2, 3…) and name. Each other COLUMN has a header with a small grey code: "HW·<date>·<subject>" (homework), "TEST·<date>·<subject>" (a class test, which has TWO sub-columns: "Not written" then "Absent"), or "DISC·<item>" (discipline).\n'
+    + 'A teacher has put a pen mark (a cross ✗, tick, circle, slash or scribble) in SOME cells. For each column, find exactly which children\'s ROW NUMBERS have a pen mark in that column. Follow each row carefully across from the number to the column so you do not slip to the row above or below. Ignore empty cells; do not guess.\n'
+    + 'Homework columns have "Corrected? ☐ Yes ☐ No" at the bottom — say which box is ticked, or "blank".\n'
     + 'Reply with ONLY this JSON, nothing else:\n'
-    + '{"class":"Class 3","date":"YYYY-MM-DD","rows":[{"code":"HW·2026-11-16·Maths","text":"the printed homework words after the subject","marked":["4","12"],"corrected":"yes|no|blank"},'
+    + '{"class":"Class 3","date":"YYYY-MM-DD","count":23,"rows":[{"code":"HW·2026-11-16·Maths","text":"the printed homework words under the subject","marked":["4","12"],"corrected":"yes|no|blank"},'
     + '{"code":"TEST·2026-11-17·Science","text":"the printed chapter words","not_written":["3"],"absent":["9"]},'
     + '{"code":"DISC·nails","marked":["5"]}],"unclear":"say here if any mark or part of the sheet was hard to read, else empty"}\n'
-    + 'Copy every code exactly as printed. Include every row, even if nothing is marked (empty list).';
+    + 'Give one entry per column code (a TEST code once, with both lists). Copy every code exactly as printed. Include every column, even if nothing is marked (empty list).';
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
@@ -483,12 +487,13 @@ module.exports = async (req, res) => {
       try { kids = sc.cls ? await classKids(schoolId, sc.cls, sc.sec) : []; }
       catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
       const lines = [];
+      const printedCount = parseInt(read.count, 10) || 0;
       (Array.isArray(read.rows) ? read.rows : []).slice(0, 30).forEach(row => {
         const p = parseCode(row && row.code);
         if (!p) return;
         const mk = (type, rolls, extra) => {
           const m = rollsToKids(kids, rolls);
-          lines.push(Object.assign({ type: type, rolls: m.found.map(k => k.roll), unknown: m.unknown }, extra));
+          lines.push(Object.assign({ type: type, rolls: m.found.map(k => k.n), unknown: m.unknown }, extra));
         };
         if (p.type === 'homework') mk('homework', row.marked, { subject: p.subject, date: p.date, lesson: clean(row.text, 100),
           corrected: row.corrected === 'yes' ? 'yes' : row.corrected === 'no' ? 'no' : '' });
@@ -499,7 +504,8 @@ module.exports = async (req, res) => {
       });
       if (!lines.length) return res.status(200).json({ ok: false, error: 'No rows of a Daily Check Sheet were found in this photo. Please take the photo again, with the whole sheet flat and in good light.' });
       return res.status(200).json({ ok: true, class_label: label, erp_class: sc.cls, section: sc.sec, sheet_date: sheetDate,
-        unclear: clean(read.unclear, 300), kids: kids, lines: lines, class_found: kids.length > 0 });
+        unclear: clean(read.unclear, 300), kids: kids, lines: lines, class_found: kids.length > 0,
+        count_changed: !!(printedCount && kids.length && printedCount !== kids.length), printed_count: printedCount });
     }
 
     if (action === 'students_for_sheet') {
