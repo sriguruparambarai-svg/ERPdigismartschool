@@ -29,6 +29,7 @@ const DISCIPLINE = {
   nails:   ['Nails not cut', 'with nails not cut', 'நகம் வெட்டாமல்'],
   hair:    ['Hair not neat', 'with hair not neat', 'தலைமுடி சீராக இல்லாமல்'],
   books:   ['Books / notebooks', 'without books / notebooks', 'புத்தகம் / நோட்டு இல்லாமல்'],
+  notes:   ['Note maintenance', 'with notebooks not maintained properly', 'நோட்டுகளை ஒழுங்காகப் பராமரிக்காமல்'],   // Nov 2026: Daily Check Sheet
   idcard:  ['ID card', 'without ID card', 'அடையாள அட்டை (ID card) இல்லாமல்']
 };
 const DISCIPLINE_CODES = Object.keys(DISCIPLINE);

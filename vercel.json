@@ -29,6 +29,10 @@
       "schedule": "30 4 * * *"
     },
     {
+      "path": "/api/defaulter-auto",
+      "schedule": "30 10 * * 1-6"
+    },
+    {
       "path": "/api/evening-report",
       "schedule": "30 12 * * *"
     },
@@ -48,6 +52,12 @@
     }
   ],
   "functions": {
+    "api/defaulters.js": {
+      "maxDuration": 60
+    },
+    "api/defaulter-auto.js": {
+      "maxDuration": 120
+    },
     "api/report-data.js": {
       "maxDuration": 60
     },

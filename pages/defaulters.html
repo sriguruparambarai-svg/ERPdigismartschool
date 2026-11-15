@@ -29,6 +29,16 @@
 .d-chip{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:10px;background:#F7EDE3;color:var(--maroon);font-weight:600}
 .d-chip.sent{background:#E6F2E8;color:#2D7A3A}
 .hidden{display:none}
+/* Nov 2026: Daily Check Sheet photo */
+.cs-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:14px;align-items:start}
+@media (max-width:900px){.cs-wrap{grid-template-columns:1fr}}
+.cs-photo img{width:100%;border:1px solid var(--border);border-radius:8px;cursor:zoom-in}
+.cs-line{border:1px solid #F0EDE8;border-radius:10px;padding:9px 10px;margin-top:8px}
+.cs-line .t{font-size:13px;font-weight:700;color:var(--maroon)}
+.cs-rolls{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.cs-rolls button{min-width:34px;height:32px;border:1px solid var(--border);border-radius:7px;background:#fff;font-size:12.5px;font-weight:700;color:#3B332C;cursor:pointer}
+.cs-rolls button.on{background:var(--maroon);border-color:var(--maroon);color:#fff}
+.cs-warn{background:#FFF4E0;border:1px solid #E8C99A;border-radius:8px;padding:8px 10px;font-size:12.5px;color:#6B4A00;margin-top:8px}
 .dsc-items{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
 .dsc-items label{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:4px 8px;border:1px solid var(--border);border-radius:14px;background:#FDFAF4;cursor:pointer;user-select:none}
 .dsc-items label.on{background:#F7EDE3;border-color:var(--maroon);color:var(--maroon);font-weight:600}
@@ -55,9 +65,11 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
     <div class="page-body">
       <div class="d-tabs">
         <div class="d-tab on" data-tab="mark" onclick="showTab('mark')">✏️ Mark defaulters</div>
+        <div class="d-tab" data-tab="sheet" onclick="showTab('sheet')">📷 Sheet photo</div>
         <div class="d-tab office hidden" data-tab="send" onclick="showTab('send')">📤 Send to parents <span id="pend-count"></span></div>
         <div class="d-tab office hidden" data-tab="seen" onclick="showTab('seen')">👀 Seen by parents</div>
         <div class="d-tab office hidden" data-tab="repeat" onclick="showTab('repeat')">🔁 Repeat defaulters</div>
+        <div class="d-tab office hidden" data-tab="calls" onclick="showTab('calls')">📞 Parents to call <span id="call-count"></span></div>
         <div class="d-tab admin-only hidden" data-tab="wording" onclick="showTab('wording')">📝 Message wording</div>
       </div>
 
@@ -85,7 +97,7 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
             <div class="d-kind" data-kind="test_not_written" onclick="pickKind('test_not_written')">📝 Test – not written / not prepared<small>Tick who did not write</small></div>
             <div class="d-kind" data-kind="test_absent" onclick="pickKind('test_absent')">🚫 Test – absent<small>Tick who was absent</small></div>
             <div class="d-kind" data-kind="test_low_marks" onclick="pickKind('test_low_marks')">📉 Test – low marks<small id="pass-hint">Enter marks; below 35% is flagged</small></div>
-            <div class="d-kind" data-kind="discipline" onclick="pickKind('discipline')">👔 Discipline<small>Uniform, shoes, nails, hair, books, ID card</small></div>
+            <div class="d-kind" data-kind="discipline" onclick="pickKind('discipline')">👔 Discipline<small>Uniform, shoes, nails, hair, books, note maintenance, ID card</small></div>
           </div>
         </div>
 
@@ -98,7 +110,7 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
           </div>
           <div id="stu-list" class="d-meta" style="margin-top:10px">Pick a class to see students.</div>
           <button class="btn btn-primary" style="margin-top:12px" onclick="saveMarks()">💾 Save</button>
-          <div class="d-meta">Saving does not message parents. The office checks the list and sends it.</div>
+          <div class="d-meta">Saving does not message parents straight away. Everything waiting goes to parents <b>automatically at 4 PM</b> with the homework (the office can remove a wrong entry before then, or send it earlier).</div>
         </div>
 
         <div class="d-card">
@@ -107,12 +119,35 @@ table.d-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
         </div>
       </div>
 
+      <!-- ═════ SHEET PHOTO (Nov 2026): the Daily Check Sheet printed in TeachBot ═════ -->
+      <div id="tab-sheet" class="hidden">
+        <div class="d-card">
+          <div class="d-label">Upload the teachers' Daily Check Sheets</div>
+          <div class="d-meta" style="margin-top:4px">Take a photo of each sheet — flat, the whole page, in good light — and choose it here (you can choose several at once). The app reads the roll numbers marked ✗. <b>Check each list against the photo</b> (tap a number to add or remove it), then press Save. Saved messages go to parents at 4 PM with the homework. The sheets are printed from TeachBot → School Admin → <b>Daily Check Sheet</b>.</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
+            <label class="btn btn-primary" style="cursor:pointer">📷 Choose sheet photos
+              <input id="cs-file" type="file" accept="image/*" multiple style="display:none" onchange="csPick(this.files)"></label>
+            <span class="d-meta" id="cs-status"></span>
+          </div>
+        </div>
+        <div id="cs-list"></div>
+      </div>
+
+      <!-- ═════ PARENTS TO CALL (office, Nov 2026) ═════ -->
+      <div id="tab-calls" class="hidden">
+        <div class="d-card">
+          <div class="d-label">Repeat defaulters — did the parent see the warning?</div>
+          <div class="d-meta" style="margin-top:4px">When a child is a defaulter <b>3 times in a week</b> (homework, class test and discipline counted separately), the parent gets one warning at 4 PM and must tap <b>“I have seen”</b>. Parents who haven't tapped it in <b>2 days</b> are listed first — please call them and press <b>Called</b>. They also show in the owner's 6 PM report.</div>
+        </div>
+        <div id="calls-list"><div class="d-meta">Loading…</div></div>
+      </div>
+
       <!-- ═════ SEND (office) ═════ -->
       <div id="tab-send" class="hidden">
         <div class="d-card">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
             <div><div class="d-label">Waiting to be sent</div>
-              <div class="d-meta">Remove any wrong entry, then press Send. Each parent sees only their own child.</div></div>
+              <div class="d-meta">Everything here goes to parents <b>automatically at 4 PM</b> (Monday to Saturday). Remove any wrong entry before then — or press Send to send now. Each parent sees only their own child.</div></div>
             <button class="btn btn-gold" onclick="sendAll()">📤 Send all to parents</button>
           </div>
         </div>
@@ -173,7 +208,7 @@ const KIND_NAMES = { homework: 'Homework not written', test_not_written: 'Test �
 const W_NAMES = Object.assign({}, KIND_NAMES, { homework_half: 'Homework – half done (My Day)', homework_notebook: 'Homework – notebook not brought (My Day)' });
 const HW_REASON_NAMES = { half: 'Half done', notebook: 'Notebook not brought', not_done: 'Not done' };
 // Discipline items (same codes as the server). One combined message per child per day.
-const DSC_ITEMS = [['uniform', 'Uniform'], ['shoes', 'Shoes / socks'], ['nails', 'Nails not cut'], ['hair', 'Hair not neat'], ['books', 'Books / notebooks'], ['idcard', 'ID card']];
+const DSC_ITEMS = [['uniform', 'Uniform'], ['shoes', 'Shoes / socks'], ['nails', 'Nails not cut'], ['hair', 'Hair not neat'], ['books', 'Books / notebooks'], ['notes', 'Note maintenance'], ['idcard', 'ID card']];
 let kind = 'homework';
 let students = [];
 let passPercent = 35;
@@ -205,7 +240,8 @@ function istDate(offsetDays) {
 
 function showTab(t) {
   document.querySelectorAll('.d-tab').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
-  ['mark', 'send', 'seen', 'repeat', 'wording'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  ['mark', 'sheet', 'send', 'seen', 'repeat', 'calls', 'wording'].forEach(n => document.getElementById('tab-' + n).classList.toggle('hidden', n !== t));
+  if (t === 'calls') loadCalls();
   if (t === 'seen') loadSeen();
   if (t === 'wording') loadWording();
   if (t === 'send') loadPending();
@@ -548,6 +584,135 @@ async function loadRepeat() {
   } catch (e) {
     box.innerHTML = '<span style="color:#A32D2D">' + esc(e.message) + '</span>';
   }
+}
+
+
+// ═════ DAILY CHECK SHEET PHOTO (Nov 2026) ═════
+let CS = [];   // one entry per photo: { id, img, data (server reply), lines }
+const CS_NAMES = { homework: 'Homework not done', test_not_written: 'Class test – not written / not prepared', test_absent: 'Class test – absent' };
+function csShrink(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), im = new Image();
+    im.onload = () => {
+      const max = 2000, s = Math.min(1, max / Math.max(im.width, im.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(im.width * s); cv.height = Math.round(im.height * s);
+      cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg', 0.85));
+    };
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('This file is not a photo.')); };
+    im.src = url;
+  });
+}
+async function csPick(files) {
+  const list = Array.from(files || []);
+  document.getElementById('cs-file').value = '';
+  for (let i = 0; i < list.length; i++) {
+    document.getElementById('cs-status').textContent = 'Reading photo ' + (i + 1) + ' of ' + list.length + '… (about 20 seconds each)';
+    const entry = { id: 'cs' + Date.now() + i, img: '', data: null, err: '' };
+    CS.unshift(entry);
+    try {
+      entry.img = await csShrink(list[i]);
+      csRender();
+      entry.data = await call('read_sheet', { photo: entry.img, media_type: 'image/jpeg' });
+    } catch (e) { entry.err = e.message; }
+    csRender();
+  }
+  document.getElementById('cs-status').textContent = list.length ? 'Done. Check each list against its photo, then press Save.' : '';
+}
+function csLineTitle(l) {
+  if (l.type === 'discipline') return '👔 ' + l.label;
+  return (l.type === 'homework' ? '📚 ' : '📝 ') + l.subject + ' — ' + (CS_NAMES[l.type] || l.type) + (l.date ? ' · ' + l.date : '');
+}
+function csRender() {
+  const box = document.getElementById('cs-list');
+  box.innerHTML = CS.map(e => {
+    const photo = e.img ? '<div class="cs-photo"><img src="' + e.img + '" alt="Sheet photo" onclick="csZoom(this.src)"></div>' : '';
+    if (e.saved) return '<div class="d-card"><div class="d-label">✅ ' + esc(e.data.class_label) + ' · ' + esc(e.data.sheet_date) + ' — saved</div><div class="d-meta">' + esc(e.saved) + '</div></div>';
+    if (e.err) return '<div class="d-card"><div class="cs-wrap">' + photo + '<div style="color:#A32D2D;font-size:13px">⚠️ ' + esc(e.err) + '</div></div></div>';
+    if (!e.data) return '<div class="d-card"><div class="cs-wrap">' + photo + '<div class="d-meta">Reading the marks…</div></div></div>';
+    const d = e.data, kids = d.kids || [];
+    const warn = (!d.class_found ? '<div class="cs-warn">No students found for “' + esc(d.class_label) + '” in ERP. Check the class name below (for example “Class 3” or “LKG B”).</div>' : '')
+      + (d.unclear ? '<div class="cs-warn">The app says: ' + esc(d.unclear) + '</div>' : '');
+    const lines = d.lines.map((l, i) => {
+      const unk = (l.unknown || []).length ? '<div class="cs-warn">Marked on the sheet but not in this class: ' + esc(l.unknown.join(', ')) + '</div>' : '';
+      const corr = l.type === 'homework' ? '<div style="margin-top:6px;font-size:12.5px">Corrected? <select class="form-control" style="display:inline-block;width:auto;padding:3px 6px" onchange="csSet(\'' + e.id + '\',' + i + ',\'corrected\',this.value)">'
+        + ['', 'yes', 'no'].map(v => '<option value="' + v + '"' + (l.corrected === v ? ' selected' : '') + '>' + (v === 'yes' ? 'Yes' : v === 'no' ? 'No — not corrected' : 'Not ticked') + '</option>').join('') + '</select></div>' : '';
+      return '<div class="cs-line"><div class="t">' + esc(csLineTitle(l)) + ' <span class="d-chip">' + l.rolls.length + ' marked</span></div>'
+        + (l.lesson ? '<div class="d-meta">' + esc(l.lesson) + '</div>' : '')
+        + '<div class="cs-rolls">' + kids.map(k => '<button type="button" title="' + esc(k.name) + '" class="' + (l.rolls.indexOf(k.roll) !== -1 ? 'on' : '') + '" onclick="csToggle(\'' + e.id + '\',' + i + ',\'' + esc(k.roll) + '\')">' + esc(k.roll) + '</button>').join('') + '</div>'
+        + unk + corr + '</div>';
+    }).join('');
+    return '<div class="d-card"><div class="cs-wrap">' + photo + '<div>'
+      + '<div class="d-grid" style="margin-top:0"><div><label class="form-label">Class</label><input class="form-control" value="' + esc(d.class_label) + '" onchange="csClass(\'' + e.id + '\',this.value)"></div>'
+      + '<div><label class="form-label">Sheet date</label><input type="date" class="form-control" value="' + esc(d.sheet_date) + '" onchange="csDate(\'' + e.id + '\',this.value)"></div></div>'
+      + warn + lines
+      + '<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap"><button class="btn btn-primary" onclick="csSave(\'' + e.id + '\')">💾 Save this sheet</button>'
+      + '<button class="btn btn-secondary" onclick="csDrop(\'' + e.id + '\')">✕ Remove</button></div>'
+      + '<div class="d-meta" style="margin-top:6px">Maroon = marked. Tap a number to add or remove it. Hold a number to see the child\'s name.</div>'
+      + '</div></div></div>';
+  }).join('');
+}
+function csZoom(src) { const w = window.open(''); if (w) { w.document.title = 'Sheet photo'; const im = w.document.createElement('img'); im.src = src; im.style.width = '100%'; w.document.body.appendChild(im); } }
+function csFind(id) { return CS.find(x => x.id === id); }
+function csToggle(id, i, roll) { const l = csFind(id).data.lines[i]; const k = l.rolls.indexOf(roll); if (k === -1) l.rolls.push(roll); else l.rolls.splice(k, 1); csRender(); }
+function csSet(id, i, f, v) { csFind(id).data.lines[i][f] = v; }
+function csDate(id, v) { const d = csFind(id).data; d.sheet_date = v; d.lines.forEach(l => { if (l.type === 'discipline') l.date = v; }); }
+async function csClass(id, v) {
+  const e = csFind(id);
+  e.data.class_label = v.trim();
+  try {
+    const r = await call('students_for_sheet', { class_label: e.data.class_label });
+    e.data.kids = r.kids || []; e.data.class_found = e.data.kids.length > 0;
+  } catch (er) { e.data.kids = []; e.data.class_found = false; }
+  csRender();
+}
+function csDrop(id) { CS = CS.filter(x => x.id !== id); csRender(); }
+async function csSave(id) {
+  const e = csFind(id), d = e.data;
+  try {
+    showLoading('Saving...');
+    const r = await call('save_sheet', { class_label: d.class_label, sheet_date: d.sheet_date, lines: d.lines,
+      staff_name: (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : '' });
+    hideLoading();
+    e.saved = r.saved + ' message(s) waiting — they go to parents at 4 PM.' + (r.already ? ' ' + r.already + ' were already saved before.' : '')
+      + (r.not_corrected ? ' ' + r.not_corrected + ' homework marked NOT corrected.' : '') + (r.note ? ' ' + r.note : '');
+    csRender();
+    showToast('Saved. ' + e.saved, 'success');
+    if (IS_OFFICE) call('pending', {}).then(x => { const n = (x.rows || []).length; document.getElementById('pend-count').textContent = n ? '(' + n + ')' : ''; }).catch(() => {});
+  } catch (er) { hideLoading(); showToast('⚠️ ' + er.message, 'error'); }
+}
+
+// ═════ PARENTS TO CALL (Nov 2026) ═════
+const GROUP_NAMES = { homework: 'Homework', test: 'Class test', discipline: 'Discipline' };
+async function loadCalls() {
+  const box = document.getElementById('calls-list');
+  box.innerHTML = '<div class="d-meta">Loading…</div>';
+  try {
+    const res = await call('repeats_list', {});
+    const now = Date.now(), rows = res.rows || [];
+    const late = r => !r.ack_at && !r.called_at && (now - new Date(r.sent_at).getTime()) > 2 * 86400000;
+    const n = rows.filter(late).length;
+    document.getElementById('call-count').textContent = n ? '(' + n + ')' : '';
+    if (!rows.length) { box.innerHTML = '<div class="d-card d-meta">No repeat-defaulter warnings in the last 30 days.</div>'; return; }
+    rows.sort((a, b) => (late(b) - late(a)) || (!!a.ack_at - !!b.ack_at) || (a.sent_at < b.sent_at ? 1 : -1));
+    box.innerHTML = '<div class="d-card"><div class="table-wrap"><table class="d-t"><tr><th>Student</th><th>Class</th><th>Warning</th><th>Sent</th><th>Parent</th><th>Phone</th></tr>'
+      + rows.map(r => '<tr' + (late(r) ? ' style="background:#FFF6F4"' : '') + '><td><b>' + esc(r.student_name) + '</b></td><td>' + esc(r.class) + (r.section ? ' ' + esc(r.section) : '') + '</td>'
+        + '<td>' + esc(GROUP_NAMES[r.kind_group] || r.kind_group) + ' · ' + esc(r.times) + ' times<div class="d-meta" style="max-width:340px;white-space:pre-line">' + esc(String(r.message || '').split('\n')[0]) + '</div></td>'
+        + '<td>' + esc(niceTime(r.sent_at)) + '</td>'
+        + '<td>' + (r.ack_at ? '<span class="d-chip sent">✓ I have seen</span><div class="d-meta">' + esc(niceTime(r.ack_at)) + '</div>'
+          : r.called_at ? '<span class="d-chip">📞 Called</span><div class="d-meta">' + esc(niceTime(r.called_at)) + (r.called_by ? ' · ' + esc(r.called_by) : '') + '</div>'
+          : late(r) ? '<span class="d-chip" style="background:#FBE9E9;color:#A32D2D">Not seen 2+ days</span><div><button class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="markCalled(\'' + esc(r.id) + '\')">✓ Called</button></div>'
+          : '<span class="d-chip">Waiting' + (r.seen_at ? ' · opened' : '') + '</span>') + '</td>'
+        + '<td>' + (r.mobile ? '<a href="tel:' + esc(String(r.mobile).replace(/[^0-9+]/g, '')) + '" style="color:var(--maroon);font-weight:600;text-decoration:none">📞 ' + esc(r.mobile) + '</a>' : '<span class="d-meta">—</span>') + '</td></tr>').join('')
+      + '</table></div></div>';
+  } catch (e) { box.innerHTML = '<div class="d-card" style="color:#A32D2D;font-size:13px">Could not load: ' + esc(e.message) + '</div>'; }
+}
+async function markCalled(id) {
+  try {
+    await call('repeat_called', { id: id, staff_name: (typeof STAFF_NAME !== 'undefined' && STAFF_NAME) ? STAFF_NAME : '' });
+    showToast('Marked as called.', 'success'); loadCalls();
+  } catch (e) { showToast('⚠️ ' + e.message, 'error'); }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

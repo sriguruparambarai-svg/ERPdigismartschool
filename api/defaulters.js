@@ -313,6 +313,76 @@ async function teachbotDoor(req, res, body) {
   return res.status(200).json({ ok: true, saved: saved, already_sent: rows.length - saved, not_found: notFound });
 }
 
+// ══ Nov 2026: DAILY CHECK SHEET (printed in TeachBot, photo uploaded by the office) ══
+// The teacher puts ✗ on roll numbers; the office uploads a photo; the AI reads the marks; the office
+// checks the list beside the photo and saves. Saved entries wait like any other and go at 4 PM.
+const SHEET_MODEL = 'claude-sonnet-4-5';
+const SHEET_DISC = ['nails', 'notes', 'shoes', 'uniform', 'hair', 'books', 'idcard'];
+function splitClass(raw) {
+  let cls = clean(raw, 30), sec = '';
+  const m = cls.match(/^(.*\S)\s+([A-Fa-f])$/);
+  if (m) { cls = m[1]; sec = m[2].toUpperCase(); }
+  return { cls: TB_CLASS_MAP[cls] || cls, sec: sec };
+}
+async function classKids(schoolId, cls, sec) {
+  let secQ = '';
+  if (!sec || sec === 'A') secQ = '&or=(section.eq.A,section.is.null,section.eq.)';
+  else secQ = '&section=eq.' + enc(sec);
+  const stu = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&class=eq.' + enc(cls)
+    + '&status=eq.active' + secQ + '&select=id,full_name,roll_no&limit=300');
+  if (!stu.ok) throw new Error('Could not read students: ' + stu.raw);
+  const list = (stu.data || []).map(s => ({ id: String(s.id), roll: String(s.roll_no == null ? '' : s.roll_no).trim(), name: clean(s.full_name, 80) }));
+  list.sort((a, b) => ((parseInt(a.roll, 10) || 9999) - (parseInt(b.roll, 10) || 9999)) || a.name.localeCompare(b.name));
+  return list;
+}
+function rollsToKids(kids, rolls) {
+  const byRoll = {};
+  kids.forEach(k => { const r = rollKey(k.roll); if (r) byRoll[r] = byRoll[r] ? 'two' : k; });
+  const found = [], unknown = [];
+  (Array.isArray(rolls) ? rolls : []).slice(0, 200).forEach(r => {
+    const k = byRoll[rollKey(r)];
+    if (k && k !== 'two') { if (found.indexOf(k) === -1) found.push(k); }
+    else unknown.push(String(r));
+  });
+  return { found, unknown };
+}
+async function readSheetPhoto(photoB64, mediaType) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('Photo reading is not set up (ANTHROPIC_API_KEY missing in Vercel).');
+  const prompt = 'This is a photo of a printed "Daily Check Sheet" from a school. At the top right there is a code like "DCS·Class 3·2026-11-17" (class and date).\n'
+    + 'The sheet has rows. Each row has a small grey code on its right: "HW·<date>·<subject>" (homework), "TEST·<date>·<subject>" (class test, with two lines of boxes: "Not written / not prepared" then "Absent for the test"), or "DISC·<item>" (discipline).\n'
+    + 'Each row shows printed roll numbers in boxes. A teacher has put a pen mark (a cross ✗, tick, circle, slash or scribble) on SOME boxes. Find exactly which roll numbers have a pen mark on them. Ignore boxes with no pen mark. Look very carefully at every box; do not guess.\n'
+    + 'Homework rows also have "Corrected? ☐ Yes ☐ No" — say which box is ticked, or "blank".\n'
+    + 'Reply with ONLY this JSON, nothing else:\n'
+    + '{"class":"Class 3","date":"YYYY-MM-DD","rows":[{"code":"HW·2026-11-16·Maths","text":"the printed homework words after the subject","marked":["4","12"],"corrected":"yes|no|blank"},'
+    + '{"code":"TEST·2026-11-17·Science","text":"the printed chapter words","not_written":["3"],"absent":["9"]},'
+    + '{"code":"DISC·nails","marked":["5"]}],"unclear":"say here if any mark or part of the sheet was hard to read, else empty"}\n'
+    + 'Copy every code exactly as printed. Include every row, even if nothing is marked (empty list).';
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: SHEET_MODEL, max_tokens: 3000,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: photoB64 } },
+        { type: 'text', text: prompt }] }] })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Photo reading failed: ' + ((d.error && d.error.message) || ('status ' + r.status)));
+  const text = ((d.content || []).find(c => c.type === 'text') || {}).text || '';
+  const m = text.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('The photo could not be read. Please take a clearer photo of the whole sheet.');
+  try { return JSON.parse(m[0]); } catch (e) { throw new Error('The photo could not be read. Please take a clearer photo of the whole sheet.'); }
+}
+// "HW·2026-11-16·Maths" → { type:'homework', date, subject }
+function parseCode(code) {
+  const parts = String(code || '').split(/\s*[·•.|:]\s*/).filter(Boolean);
+  const t = (parts[0] || '').toUpperCase();
+  if (t === 'HW' && validDate(parts[1] || '')) return { type: 'homework', date: parts[1], subject: clean(parts.slice(2).join(' '), 60) };
+  if (t === 'TEST' && validDate(parts[1] || '')) return { type: 'test', date: parts[1], subject: clean(parts.slice(2).join(' '), 60) };
+  if (t === 'DISC' && SHEET_DISC.indexOf(String(parts[1] || '').toLowerCase()) !== -1) return { type: 'discipline', code: String(parts[1]).toLowerCase() };
+  return null;
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'POST only' });
@@ -363,12 +433,168 @@ module.exports = async (req, res) => {
             { seen_at: new Date().toISOString() }, 'return=minimal');
         } catch (e) { /* the parent still sees the messages */ }
       }
-      return res.status(200).json({ ok: true, rows: r.data || [] });
+      // Nov 2026: repeat-defaulter messages (last 14 days) with the "I have seen" button
+      let repeats = [];
+      try {
+        const since14 = new Date(Date.now() - 14 * 86400000).toISOString();
+        const rp = await sb('GET', 'defaulter_repeats?school_id=eq.' + enc(String(session.sid))
+          + '&student_id=eq.' + enc(String(session.stu)) + '&sent_at=gte.' + enc(since14)
+          + '&select=id,kind_group,times,message,sent_at,ack_at&order=sent_at.desc&limit=10');
+        if (rp.ok) {
+          repeats = rp.data || [];
+          const unseen = repeats.filter(x => !x.ack_at).map(x => x.id);
+          if (unseen.length) await sb('PATCH', 'defaulter_repeats?school_id=eq.' + enc(String(session.sid))
+            + '&student_id=eq.' + enc(String(session.stu)) + '&seen_at=is.null&id=in.(' + unseen.map(enc).join(',') + ')',
+            { seen_at: new Date().toISOString() }, 'return=minimal');
+        }
+      } catch (e) { /* the other messages still show */ }
+      return res.status(200).json({ ok: true, rows: r.data || [], repeats: repeats });
+    }
+
+    // Nov 2026: the parent taps "I have seen" on a repeat-defaulter message
+    if (action === 'ack_repeat') {
+      if (!isParent(session)) return res.status(403).json({ ok: false, error: 'Parents only.' });
+      const id = String(body.id || '');
+      if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ ok: false, error: 'Message missing.' });
+      const now = new Date().toISOString();
+      const r = await sb('PATCH', 'defaulter_repeats?id=eq.' + enc(id) + '&school_id=eq.' + enc(String(session.sid))
+        + '&student_id=eq.' + enc(String(session.stu)) + '&ack_at=is.null', { ack_at: now, seen_at: now });
+      if (!r.ok) return res.status(500).json({ ok: false, error: 'Could not save. Please try again.' });
+      return res.status(200).json({ ok: true, ack_at: now });
     }
 
     // The school always comes from the login, never from the browser.
     if (!canMark(session)) return res.status(401).json({ ok: false, error: 'Please log in again.' });
     const schoolId = String(session.sid);
+
+    // ══ Nov 2026: DAILY CHECK SHEET — read a photo, then save what the office checked ══
+    if (action === 'read_sheet') {
+      const photo = String(body.photo || '').replace(/^data:image\/\w+;base64,/, '');
+      const mediaType = /^image\/(jpeg|png|webp)$/.test(String(body.media_type || '')) ? body.media_type : 'image/jpeg';
+      if (!photo || photo.length < 1000) return res.status(400).json({ ok: false, error: 'Please choose a photo of the sheet.' });
+      if (photo.length > 6000000) return res.status(400).json({ ok: false, error: 'The photo is too big. Please try again.' });
+      let read;
+      try { read = await readSheetPhoto(photo, mediaType); }
+      catch (e) { return res.status(200).json({ ok: false, error: e.message }); }
+      const label = clean(body.class_label || read.class, 30);
+      const sheetDate = validDate(String(body.sheet_date || '')) ? body.sheet_date : (validDate(String(read.date || '')) ? read.date : istToday());
+      const sc = splitClass(label);
+      let kids = [];
+      try { kids = sc.cls ? await classKids(schoolId, sc.cls, sc.sec) : []; }
+      catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
+      const lines = [];
+      (Array.isArray(read.rows) ? read.rows : []).slice(0, 30).forEach(row => {
+        const p = parseCode(row && row.code);
+        if (!p) return;
+        const mk = (type, rolls, extra) => {
+          const m = rollsToKids(kids, rolls);
+          lines.push(Object.assign({ type: type, rolls: m.found.map(k => k.roll), unknown: m.unknown }, extra));
+        };
+        if (p.type === 'homework') mk('homework', row.marked, { subject: p.subject, date: p.date, lesson: clean(row.text, 100),
+          corrected: row.corrected === 'yes' ? 'yes' : row.corrected === 'no' ? 'no' : '' });
+        else if (p.type === 'test') {
+          mk('test_not_written', row.not_written, { subject: p.subject, date: p.date, lesson: clean(row.text, 100) });
+          mk('test_absent', row.absent, { subject: p.subject, date: p.date, lesson: clean(row.text, 100) });
+        } else mk('discipline', row.marked, { code: p.code, label: (DISCIPLINE[p.code] || [p.code])[0], date: sheetDate });
+      });
+      if (!lines.length) return res.status(200).json({ ok: false, error: 'No rows of a Daily Check Sheet were found in this photo. Please take the photo again, with the whole sheet flat and in good light.' });
+      return res.status(200).json({ ok: true, class_label: label, erp_class: sc.cls, section: sc.sec, sheet_date: sheetDate,
+        unclear: clean(read.unclear, 300), kids: kids, lines: lines, class_found: kids.length > 0 });
+    }
+
+    if (action === 'students_for_sheet') {
+      const sc = splitClass(body.class_label);
+      if (!sc.cls) return res.status(400).json({ ok: false, error: 'Type the class.' });
+      return res.status(200).json({ ok: true, kids: await classKids(schoolId, sc.cls, sc.sec) });
+    }
+
+    if (action === 'save_sheet') {
+      const sc = splitClass(body.class_label);
+      const sheetDate = String(body.sheet_date || '');
+      if (!sc.cls) return res.status(400).json({ ok: false, error: 'The class is missing.' });
+      if (!validDate(sheetDate) || sheetDate > istToday()) return res.status(400).json({ ok: false, error: 'The sheet date is missing or in the future.' });
+      const staffName = clean(body.staff_name, 80) || (session.role === 'staff' ? 'Office' : 'Admin');
+      const marker = 'Check sheet · ' + staffName;
+      const kids = await classKids(schoolId, sc.cls, sc.sec);
+      if (!kids.length) return res.status(400).json({ ok: false, error: 'No students found in ' + clean(body.class_label, 30) + ' in ERP.' });
+      const tamil = await tamilOn(schoolId);
+      const W = await loadWording(schoolId);
+      const lines = (Array.isArray(body.lines) ? body.lines : []).slice(0, 40);
+      const rows = [], disc = {}, corrections = [];
+      let skipped = 0;
+      lines.forEach(l => {
+        const type = String(l && l.type || '');
+        const m = rollsToKids(kids, l && l.rolls);
+        if (type === 'discipline') {
+          const code = String(l.code || '');
+          if (DISCIPLINE_CODES.indexOf(code) === -1) return;
+          m.found.forEach(k => { (disc[k.id] = disc[k.id] || { k: k, codes: [] }).codes.push(code); });
+          return;
+        }
+        if (['homework', 'test_not_written', 'test_absent'].indexOf(type) === -1) return;
+        const subject = clean(l.subject, 60), workDate = String(l.date || '');
+        if (!subject || !validDate(workDate) || workDate > istToday()) { skipped++; return; }
+        const lesson = clean(l.lesson, 100) || (type === 'homework' ? 'Homework' : 'Class test');
+        if (type === 'homework' && (l.corrected === 'yes' || l.corrected === 'no' || m.found.length)) {
+          corrections.push({ school_id: schoolId, class: sc.cls, section: sc.sec || '', hw_date: workDate, subject: subject,
+            teacher: clean(l.teacher, 60) || null, corrected: l.corrected === 'yes' ? true : l.corrected === 'no' ? false : null,
+            checked_on: sheetDate, marked_by: staffName, updated_at: new Date().toISOString() });
+        }
+        m.found.forEach(k => {
+          const name = k.name || 'your ward';
+          const en = { name: name, date: niceDate(workDate), subject: subject, lesson: lesson };
+          const ta = { name: name, date: taDate(workDate), subject: subject, lesson: lesson };
+          const message = ownMessage(W, type, en, ta) || (tamil
+            ? both(buildMessage(type, name, workDate, subject, lesson), defaulterTamil(type, name, workDate, subject, lesson))
+            : buildMessage(type, name, workDate, subject, lesson));
+          rows.push({ school_id: schoolId, work_date: workDate, kind: type, class: sc.cls, section: sc.sec || null,
+            subject: subject, lesson: lesson, student_id: k.id, student_name: name, marks: null, total_marks: null,
+            items: type === 'homework' ? ['not_done'] : null, message: message, status: 'pending', marked_by: marker });
+        });
+      });
+      let saved = 0, already = 0;
+      if (rows.length) {
+        const ins = await sb('POST', 'defaulter_entries?on_conflict=school_id,student_id,work_date,kind,subject,lesson',
+          rows, 'return=representation,resolution=ignore-duplicates');
+        if (!ins.ok) return res.status(500).json({ ok: false, error: 'Could not save: ' + ins.raw });
+        saved = (ins.data || []).length; already = rows.length - saved;
+      }
+      // Discipline: one combined message per child per day (adds to a waiting one, like the Mark tab)
+      const dIds = Object.keys(disc);
+      let dSaved = 0;
+      if (dIds.length) {
+        const old = await sb('GET', 'defaulter_entries?school_id=eq.' + enc(schoolId) + '&kind=eq.discipline&work_date=eq.' + sheetDate
+          + '&student_id=in.(' + dIds.map(enc).join(',') + ')&select=id,student_id,status,items');
+        const oldBy = {};
+        if (old.ok) (old.data || []).forEach(o => { oldBy[String(o.student_id)] = o; });
+        for (const id of dIds) {
+          const d = disc[id], o = oldBy[id];
+          if (o && o.status !== 'pending') { already++; continue; }
+          const name = d.k.name || 'your ward';
+          const codes = [...new Set((o && Array.isArray(o.items) ? o.items : []).concat(d.codes))];
+          const dl = DISCIPLINE_CODES.filter(c => codes.indexOf(c) !== -1);
+          const message = ownMessage(W, 'discipline',
+              { name: name, date: niceDate(sheetDate), items: joinAnd(dl.map(c => DISCIPLINE[c][1])) },
+              { name: name, date: taDate(sheetDate), items: dl.map(c => DISCIPLINE[c][2]).join(', ') })
+            || disciplineMessage(name, sheetDate, niceDate(sheetDate), codes, tamil);
+          const w = o
+            ? await sb('PATCH', 'defaulter_entries?id=eq.' + enc(o.id) + '&school_id=eq.' + enc(schoolId) + '&status=eq.pending',
+                { items: codes, message: message, marked_by: marker })
+            : await sb('POST', 'defaulter_entries', [{ school_id: schoolId, work_date: sheetDate, kind: 'discipline', class: sc.cls,
+                section: sc.sec || null, subject: 'Discipline', lesson: 'Discipline', student_id: id, student_name: name,
+                marks: null, total_marks: null, items: codes, message: message, status: 'pending', marked_by: marker }]);
+          if (!w.ok) return res.status(500).json({ ok: false, error: 'Could not save discipline: ' + w.raw });
+          dSaved++;
+        }
+      }
+      let corrNote = '';
+      if (corrections.length) {
+        const cw = await sb('POST', 'homework_corrections?on_conflict=school_id,class,section,hw_date,subject', corrections, 'return=minimal,resolution=merge-duplicates');
+        if (!cw.ok) corrNote = /homework_corrections/.test(cw.raw || '') ? 'Corrected Yes / No was not kept: please run step-check-sheet.sql in Supabase.' : 'Corrected Yes / No was not kept: ' + cw.raw;
+      }
+      return res.status(200).json({ ok: true, saved: saved + dSaved, already: already, skipped: skipped,
+        not_corrected: corrections.filter(c => c.corrected === false).length, note: corrNote });
+    }
 
     // ══ Nov 2026: message wording (everyone who marks can see it; principal / admin can change it) ══
     if (action === 'wording_get') {
@@ -619,6 +845,33 @@ module.exports = async (req, res) => {
       }
       const rows = Object.values(byChild).sort((a, b) => b.total - a.total);
       return res.status(200).json({ ok: true, month: month, rows: rows });
+    }
+
+    // ══ Nov 2026: repeat defaulters — parents who must tap "I have seen"; the office calls those who don't ══
+    if (action === 'repeats_list' || action === 'repeat_called') {
+      if (!canSend(session)) return res.status(403).json({ ok: false, error: 'Only the office can see this.' });
+      if (action === 'repeat_called') {
+        const id = String(body.id || '');
+        if (!/^[0-9a-fA-F-]{36}$/.test(id)) return res.status(400).json({ ok: false, error: 'Entry missing.' });
+        const r = await sb('PATCH', 'defaulter_repeats?id=eq.' + enc(id) + '&school_id=eq.' + enc(schoolId),
+          { called_at: new Date().toISOString(), called_by: clean(body.staff_name, 80) || 'Office' });
+        if (!r.ok) return res.status(500).json({ ok: false, error: 'Could not save: ' + r.raw });
+        return res.status(200).json({ ok: true });
+      }
+      const since = new Date(Date.now() - 30 * 86400000).toISOString();
+      const r = await sb('GET', 'defaulter_repeats?school_id=eq.' + enc(schoolId) + '&sent_at=gte.' + enc(since)
+        + '&select=*&order=sent_at.desc&limit=1000');
+      if (!r.ok) return res.status(500).json({ ok: false, error: /defaulter_repeats/.test(r.raw || '')
+        ? 'The database is not ready for this yet. Please run step-check-sheet.sql in Supabase first.' : 'Could not load: ' + r.raw });
+      const rows = r.data || [];
+      const ids = [...new Set(rows.map(x => String(x.student_id)))];
+      const phone = {};
+      for (let i = 0; i < ids.length; i += 150) {
+        const s = await sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&id=in.(' + ids.slice(i, i + 150).map(enc).join(',') + ')&select=id,mobile');
+        if (s.ok) (s.data || []).forEach(x => { phone[String(x.id)] = x.mobile || ''; });
+      }
+      rows.forEach(x => { x.mobile = phone[String(x.student_id)] || ''; });
+      return res.status(200).json({ ok: true, rows: rows });
     }
 
     // ══ Nov 2026: Seen / Not seen — messages sent on one day, and whether the parent saw each ══

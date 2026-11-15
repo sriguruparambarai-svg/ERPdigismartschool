@@ -169,12 +169,39 @@ async function admissionsToday(schoolId, day) {
   return { count: rows.length, list: rows.map(r => ({ name: r.full_name || '', class: clsText(r.class, r.section), admission_no: r.admission_no || '', parent: r.father_name || '', mobile: r.mobile || '' })) };
 }
 
+// ── 5. Nov 2026: Daily Check Sheet — repeat defaulters not acknowledged by parents, homework not corrected ──
+async function checkSheet(schoolId, day) {
+  const dayEnd = new Date(new Date(day + 'T00:00:00Z').getTime() + DAY - 5.5 * 3600 * 1000);
+  const twoDaysAgo = new Date(dayEnd.getTime() - 2 * DAY).toISOString();
+  const since = new Date(dayEnd.getTime() - 30 * DAY).toISOString();
+  const rep = await safe(sb('GET', 'defaulter_repeats?school_id=eq.' + enc(schoolId) + '&sent_at=gte.' + enc(since) +
+    '&select=student_id,student_name,class,section,kind_group,times,sent_at,ack_at,called_at&order=sent_at.asc&limit=2000'), null);
+  if (rep === null) return null;   // step-check-sheet.sql not run yet
+  const startUtc = new Date(dayEnd.getTime() - DAY).toISOString();
+  const sentToday = rep.filter(r => String(r.sent_at) >= startUtc).length;
+  const noAck = rep.filter(r => !r.ack_at && !r.called_at && String(r.sent_at) < twoDaysAgo);
+  const phone = {};
+  const ids = [...new Set(noAck.map(r => String(r.student_id)))];
+  for (let i = 0; i < ids.length; i += 150) {
+    const s = await safe(sb('GET', 'students?school_id=eq.' + enc(schoolId) + '&id=in.(' + ids.slice(i, i + 150).map(enc).join(',') + ')&select=id,mobile'), []) || [];
+    s.forEach(x => { phone[String(x.id)] = x.mobile || ''; });
+  }
+  const notCorr = await safe(sb('GET', 'homework_corrections?school_id=eq.' + enc(schoolId) + '&checked_on=eq.' + day +
+    '&corrected=eq.false&select=class,section,subject,teacher,hw_date&order=class.asc'), []) || [];
+  return {
+    repeats_today: sentToday,
+    no_ack: noAck.map(r => ({ name: r.student_name || '', class: clsText(r.class, r.section), group: r.kind_group, times: r.times,
+      days: Math.floor((dayEnd.getTime() - new Date(r.sent_at).getTime()) / DAY), mobile: phone[String(r.student_id)] || '' })),
+    not_corrected: notCorr.map(r => ({ class: clsText(r.class, r.section), subject: r.subject, teacher: r.teacher || '', hw_date: r.hw_date }))
+  };
+}
+
 async function buildReport(schoolId, day) {
-  const [fees, absent, enquiries, admissions, followups] = await Promise.all([
+  const [fees, absent, enquiries, admissions, followups, checksheet] = await Promise.all([
     feesToday(schoolId, day), longAbsent(schoolId, day), enquiriesToday(schoolId, day), admissionsToday(schoolId, day),
-    followUps(schoolId, day)
+    followUps(schoolId, day), safe(checkSheet(schoolId, day), null)
   ]);
-  return { date: day, fees, absent, enquiries, admissions, followups };
+  return { date: day, fees, absent, enquiries, admissions, followups, checksheet };
 }
 
 function summaryLine(r) {
@@ -185,6 +212,9 @@ function summaryLine(r) {
   if (r.admissions.count) parts.push(r.admissions.count + ' new admission' + (r.admissions.count === 1 ? '' : 's'));
   const missed = (r.followups ? r.followups.not_called.length + r.followups.new_waiting.length : 0);
   if (missed) parts.push(missed + ' admission call' + (missed === 1 ? '' : 's') + ' not made');
+  const cs = r.checksheet;
+  if (cs && cs.no_ack.length) parts.push(cs.no_ack.length + ' parent' + (cs.no_ack.length === 1 ? '' : 's') + ' not seen a warning');
+  if (cs && cs.not_corrected.length) parts.push(cs.not_corrected.length + ' homework not corrected');
   return parts.join(' · ');
 }
 function nothingHappened(r) {

@@ -2442,11 +2442,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     const out = await res.json();
     const rows = (out && out.ok && out.rows) || [];
-    if (rows.length === 0) return;
+    const reps = (out && out.ok && out.repeats) || [];   // Nov 2026: repeat-defaulter warnings
+    if (rows.length === 0 && reps.length === 0) return;
     const icon = { homework: '📚', test_not_written: '📝', test_absent: '🚫', test_low_marks: '📉', discipline: '👔' };
     const safe = t => { const el = document.createElement('div'); el.textContent = t == null ? '' : String(t); return el.innerHTML; };
     const show = rows.slice(0, 5);
-    document.getElementById('dnote-list').innerHTML = show.map(r =>
+    const repHtml = reps.map(r =>
+      '<div style="background:#FFF6F4;border:1.5px solid #E8B4AC;border-left:5px solid #A32D2D;border-radius:10px;padding:11px 12px;margin-bottom:8px">'
+      + '<div style="font-size:12px;font-weight:700;color:#A32D2D">⚠️ ' + safe({ homework: 'Homework', test: 'Class test', discipline: 'Discipline' }[r.kind_group] || 'Message') + ' · ' + safe(r.times) + ' times this week</div>'
+      + '<div style="font-size:13px;color:#3B332C;line-height:1.5;margin-top:4px;white-space:pre-line">' + safe(r.message) + '</div>'
+      + (r.ack_at
+        ? '<div style="margin-top:8px;font-size:12.5px;font-weight:700;color:#2D7A3A">✓ You have seen this · பார்த்தீர்கள்</div>'
+        : '<button type="button" data-ack="' + safe(r.id) + '" style="margin-top:8px;width:100%;min-height:44px;border:none;border-radius:10px;background:#6B1A1A;color:#FFF3DF;font-size:14px;font-weight:700;cursor:pointer">✅ I have seen · பார்த்தேன்</button>')
+      + '</div>').join('');
+    document.getElementById('dnote-list').onclick = async (ev) => {
+      const b = ev.target.closest('button[data-ack]');
+      if (!b) return;
+      b.disabled = true; b.textContent = 'Saving…';
+      try {
+        const rs = await fetch('/api/defaulters', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: tok, action: 'ack_repeat', id: b.dataset.ack }) });
+        const o = await rs.json();
+        if (!o.ok) throw new Error(o.error || 'Error');
+        b.outerHTML = '<div style="margin-top:8px;font-size:12.5px;font-weight:700;color:#2D7A3A">✓ Thank you. The school can see you have read this. · நன்றி</div>';
+      } catch (e) { b.disabled = false; b.textContent = '✅ I have seen · பார்த்தேன் (try again)'; }
+    };
+    document.getElementById('dnote-list').innerHTML = repHtml + show.map(r =>
       '<div style="background:#fff;border:1px solid #E8E0D5;border-left:4px solid #C9A84C;border-radius:10px;padding:11px 12px;margin-bottom:8px">'
       + '<div style="font-size:12px;font-weight:700;color:#6B1A1A">' + (icon[r.kind] || '📋') + ' ' + safe(r.subject) + ' · ' + safe(r.work_date) + '</div>'
       + '<div style="font-size:13px;color:#3B332C;line-height:1.5;margin-top:4px;white-space:pre-line">' + safe(r.message) + '</div>'
