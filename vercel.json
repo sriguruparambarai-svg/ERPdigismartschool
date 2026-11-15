@@ -33,6 +33,10 @@
       "schedule": "30 10 * * 1-6"
     },
     {
+      "path": "/api/weekly-repeats",
+      "schedule": "30 13 * * 6"
+    },
+    {
       "path": "/api/evening-report",
       "schedule": "30 12 * * *"
     },

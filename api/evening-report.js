@@ -207,18 +207,16 @@ async function buildReport(schoolId, day) {
 function summaryLine(r) {
   const parts = [];
   parts.push('Fees ' + inr(r.fees.total) + (r.fees.payers ? ' (' + r.fees.payers + ' paid)' : ''));
-  if (r.absent.list.length) parts.push(r.absent.list.length + ' absent 3+ days');
+  // Nov 2026: absentees and other repeating children now come once a week (api/weekly-repeats.js), not daily
   if (r.enquiries.count) parts.push(r.enquiries.count + ' new enquir' + (r.enquiries.count === 1 ? 'y' : 'ies'));
   if (r.admissions.count) parts.push(r.admissions.count + ' new admission' + (r.admissions.count === 1 ? '' : 's'));
   const missed = (r.followups ? r.followups.not_called.length + r.followups.new_waiting.length : 0);
   if (missed) parts.push(missed + ' admission call' + (missed === 1 ? '' : 's') + ' not made');
-  const cs = r.checksheet;
-  if (cs && cs.no_ack.length) parts.push(cs.no_ack.length + ' parent' + (cs.no_ack.length === 1 ? '' : 's') + ' not seen a warning');
-  if (cs && cs.not_corrected.length) parts.push(cs.not_corrected.length + ' homework not corrected');
+
   return parts.join(' · ');
 }
 function nothingHappened(r) {
-  return !r.fees.total && !r.absent.taken_today && !r.enquiries.count && !r.admissions.count;
+  return !r.fees.total && !r.enquiries.count && !r.admissions.count && !(r.followups && (r.followups.due || r.followups.new_waiting.length));
 }
 
 async function runSchool(schoolId, day, send) {

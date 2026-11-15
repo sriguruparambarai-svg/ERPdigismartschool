@@ -378,7 +378,7 @@ async function loadInbox() {
   }
   inboxRows = rows;
   box.innerHTML = rows.map(a => {
-    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : '🔔';
+    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : a.kind === 'weekly_repeats' ? '📋' : '🔔';
     const arg = a.kind === 'salary' && a.data && a.data.month ? a.data.month : String(a.alert_date).slice(0, 10);
     return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(arg) + '\')">' +
       '<div class="inbox-ico">' + ico + '</div>' +
@@ -415,7 +415,6 @@ async function openEvening(date) {
   const modes = Object.keys(f.by_mode || {}).map(m => esc(m.toUpperCase()) + ' ' + inr(f.by_mode[m])).join(' · ');
   document.getElementById('d-stats').innerHTML =
     '<div class="stat"><div class="n">' + inr(f.total) + '</div><div class="l">Fees collected today</div></div>' +
-    '<div class="stat"><div class="n">' + (ab.list || []).length + '</div><div class="l">Absent 3+ days in a row</div></div>' +
     '<div class="stat"><div class="n">' + (en.count || 0) + '</div><div class="l">New enquiries</div></div>' +
     '<div class="stat"><div class="n">' + (ad.count || 0) + '</div><div class="l">New admissions</div></div>';
   let html = '';
@@ -426,14 +425,7 @@ async function openEvening(date) {
         '<div class="row-total" style="color:var(--green)">' + inr(p.amount) + '</div></div>' +
         '<div class="muted" style="margin-top:6px">' + esc((p.items || []).join(', ')) + '</div></div>').join('')
     : '<div class="empty" style="padding:14px">No fees collected today.</div>');
-  // Long absent
-  html += sec('🚫 Absent 3+ school days in a row', !ab.taken_today
-    ? '<div class="empty" style="padding:14px">Attendance was not taken today.</div>'
-    : (ab.list && ab.list.length)
-      ? ab.list.map(s => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) + ' · since ' + esc(niceDate(s.since).replace(/^\w+, /, '')) + '</div></div>' +
-          '<div class="row-total">' + s.days + ' days</div></div>' +
-          '<div class="badges">' + (s.leave ? '<span class="badge b-seen">Leave ' + esc(s.leave === 'approved' ? 'approved' : 'applied') + '</span>' : '<span class="badge b-after">No leave applied</span>') + callBtn(s.mobile) + '</div></div>').join('')
-      : '<div class="empty" style="padding:14px">✅ No child absent 3 days in a row. (' + (ab.absent_today || 0) + ' absent today.)</div>');
+  // Nov 2026: children absent / late / defaulting again and again now come once a week (📋 Saturday list), not daily
   // Enquiries
   html += sec('📝 New admission enquiries · ' + (en.count || 0), (en.list && en.list.length)
     ? en.list.map(e => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(e.child || e.parent) + '</div><div class="row-class">' +
@@ -455,29 +447,53 @@ async function openEvening(date) {
           '<div class="row-total" style="font-size:13px">New · never called</div></div>' +
           '<div class="badges"><span class="badge b-after">Over 24 hours</span>' + callBtn(e.mobile) + '</div></div>').join(''));
   }
-  // Nov 2026: Daily Check Sheet — warnings parents haven't acknowledged, homework not corrected
-  const cs = r.checksheet;
-  if (cs) {
-    const GN = { homework: 'Homework', test: 'Class test', discipline: 'Discipline' };
-    html += sec('⚠️ Parents who haven\'t seen a warning · ' + (cs.no_ack || []).length,
-      (cs.no_ack && cs.no_ack.length)
-        ? '<div class="muted" style="margin:0 4px 8px">Their child was a defaulter 3 times in a week. The parent did not tap “I have seen” in 2 days. ' + (cs.repeats_today || 0) + ' new warning' + (cs.repeats_today === 1 ? '' : 's') + ' went today.</div>' +
-          cs.no_ack.map(s => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) + ' · ' + esc(GN[s.group] || s.group) + ' ' + esc(s.times) + ' times</div></div>' +
-            '<div class="row-total" style="font-size:13px">' + esc(s.days) + ' days</div></div>' +
-            '<div class="badges"><span class="badge b-after">Not seen</span>' + callBtn(s.mobile) + '</div></div>').join('')
-        : '<div class="empty" style="padding:14px">✅ Every parent has seen their warning.' + (cs.repeats_today ? ' (' + cs.repeats_today + ' new today.)' : '') + '</div>');
-    html += sec('📒 Homework not corrected · ' + (cs.not_corrected || []).length,
-      (cs.not_corrected && cs.not_corrected.length)
-        ? cs.not_corrected.map(h => '<div class="row"><div class="row-head"><div><div class="row-name">Class ' + esc(h.class) + ' · ' + esc(h.subject) + '</div><div class="row-class">' +
-            esc([h.teacher, 'homework of ' + niceDate(h.hw_date).replace(/^\w+, /, '')].filter(Boolean).join(' · ')) + '</div></div></div></div>').join('')
-        : '<div class="empty" style="padding:14px">✅ No teacher marked homework as not corrected today.</div>');
-  }
   // Admissions
   html += sec('🎒 New admissions · ' + (ad.count || 0), (ad.list && ad.list.length)
     ? ad.list.map(s => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) +
         (s.admission_no ? ' · Adm. no ' + esc(s.admission_no) : '') + (s.parent ? ' · ' + esc(s.parent) : '') + '</div></div></div></div>').join('')
     : '<div class="empty" style="padding:14px">No new admissions today.</div>');
   list.innerHTML = html;
+}
+
+
+// ── Nov 2026: Saturday list — only children repeating a problem this week ──
+async function openWeekly(date) {
+  show('view-detail');
+  history.replaceState(null, '', '/owner/index.html?alert=weekly_repeats&date=' + date);
+  document.getElementById('d-title').textContent = 'Repeating this week';
+  document.querySelector('.refresh-note').style.display = 'none';
+  document.getElementById('d-sub').textContent = niceDate(date);
+  document.getElementById('d-chips').innerHTML = '';
+  document.getElementById('d-stats').innerHTML = '';
+  const list = document.getElementById('d-list');
+  let a = inboxRows.find(x => x.kind === 'weekly_repeats' && String(x.alert_date).slice(0, 10) === date);
+  if (!a) {
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    const out = await ownerApi('alerts');
+    inboxRows = (out && out.alerts) || [];
+    a = inboxRows.find(x => x.kind === 'weekly_repeats' && String(x.alert_date).slice(0, 10) === date);
+  }
+  const r = a && a.data;
+  if (!r) { list.innerHTML = '<div class="empty">This list is not available.</div>'; return; }
+  const L = r.limits || {}, C = r.counts || {};
+  const NAMES = { late: ['⏰', 'Late'], absent: ['🚫', 'Absent'], homework: ['📚', 'Homework'], test: ['📝', 'Class tests'], discipline: ['👔', 'Discipline'] };
+  document.getElementById('d-sub').textContent = niceDate(r.from).replace(/^\w+, /, '') + ' – ' + niceDate(r.to).replace(/^\w+, /, '');
+  document.getElementById('d-stats').innerHTML = Object.keys(NAMES).map(k =>
+    '<div class="stat"><div class="n">' + (C[k] || 0) + '</div><div class="l">' + NAMES[k][1] + ' (' + (L[k] || 0) + '+ times)</div></div>').join('');
+  const kids = r.list || [];
+  if (!kids.length) { list.innerHTML = '<div class="empty"><div class="big">✅</div>No child repeated a problem this week.</div>'; return; }
+  list.innerHTML = '<div class="muted" style="margin:0 4px 8px">Only children who repeated a problem this week. Each child once, with everything they repeated.</div>' +
+    kids.map(s => {
+      const what = Object.keys(NAMES).filter(k => s[k] >= (L[k] || 99)).map(k =>
+        '<li><span>' + NAMES[k][0] + ' ' + NAMES[k][1] + (k === 'test' && s.test_detail && s.test_detail.length ? ' — ' + esc(s.test_detail.join(', ')) : '') + '</span><b>' + s[k] + (k === 'late' || k === 'absent' ? ' days' : ' times') + '</b></li>').join('');
+      return '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(s.name) + '</div><div class="row-class">Class ' + esc(s.class) + '</div></div>' +
+        '<div class="row-total" style="font-size:13px">' + s.problems + ' problem' + (s.problems === 1 ? '' : 's') + '</div></div>' +
+        '<ul class="lines">' + what + '</ul>' +
+        '<div class="badges">' +
+          (s.leave ? '<span class="badge b-seen">Leave ' + esc(s.leave === 'approved' ? 'approved' : 'applied') + '</span>' : '') +
+          (s.parent === 'seen' ? '<span class="badge b-seen">✓ Parent saw warning</span>' : s.parent === 'not_seen' ? '<span class="badge b-unseen">Parent hasn\'t seen warning</span>' : '') +
+          callBtn(s.mobile) + '</div></div>';
+    }).join('') + '<div style="height:20px"></div>';
 }
 
 // ── Substitute teachers: everything is inside the alert ──
@@ -572,6 +588,7 @@ async function salaryDecide(decision) {
 async function openAlert(kind, date) {
   if (kind === 'salary') { openSalary(date); return; }
   if (kind === 'evening_report') { openEvening(date); return; }
+  if (kind === 'weekly_repeats') { openWeekly(date); return; }
   if (kind === 'substitutes') { openSubstitutes(date); return; }
   if (kind !== 'fee_reminders') return;
   show('view-detail');
@@ -645,7 +662,7 @@ function startApp() {
   loadInbox();
   const q = new URLSearchParams(location.search);
   if (q.get('alert') === 'salary' && /^\d{4}-\d{2}$/.test(q.get('month') || '')) openSalary(q.get('month'));
-  if (['fee_reminders', 'evening_report', 'substitutes'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
+  if (['fee_reminders', 'evening_report', 'substitutes', 'weekly_repeats'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
 }
 (function boot() {
   // Ready to install as an app from the very first screen (Chrome checks this before login)
