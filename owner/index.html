@@ -378,7 +378,7 @@ async function loadInbox() {
   }
   inboxRows = rows;
   box.innerHTML = rows.map(a => {
-    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : a.kind === 'weekly_repeats' ? '📋' : '🔔';
+    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : a.kind === 'weekly_repeats' ? '📋' : a.kind === 'teacher_monthly' ? '👩‍🏫' : '🔔';
     const arg = a.kind === 'salary' && a.data && a.data.month ? a.data.month : String(a.alert_date).slice(0, 10);
     return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(arg) + '\')">' +
       '<div class="inbox-ico">' + ico + '</div>' +
@@ -496,6 +496,40 @@ async function openWeekly(date) {
     }).join('') + '<div style="height:20px"></div>';
 }
 
+
+// ── Nov 2026: teachers' monthly evaluation (from TeachBot's My School's Academics) ──
+async function openTeachers(date) {
+  show('view-detail');
+  history.replaceState(null, '', '/owner/index.html?alert=teacher_monthly&date=' + date);
+  document.getElementById('d-title').textContent = 'Teachers\' evaluation';
+  document.querySelector('.refresh-note').style.display = 'none';
+  document.getElementById('d-chips').innerHTML = '';
+  document.getElementById('d-stats').innerHTML = '';
+  const list = document.getElementById('d-list');
+  let a = inboxRows.find(x => x.kind === 'teacher_monthly' && String(x.alert_date).slice(0, 10) === date);
+  if (!a) {
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    const out = await ownerApi('alerts');
+    inboxRows = (out && out.alerts) || [];
+    a = inboxRows.find(x => x.kind === 'teacher_monthly' && String(x.alert_date).slice(0, 10) === date);
+  }
+  const r = a && a.data;
+  if (!r) { list.innerHTML = '<div class="empty">This evaluation is not available.</div>'; return; }
+  document.getElementById('d-sub').textContent = r.month + ' · ' + r.weeks + ' week' + (r.weeks === 1 ? '' : 's');
+  const T = r.teachers || [];
+  const cnt = k => T.filter(t => t.rating === k).length;
+  document.getElementById('d-stats').innerHTML = [['Good', 'var(--green)'], ['Fair', '#8a6418'], ['Needs attention', 'var(--red)']].map(x =>
+    '<div class="stat"><div class="n" style="color:' + x[1] + '">' + cnt(x[0]) + '</div><div class="l">' + x[0] + '</div></div>').join('');
+  const pc = v => v == null ? '—' : v + '%';
+  list.innerHTML = '<div class="muted" style="margin:0 4px 8px">Score = her own weekly checklist (not handed in = 0) + homework sheet corrected + notebook check + children\'s class quiz. ⚠️ = her ticks don\'t match the other checks.</div>' +
+    T.map(t => '<div class="row"><div class="row-head"><div><div class="row-name">' + esc(t.name) + '</div><div class="row-class">' + esc(t.rating || 'Not enough to score') + ' · checklists ' + t.handed + '/' + t.weeks + '</div></div>' +
+      '<div class="row-total" style="color:' + (t.overall == null ? 'var(--muted)' : t.overall >= 80 ? 'var(--green)' : t.overall >= 60 ? '#8a6418' : 'var(--red)') + '">' + pc(t.overall) + '</div></div>' +
+      '<ul class="lines"><li><span>Portions done (her ticks)</span><b>' + pc(t.own && t.own.portion) + '</b></li><li><span>Homework corrected (her ticks)</span><b>' + pc(t.own && t.own.hw) + '</b></li>' +
+      '<li><span>Homework sheet — corrected</span><b>' + pc(t.sheet) + '</b></li><li><span>Notebook check</span><b>' + pc(t.notebook) + '</b></li><li><span>Children\'s class quiz</span><b>' + pc(t.quiz) + '</b></li></ul>' +
+      ((t.flags || []).length ? '<div class="muted" style="margin-top:6px;color:var(--red)">' + t.flags.map(esc).join('<br>') + '</div>' : '') + '</div>').join('') +
+    '<div style="height:20px"></div>';
+}
+
 // ── Substitute teachers: everything is inside the alert ──
 async function openSubstitutes(date) {
   show('view-detail');
@@ -589,6 +623,7 @@ async function openAlert(kind, date) {
   if (kind === 'salary') { openSalary(date); return; }
   if (kind === 'evening_report') { openEvening(date); return; }
   if (kind === 'weekly_repeats') { openWeekly(date); return; }
+  if (kind === 'teacher_monthly') { openTeachers(date); return; }
   if (kind === 'substitutes') { openSubstitutes(date); return; }
   if (kind !== 'fee_reminders') return;
   show('view-detail');
@@ -662,7 +697,7 @@ function startApp() {
   loadInbox();
   const q = new URLSearchParams(location.search);
   if (q.get('alert') === 'salary' && /^\d{4}-\d{2}$/.test(q.get('month') || '')) openSalary(q.get('month'));
-  if (['fee_reminders', 'evening_report', 'substitutes', 'weekly_repeats'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
+  if (['fee_reminders', 'evening_report', 'substitutes', 'weekly_repeats', 'teacher_monthly'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
 }
 (function boot() {
   // Ready to install as an app from the very first screen (Chrome checks this before login)
