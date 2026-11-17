@@ -300,6 +300,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div id="alert-card-action"><button onclick="enableAlerts()">Turn on alerts</button></div>
     </div>
 
+    <!-- Van messages from the office — today only (Nov 2026) -->
+    <div id="van-msg-card" style="display:none;background:#FFF6E5;border:1px solid #E8C99A;border-left:4px solid #C9A84C;border-radius:14px;padding:12px 14px;margin-bottom:14px"></div>
+
     <!-- Track Bus (van students only) -->
     <div id="bus-card" onclick="openBusTrack()" style="display:none;background:#fff;border:1px solid var(--border);border-left:4px solid #D4A843;border-radius:14px;padding:12px 14px;margin-bottom:14px;cursor:pointer">
       <div style="display:flex;align-items:center;gap:10px">
@@ -778,6 +781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initAlerts();
   initOnlinePay();
   initBusCard();
+  loadVanMsgs();
   loadBirthday();
   loadFeeReminder();
   loadLibraryCard();
@@ -795,6 +799,24 @@ async function busApi(action) {
   } catch (e) { return { ok: false, error: 'Network error' }; }
 }
 function busEsc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+// Van running late / van reached — sent by the office for this child's route or stop (today only)
+async function loadVanMsgs() {
+  const card = document.getElementById('van-msg-card');
+  if (!card) return;
+  const out = await busApi('van_msgs');
+  if (!out || !out.ok || !out.data || !out.data.length) { card.style.display = 'none'; return; }
+  card.innerHTML = out.data.map(function (m, i) {
+    const t = new Date(m.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const head = m.kind === 'reached' ? '✅ Van update' : '🚌 Van running late';
+    return '<div style="' + (i ? 'border-top:1px dashed #E8C99A;margin-top:10px;padding-top:10px;' : '') + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">' +
+      '<div style="font-weight:700;font-size:14px;color:var(--maroon)">' + head + '</div>' +
+      '<div style="font-size:11px;color:#9B928A;white-space:nowrap">' + busEsc(t) + '</div></div>' +
+      '<div style="font-size:13px;line-height:1.55;margin-top:4px;white-space:pre-line">' + busEsc(m.message) + '</div></div>';
+  }).join('');
+  card.style.display = 'block';
+}
+
 async function initBusCard() {
   const out = await busApi('track');
   if (!out || !out.ok || !out.has_transport) return;

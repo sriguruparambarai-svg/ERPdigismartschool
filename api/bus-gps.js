@@ -150,6 +150,41 @@ async function handleTraccar(req, res, body) {
   return res.status(200).json({ ok: true, alerts_sent: sent });
 }
 
+// ══ Van delay / van update messages to the Parents App (Nov 2026) ══
+// The office picks a route (and, if needed, only some stops). The message is built
+// here on the server — never taken from the browser — so it always carries the
+// school's own name, and the Tamil line when the school's "Tamil messages" switch is on.
+const VAN_REASONS = {
+  traffic:   ['heavy traffic', 'போக்குவரத்து நெரிசல்'],
+  breakdown: ['a vehicle breakdown', 'வண்டி பழுது'],
+  rain:      ['heavy rain', 'கனமழை'],
+  accident:  ['a road accident on the way', 'வழியில் ஏற்பட்ட விபத்து'],
+  tyre:      ['a flat tyre', 'டயர் பஞ்சர்'],
+  other:     ['an unexpected situation', 'எதிர்பாராத காரணம்']
+};
+function vanDelayText(kind, routeName, mins, reasonKey, schoolName, morning, tamil) {
+  const r = VAN_REASONS[reasonKey] || VAN_REASONS.other;
+  let en, ta;
+  if (kind === 'reached') {
+    en = morning
+      ? 'Update: The ' + routeName + ' van has reached school safely. Thank you for your patience.'
+      : 'Update: The ' + routeName + ' van is on its way now and will reach your stop shortly. Thank you for your patience.';
+    ta = morning
+      ? routeName + ' வேன் பள்ளிக்கு பாதுகாப்பாக வந்து சேர்ந்தது. பொறுமைக்கு நன்றி.'
+      : routeName + ' வேன் இப்போது புறப்பட்டு விட்டது, விரைவில் உங்கள் நிறுத்தத்திற்கு வரும். பொறுமைக்கு நன்றி.';
+  } else {
+    en = 'The ' + routeName + ' van is running about ' + mins + ' minutes late today due to ' + r[0] + '. Please don\'t worry. Sorry for the inconvenience.';
+    ta = 'இன்று ' + routeName + ' வேன் ' + r[1] + ' காரணமாக சுமார் ' + mins + ' நிமிடம் தாமதமாக வரும். கவலைப்பட வேண்டாம். சிரமத்திற்கு வருந்துகிறோம்.';
+  }
+  const sign = '— ' + (schoolName || 'School');
+  return tamil ? en + '\n' + ta + '\n' + sign : en + '\n' + sign;
+}
+function istDayStartUtc() {
+  // midnight India time today, as a UTC timestamp
+  const d = new Date(Date.now() + 5.5 * 3600 * 1000);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - 5.5 * 3600 * 1000).toISOString();
+}
+
 module.exports = async (req, res) => {
   if (!getServiceKey()) return res.status(500).json({ ok: false, error: 'Server key not configured.' });
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
@@ -197,6 +232,19 @@ module.exports = async (req, res) => {
       return res.status(200).json(out);
     }
 
+    // ══ PARENT: today's van messages for this child (Nov 2026) ══
+    if (action === 'van_msgs') {
+      if (session.role !== 'parent' || !session.stu) return res.status(403).json({ ok: false, error: 'Parents only.' });
+      let rows = [];
+      try {
+        rows = await sb('GET', 'transport_messages?school_id=eq.' + enc(schoolId) +
+          '&student_ids=cs.' + enc(JSON.stringify([String(session.stu)])) +
+          '&created_at=gte.' + enc(istDayStartUtc()) +
+          '&select=kind,route_name,message,created_at&order=created_at.desc&limit=3') || [];
+      } catch (e) { rows = []; }   // table not created yet → no card
+      return res.status(200).json({ ok: true, data: rows });
+    }
+
     // ══ STAFF ══
     const mods = Array.isArray(session.mods) ? session.mods : [];
     if (session.role === 'parent' || !(session.role === 'owner' || mods.indexOf('transport') !== -1)) {
@@ -227,6 +275,66 @@ module.exports = async (req, res) => {
     if (action === 'ack_alert') {
       await sb('PATCH', 'bus_alerts?id=eq.' + enc(body.alert_id) + '&school_id=eq.' + enc(schoolId), { acknowledged: true, acknowledged_at: new Date().toISOString() }, 'return=minimal');
       return res.status(200).json({ ok: true });
+    }
+
+    // Office: send a van delay / van update to the parents of one route (or some stops)
+    if (action === 'send_van_msg') {
+      const kind = body.kind === 'reached' ? 'reached' : 'delay';
+      const routeId = String(body.route_id || '');
+      if (!routeId) return res.status(400).json({ ok: false, error: 'Please select a route first.' });
+      const route = (await sb('GET', 'bus_routes?id=eq.' + enc(routeId) + '&school_id=eq.' + enc(schoolId) + '&select=id,name&limit=1') || [])[0];
+      if (!route) return res.status(404).json({ ok: false, error: 'Route not found.' });
+      const stops = (Array.isArray(body.stops) ? body.stops : []).map(x => String(x).trim()).filter(Boolean).slice(0, 100);
+      let riders = await sb('GET', 'student_transport?school_id=eq.' + enc(schoolId) + '&route_id=eq.' + enc(routeId) +
+        '&select=student_id,boarding_stop') || [];
+      if (stops.length) riders = riders.filter(r => stops.indexOf(String(r.boarding_stop || '').trim()) !== -1);
+      const ids = [...new Set(riders.map(r => String(r.student_id || '')).filter(Boolean))];
+      if (!ids.length) return res.status(400).json({ ok: false, error: stops.length ? 'No students are assigned to the ticked stops.' : 'No students are assigned to this route yet.' });
+
+      // Same button pressed twice within a minute → send only once
+      const minute = Math.floor(Date.now() / 60000);
+      if (!(await logOnce(schoolId, 'van_msg', routeId + ':' + kind + ':' + stops.join('|') + ':' + minute))) {
+        return res.status(200).json({ ok: true, already_sent: true });
+      }
+
+      let school = null;
+      try { school = (await sb('GET', 'schools?school_id=eq.' + enc(schoolId) + '&select=name,has_tamil_msgs&limit=1') || [])[0]; }
+      catch (e) { try { school = (await sb('GET', 'schools?school_id=eq.' + enc(schoolId) + '&select=name&limit=1') || [])[0]; } catch (e2) {} }
+      const schoolName = (school && school.name) || '';
+      const tamil = !!(school && school.has_tamil_msgs);
+      const mins = [10, 15, 20, 30, 45, 60, 90].indexOf(Number(body.delay)) !== -1 ? Number(body.delay) : 15;
+      const morning = istNow().mins < 720;
+      const message = vanDelayText(kind, route.name, mins, String(body.reason || 'other'), schoolName, morning, tamil);
+
+      let saved;
+      try {
+        saved = (await sb('POST', 'transport_messages', [{
+          school_id: schoolId, route_id: routeId, route_name: route.name, kind, stops, student_ids: ids,
+          message, sent_by: String(session.name || session.role || ''), students_count: ids.length
+        }], 'return=representation') || [])[0];
+      } catch (e) {
+        return res.status(200).json({ ok: false, error: 'One-time setup needed: please run step-van-messages.sql in Supabase.' });
+      }
+
+      let sent = 0;
+      if (pushReady()) {
+        const subs = (await subsForStudents(ids)).filter(s => String(s.school_id) === schoolId);
+        const firstLines = message.split('\n').slice(0, tamil ? 2 : 1).join('\n');
+        const out = await sendToSubs(subs, () => ({
+          title: kind === 'reached' ? '✅ Van update · ' + route.name : '🚌 Van running late · ' + route.name,
+          body: firstLines.length > 320 ? firstLines.slice(0, 319) + '…' : firstLines,
+          tag: 'van-' + (saved ? saved.id : routeId),
+          url: parentUrl(req.headers.host || 'erp.digismartschool.com', schoolId)
+        }), true);
+        sent = out.sent;
+      }
+      if (saved) { try { await sb('PATCH', 'transport_messages?id=eq.' + enc(saved.id), { phones_reached: sent }, 'return=minimal'); } catch (e) {} }
+      // Keep the Notification History on the Transport page in step
+      try {
+        await sb('POST', 'transport_notifications', [{ school_id: schoolId,
+          message: '📲 Parents App · ' + route.name + (stops.length ? ' (' + stops.join(', ') + ')' : '') + ' · ' + ids.length + ' students · ' + sent + ' phone alerts — ' + message.split('\n')[0] }], 'return=minimal');
+      } catch (e) {}
+      return res.status(200).json({ ok: true, students: ids.length, phones: sent, message });
     }
 
     return res.status(400).json({ ok: false, error: 'Unknown action.' });

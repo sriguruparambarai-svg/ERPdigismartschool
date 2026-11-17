@@ -390,9 +390,14 @@
             </div>
             <div class="form-group" style="margin-bottom:10px">
               <label class="form-label">Select Route</label>
-              <select id="notif-route" class="form-control" onchange="buildDelayMessage()" style="margin-top:4px">
+              <select id="notif-route" class="form-control" onchange="loadNotifStops();buildDelayMessage()" style="margin-top:4px">
                 <option value="">Select route</option>
               </select>
+            </div>
+            <!-- Nov 2026: send only to some stops (e.g. van late only for the last stops) -->
+            <div class="form-group hidden" id="notif-stops-wrap" style="margin-bottom:10px">
+              <label class="form-label">Which stops? <span style="font-weight:400;color:var(--text-muted)">(number of students in brackets)</span></label>
+              <div id="notif-stops" style="margin-top:4px;max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px"></div>
             </div>
             <div class="form-group" style="margin-bottom:10px">
               <label class="form-label">Delay By</label>
@@ -403,6 +408,7 @@
                 <option value="30">30 minutes</option>
                 <option value="45">45 minutes</option>
                 <option value="60">1 hour</option>
+                <option value="90">1 hour 30 minutes</option>
               </select>
             </div>
             <div class="form-group" style="margin-bottom:14px">
@@ -412,6 +418,7 @@
                 <option value="breakdown">Bus breakdown</option>
                 <option value="rain">Heavy rain</option>
                 <option value="accident">Road accident nearby</option>
+                <option value="tyre">Flat tyre</option>
                 <option value="other">Other</option>
               </select>
             </div>
@@ -423,6 +430,12 @@
               <button class="btn btn-gold w-full" onclick="copyNotifMessage()">📋 Copy Message</button>
               <button class="btn btn-secondary" onclick="openWhatsApp()">WhatsApp ↗</button>
             </div>
+            <!-- Nov 2026: send straight to the Parents App of only this route's / these stops' students -->
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn-primary w-full" id="van-send-btn" onclick="sendVanMsg('delay')" disabled>📲 Send to Parents App</button>
+              <button class="btn btn-secondary" id="van-reached-btn" onclick="sendVanMsg('reached')" disabled title="Tell the same parents the van has reached / is on the way">✅ Van reached</button>
+            </div>
+            <div id="van-send-note" style="font-size:11px;color:var(--text-muted);margin-top:6px">Select a route to send. Parents see it in their app today and get a phone alert.</div>
           </div>
 
           <!-- Stop-wise ETA -->
@@ -1384,12 +1397,16 @@ function buildDelayMessage() {
   const reasons = { traffic:'heavy traffic on the route', breakdown:'a bus breakdown', rain:'heavy rainfall', accident:'a road accident nearby', other:'an unexpected situation' };
   const reason = reasons[reasonKey] || reasonKey;
   const routeName = route?.name || 'the route';
-  const msg = `🚌 *DigiSmart School — Bus Delay Alert*\n\nDear Parents,\n\nWe regret to inform you that the *${routeName}* bus is delayed by approximately *${delay} minutes* due to ${reason}.\n\nWe apologize for the inconvenience and will ensure the safety of all students.\n\nThank you for your understanding.\n\n— School Transport Team`;
+  const okRoute = !!route;
+  ['van-send-btn','van-reached-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !okRoute; });
+  if (!okRoute) { document.getElementById('notif-message').value = 'Select a route first.'; return; }
+  const msg = `🚌 *${schoolNameForMsg()} — Bus Delay Alert*\n\nDear Parents,\n\nWe regret to inform you that the *${routeName}* bus is delayed by approximately *${delay} minutes* due to ${reason}.\n\nWe apologize for the inconvenience and will ensure the safety of all students.\n\nThank you for your understanding.\n\n— School Transport Team`;
   document.getElementById('notif-message').value = msg;
 }
 
 function copyNotifMessage() {
   const msg = document.getElementById('notif-message').value;
+  if (!document.getElementById('notif-route').value) { showToast('Please select a route first.','error'); return; }
   if (!msg) { showToast('Please build a message first.','error'); return; }
   navigator.clipboard.writeText(msg).then(() => {
     showToast('Message copied! Paste in WhatsApp.','success');
@@ -1399,6 +1416,62 @@ function copyNotifMessage() {
 
 async function logNotification(msg) {
   await supabase.from('transport_notifications').insert([{ school_id: SCHOOL_ID, message: msg.slice(0,200), sent_at: new Date().toISOString() }]);
+}
+
+// ══ Van message to the Parents App (Nov 2026) ══
+function schoolNameForMsg() {
+  let n = '';
+  try { n = sessionStorage.getItem('school_name') || ''; } catch (e) {}
+  return n || 'School';
+}
+async function loadNotifStops() {
+  const wrap = document.getElementById('notif-stops-wrap');
+  const box = document.getElementById('notif-stops');
+  const routeId = document.getElementById('notif-route').value;
+  const route = allRoutes.find(r => r.id === routeId);
+  if (!route) { wrap.classList.add('hidden'); box.innerHTML = ''; return; }
+  const { data } = await supabase.from('student_transport').select('boarding_stop').eq('school_id', SCHOOL_ID).eq('route_id', routeId);
+  const count = {};
+  (data || []).forEach(r => { const k = String(r.boarding_stop || '').trim(); if (k) count[k] = (count[k] || 0) + 1; });
+  const names = (Array.isArray(route.stops) ? route.stops.map(x => String(x).trim()) : []).filter(Boolean);
+  Object.keys(count).forEach(k => { if (names.indexOf(k) === -1) names.push(k); });
+  const total = (data || []).length;
+  box.innerHTML = `<label style="display:flex;gap:8px;align-items:center;padding:3px 0;font-weight:600"><input type="checkbox" id="notif-stop-all" checked onchange="toggleAllStops(this.checked)"> All stops (${total})</label>` +
+    names.map(n => `<label style="display:flex;gap:8px;align-items:center;padding:3px 0;padding-left:18px"><input type="checkbox" class="notif-stop" value="${tEsc(n)}" checked onchange="syncAllStops()"> ${tEsc(n)} (${count[n] || 0})</label>`).join('');
+  wrap.classList.toggle('hidden', !names.length);
+}
+function toggleAllStops(on) { document.querySelectorAll('.notif-stop').forEach(c => c.checked = on); }
+function syncAllStops() {
+  const all = [...document.querySelectorAll('.notif-stop')];
+  const a = document.getElementById('notif-stop-all');
+  if (a) a.checked = all.length > 0 && all.every(c => c.checked);
+}
+async function sendVanMsg(kind) {
+  const routeId = document.getElementById('notif-route').value;
+  const route = allRoutes.find(r => r.id === routeId);
+  if (!route) { showToast('Please select a route first.', 'error'); return; }
+  const boxes = [...document.querySelectorAll('.notif-stop')];
+  const ticked = boxes.filter(c => c.checked).map(c => c.value);
+  if (boxes.length && !ticked.length) { showToast('Please tick at least one stop.', 'error'); return; }
+  const stops = (boxes.length && ticked.length < boxes.length) ? ticked : [];   // empty = whole route
+  const what = kind === 'reached' ? 'a "van reached / on the way" update' : 'the delay message';
+  const whom = stops.length ? 'the parents at ' + stops.join(', ') : 'all parents on ' + route.name;
+  if (!confirm('Send ' + what + ' to ' + whom + ' in the Parents App?')) return;
+  const btns = ['van-send-btn','van-reached-btn'].map(id => document.getElementById(id));
+  btns.forEach(b => b.disabled = true);
+  const note = document.getElementById('van-send-note');
+  note.textContent = 'Sending...';
+  const out = await busGpsApi('send_van_msg', {
+    kind, route_id: routeId, stops,
+    delay: document.getElementById('notif-delay').value,
+    reason: document.getElementById('notif-reason').value
+  });
+  btns.forEach(b => b.disabled = false);
+  if (!out || !out.ok) { note.textContent = (out && out.error) || 'Could not send.'; showToast((out && out.error) || 'Could not send.', 'error'); return; }
+  if (out.already_sent) { note.textContent = 'This was already sent a moment ago.'; showToast('Already sent a moment ago.', 'success'); return; }
+  note.textContent = '✔ Sent to ' + out.students + ' students\' Parents App · ' + out.phones + ' phones got an alert (parents who have not turned on alerts will see it when they open the app).';
+  showToast('Sent to ' + out.students + ' students\' parents.', 'success');
+  loadNotifLog();
 }
 
 function openWhatsApp() {
@@ -1415,7 +1488,7 @@ function buildAnnouncement() {
     fee_due: '🚌 *DigiSmart School — Transport Fee Reminder*\n\nDear Parents,\n\nThis is a friendly reminder that *transport fees* for this term are due. Kindly pay at the school office at the earliest.\n\nThank you.',
     custom: '',
   };
-  document.getElementById('ann-message').value = templates[type] || '';
+  document.getElementById('ann-message').value = (templates[type] || '').split('DigiSmart School').join(schoolNameForMsg());
 }
 
 function copyAnnMessage() {
