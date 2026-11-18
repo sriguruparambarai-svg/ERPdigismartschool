@@ -12,7 +12,7 @@
 // GET /api/weekly-repeats                              (Vercel cron 13:30 UTC Saturday = 7 PM IST, Bearer CRON_SECRET)
 // GET /api/weekly-repeats?key=…&school=…&dry=1&date=YYYY-MM-DD   → test run, nothing saved or sent
 
-const { sb, enc, getServiceKey, sendToSubs, pushReady } = require('./_push');
+const { sb, enc, getServiceKey, sendToSubs, pushReady, ownerSubs } = require('./_push');
 
 const BASE = 'https://erp.digismartschool.com';
 const LIMIT = { late: 3, absent: 3, homework: 3, test: 2, discipline: 3 };
@@ -110,7 +110,7 @@ async function runSchool(schoolId, day, send) {
   if (!Array.isArray(ins) || !ins.length) return { already_sent: true };
   let phones = 0;
   if (pushReady()) {
-    const subs = await safe(sb('GET', 'owner_push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,endpoint,p256dh,auth'), []) || [];
+    const subs = await ownerSubs(schoolId, 'owner') || [];
     if (subs.length) {
       const out = await sendToSubs(subs, () => ({ title, body, tag: 'owner-weekly-' + day,
         url: BASE + '/owner/index.html?alert=weekly_repeats&date=' + day }), false);

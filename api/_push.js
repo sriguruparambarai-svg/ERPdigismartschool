@@ -132,4 +132,16 @@ async function subsForStudents(studentIds) {
 }
 function pushReady() { return !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY); }
 
-module.exports = { sb, enc, getServiceKey, sendToSubs, logOnce, subsForStudents, pushReady };
+// Nov 2026: Owner App phones by who the person is — 'owner' (fees, salary, reports) or 'principal'
+// (only the "not done yet" alerts). Before step-not-done.sql adds the role column, everybody is an owner.
+async function ownerSubs(schoolId, who) {
+  who = who === 'principal' ? 'principal' : 'owner';
+  const subs = await sb('GET', 'owner_push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,user_id,endpoint,p256dh,auth').catch(() => []) || [];
+  let users;
+  try { users = await sb('GET', 'owner_app_users?school_id=eq.' + enc(schoolId) + '&select=id,role') || []; }
+  catch (e) { return who === 'owner' ? subs : []; }
+  const ids = new Set(users.filter(u => (u.role || 'owner') === who).map(u => String(u.id)));
+  return subs.filter(s => s.user_id ? ids.has(String(s.user_id)) : who === 'owner');
+}
+
+module.exports = { sb, enc, getServiceKey, sendToSubs, logOnce, subsForStudents, pushReady, ownerSubs };

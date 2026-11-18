@@ -153,7 +153,7 @@
       <button class="icon-btn" onclick="openChangePassword()">🔑</button>
       <button class="icon-btn" onclick="logout()">Log out</button>
     </div>
-    <div class="sub">Owner App · your school on autopilot</div>
+    <div class="sub" id="home-sub">Owner App · your school on autopilot</div>
   </div>
   <div class="wrap">
     <div class="card alert-card hidden" id="alert-card">
@@ -162,7 +162,7 @@
       <div id="alert-action"><button class="btn" onclick="enableAlerts()">Turn on alerts</button></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="fr-card">
       <div class="status">
         <span class="dot off" id="fr-dot"></span>
         <div style="flex:1">
@@ -244,7 +244,7 @@ async function doLogin() {
   saveSession(out);
 }
 function saveSession(out) {
-  session = { token: out.token, school: out.school || {}, name: out.name || '' };
+  session = { token: out.token, school: out.school || {}, name: out.name || '', role: out.role || 'owner' };
   try { localStorage.setItem(TOKEN_KEY, JSON.stringify(session)); } catch (e) {}
   startApp();
 }
@@ -317,7 +317,9 @@ function setAlertsUi(state) {
     text.textContent = 'This browser cannot show alerts. Please open the Owner App in Google Chrome.';
     action.innerHTML = '';
   } else {
-    text.textContent = 'Get a phone alert every time the ERP sends fee reminders, with the full list of parents and amounts.';
+    text.textContent = isPrincipal()
+      ? 'Get a phone alert when attendance, the check sheet or a teacher\'s day is not done yet.'
+      : 'Get a phone alert every time the ERP sends fee reminders, with the full list of parents and amounts.';
     action.innerHTML = '<button class="btn" onclick="enableAlerts()">Turn on alerts</button>';
   }
 }
@@ -366,6 +368,7 @@ async function loadInbox() {
   const out = await ownerApi('alerts');
   if (!out || !out.ok) { box.innerHTML = '<div class="empty">' + esc((out && out.error) || 'Could not load alerts.') + '</div>'; return; }
   if (out.school_name) document.getElementById('school-name').textContent = out.school_name;
+  setRole(out.role);
   const on = out.fee_reminders_on;
   document.getElementById('fr-dot').className = 'dot ' + (on ? 'on' : 'off');
   document.getElementById('fr-text').textContent = on
@@ -373,12 +376,14 @@ async function loadInbox() {
     : 'Off — switch on in ERP → Fee Management → Settings → Automatic Fee Reminders.';
   const rows = out.alerts || [];
   if (!rows.length) {
-    box.innerHTML = '<div class="empty"><div class="big">📭</div>No alerts yet. When the ERP sends fee reminders, they appear here.</div>';
+    box.innerHTML = isPrincipal()
+      ? '<div class="empty"><div class="big">✅</div>Nothing pending. When attendance, the check sheet or a teacher\'s day is not done in time, it appears here.</div>'
+      : '<div class="empty"><div class="big">📭</div>No alerts yet. When the ERP sends fee reminders, they appear here.</div>';
     return;
   }
   inboxRows = rows;
   box.innerHTML = rows.map(a => {
-    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : a.kind === 'weekly_repeats' ? '📋' : a.kind === 'teacher_monthly' ? '👩‍🏫' : '🔔';
+    const ico = a.kind === 'fee_reminders' ? '💰' : a.kind === 'evening_report' ? '📊' : a.kind === 'substitutes' ? '🔁' : a.kind === 'salary' ? '💼' : a.kind === 'weekly_repeats' ? '📋' : a.kind === 'teacher_monthly' ? '👩‍🏫' : a.kind === 'not_done_owner' ? '⚠️' : /^not_done_/.test(a.kind) ? '⏰' : '🔔';
     const arg = a.kind === 'salary' && a.data && a.data.month ? a.data.month : String(a.alert_date).slice(0, 10);
     return '<div class="inbox-item" onclick="openAlert(\'' + esc(a.kind) + '\',\'' + esc(arg) + '\')">' +
       '<div class="inbox-ico">' + ico + '</div>' +
@@ -562,6 +567,48 @@ async function openSubstitutes(date) {
     '<div class="muted" style="margin:8px 4px 20px">Suggested teachers are present today and have no class in that period; those with fewer periods today come first.</div>';
 }
 
+// ── Nov 2026: the principal sees only "not done yet" alerts (api/not-done.js) ──
+function isPrincipal() { return !!(session && session.role === 'principal'); }
+function setRole(role) {
+  if (role && session) { session.role = role; try { localStorage.setItem(TOKEN_KEY, JSON.stringify(session)); } catch (e) {} }
+  const p = isPrincipal();
+  document.getElementById('fr-card').classList.toggle('hidden', p);
+  document.getElementById('home-sub').textContent = p ? 'Principal · what is not done yet today' : 'Owner App · your school on autopilot';
+}
+async function openNotDone(kind, date) {
+  show('view-detail');
+  history.replaceState(null, '', '/owner/index.html?alert=' + kind + '&date=' + date);
+  document.getElementById('d-title').textContent = kind === 'not_done_owner' ? 'Still not done today' : kind === 'not_done_teachers' ? 'Teachers — not done today' : 'Not done yet';
+  document.getElementById('d-sub').textContent = niceDate(date) + (kind === 'not_done_am' ? ' · 11 AM' : kind === 'not_done_pm' ? ' · 3 PM' : ' · 4:30 PM');
+  document.getElementById('d-chips').innerHTML = '';
+  document.getElementById('d-stats').innerHTML = '';
+  document.querySelector('.refresh-note').style.display = 'none';
+  const list = document.getElementById('d-list');
+  let a = inboxRows.find(x => x.kind === kind && String(x.alert_date).slice(0, 10) === date);
+  if (!a) {
+    list.innerHTML = '<div class="empty">Loading…</div>';
+    const out = await ownerApi('alerts');
+    inboxRows = (out && out.alerts) || [];
+    a = inboxRows.find(x => x.kind === kind && String(x.alert_date).slice(0, 10) === date);
+  }
+  const r = a && a.data;
+  if (!r) { list.innerHTML = '<div class="empty">This alert is not available.</div>'; return; }
+  const att = r.attendance || { missing: [] }, sh = r.sheet || { missing: [] }, t = r.teachers || {};
+  const stats = [];
+  if (att.missing && att.missing.length) stats.push([att.missing.length + ' / ' + (att.classes || att.missing.length), 'Classes — attendance not taken']);
+  if (sh.missing && sh.missing.length) stats.push([sh.missing.length + ' / ' + (sh.classes || sh.missing.length), 'Classes — check sheet not in']);
+  if ((t.day || []).length) stats.push([t.day.length, 'Teachers — day not submitted']);
+  if ((t.week || []).length) stats.push([t.week.length, 'Weekly checklists not uploaded']);
+  document.getElementById('d-stats').innerHTML = stats.map(x => '<div class="stat"><div class="n">' + esc(x[0]) + '</div><div class="l">' + esc(x[1]) + '</div></div>').join('');
+  const chips = l => '<div class="row"><div style="display:flex;flex-wrap:wrap;gap:6px">' + l.map(c => '<span class="badge b-after">' + esc(c) + '</span>').join('') + '</div></div>';
+  let html = '';
+  if (att.missing && att.missing.length) html += sec('📋 Attendance not taken', (att.marked ? '' : '<div class="muted" style="margin:0 4px 8px">No class has marked attendance today. If today is a holiday, ignore this.</div>') + chips(att.missing));
+  if (sh.missing && sh.missing.length) html += sec('📝 Daily Check Sheet not in', chips(sh.missing) + '<div class="muted" style="margin:0 4px 8px">Homework, class test and discipline messages for these classes won\'t reach parents until the sheet is entered.</div>');
+  if ((t.day || []).length) html += sec('👩‍🏫 Did not submit their day' + (t.deadline ? ' (by ' + esc(t.deadline) + ')' : ''), t.day.map(x => '<div class="row"><div class="row-name">' + esc(x.name) + '</div>' + (x.classes ? '<div class="row-class">' + esc(x.classes) + '</div>' : '') + '</div>').join(''));
+  if ((t.week || []).length) html += sec('🗂 Last week\'s checklist not uploaded', t.week.map(x => '<div class="row"><div class="row-name">' + esc(x.name) + '</div></div>').join(''));
+  list.innerHTML = html || '<div class="empty"><div class="big">✅</div>Everything was done.</div>';
+}
+
 // ── Salary for approval (api/salary-run.js prepares it on the month's last day) ──
 let salMonth = '';
 async function openSalary(month) {
@@ -625,6 +672,7 @@ async function openAlert(kind, date) {
   if (kind === 'weekly_repeats') { openWeekly(date); return; }
   if (kind === 'teacher_monthly') { openTeachers(date); return; }
   if (kind === 'substitutes') { openSubstitutes(date); return; }
+  if (/^not_done_/.test(kind)) { openNotDone(kind, date); return; }
   if (kind !== 'fee_reminders') return;
   show('view-detail');
   history.replaceState(null, '', '/owner/index.html?alert=fee_reminders&date=' + date);
@@ -693,11 +741,12 @@ function setFilter(f) { detailFilter = f; renderDetail(); }
 function startApp() {
   show('view-home');
   if (session.school && session.school.name) document.getElementById('school-name').textContent = session.school.name;
+  setRole(session.role);
   initAlerts();
   loadInbox();
   const q = new URLSearchParams(location.search);
   if (q.get('alert') === 'salary' && /^\d{4}-\d{2}$/.test(q.get('month') || '')) openSalary(q.get('month'));
-  if (['fee_reminders', 'evening_report', 'substitutes', 'weekly_repeats', 'teacher_monthly'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
+  if (['fee_reminders', 'evening_report', 'substitutes', 'weekly_repeats', 'teacher_monthly', 'not_done_am', 'not_done_pm', 'not_done_teachers', 'not_done_owner'].indexOf(q.get('alert')) !== -1 && /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '')) openAlert(q.get('alert'), q.get('date'));
 }
 (function boot() {
   // Ready to install as an app from the very first screen (Chrome checks this before login)

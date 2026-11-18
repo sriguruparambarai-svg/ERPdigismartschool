@@ -6,7 +6,8 @@
 //
 // POST { action: 'schools' }                         → every school (id + name)
 // POST { action: 'list', school_id }                 → that school's Owner App people (no passwords)
-// POST { action: 'add', school_id, name, phone }     → new person + one-time starting PIN (shown once)
+// POST { action: 'add', school_id, name, phone, role } → new person + one-time starting PIN (shown once)
+//      role 'owner' (default) or 'principal' (Nov 2026: sees only the "not done yet" alerts)
 // POST { action: 'reset', id }                       → new starting PIN; their phone is warned, then logged out
 // POST { action: 'remove', id }                      → person removed; their phone is logged out
 
@@ -53,8 +54,9 @@ module.exports = async (req, res) => {
     if (action === 'list') {
       const sid = String(body.school_id || '');
       if (!sid) return res.status(400).json({ ok: false, error: 'Choose a school.' });
-      const rows = await sb('GET', 'owner_app_users?school_id=eq.' + enc(sid) +
-        '&select=id,name,phone,must_change,last_login,locked_until,created_at&order=created_at.asc') || [];
+      const q = 'owner_app_users?school_id=eq.' + enc(sid) + '&order=created_at.asc&select=id,name,phone,must_change,last_login,locked_until,created_at';
+      let rows;
+      try { rows = await sb('GET', q + ',role') || []; } catch (e) { rows = await sb('GET', q) || []; }   // before step-not-done.sql
       return res.status(200).json({ ok: true, people: rows });
     }
 
@@ -66,9 +68,16 @@ module.exports = async (req, res) => {
       if (phone.length !== 10) return res.status(400).json({ ok: false, error: 'Please type a 10-digit mobile number.' });
       const dup = await sb('GET', 'owner_app_users?school_id=eq.' + enc(sid) + '&phone=eq.' + enc(phone) + '&select=id&limit=1') || [];
       if (dup.length) return res.status(400).json({ ok: false, error: 'This number is already added for this school. Use Reset to give a new starting PIN.' });
+      const role = body.role === 'principal' ? 'principal' : 'owner';
       const pin = newPin();
-      await sb('POST', 'owner_app_users', [{ school_id: sid, name, phone, start_pin: hashSecret(pin), must_change: true, pass_ver: 1 }], 'return=minimal');
-      return res.status(200).json({ ok: true, pin, phone, name });
+      const row = { school_id: sid, name, phone, start_pin: hashSecret(pin), must_change: true, pass_ver: 1 };
+      if (role === 'principal') row.role = 'principal';
+      try { await sb('POST', 'owner_app_users', [row], 'return=minimal'); }
+      catch (e) {
+        if (role === 'principal' && /role/.test(e.message || '')) return res.status(400).json({ ok: false, error: 'Please run step-not-done.sql in ERP Supabase first, then add the principal.' });
+        throw e;
+      }
+      return res.status(200).json({ ok: true, pin, phone, name, role });
     }
 
     if (action === 'reset' || action === 'remove') {

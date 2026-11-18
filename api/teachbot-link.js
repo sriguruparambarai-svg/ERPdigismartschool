@@ -4,10 +4,12 @@
 //        → the Daily Check Sheet's "Corrected Yes / No" ticks (homework_corrections), for teachers' appraisal
 //   POST { action: 'owner_alert', school_id, kind: 'teacher_monthly', alert_date, title, body, data }
 //        → one Owner App alert (the teachers' monthly evaluation), with a phone alert to the owner
+//   POST { action: 'not_done_teachers', school_id, day, data: { day:[{name,classes}], week:[{name}], week_of, deadline, submitted } }
+//        → teachers who didn't submit their day / last week's checklist not uploaded (for api/not-done.js)
 // school_id is the ERP school id (or code).
 
 const crypto = require('crypto');
-const { sb, enc, getServiceKey, sendToSubs, pushReady } = require('./_push');
+const { sb, enc, getServiceKey, sendToSubs, pushReady, ownerSubs } = require('./_push');
 
 const BASE = 'https://erp.digismartschool.com';
 const KINDS = ['teacher_monthly'];
@@ -56,7 +58,7 @@ module.exports = async (req, res) => {
       if (!Array.isArray(ins) || !ins.length) return res.status(200).json({ ok: true, already_sent: true });
       let phones = 0;
       if (pushReady()) {
-        const subs = await sb('GET', 'owner_push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,endpoint,p256dh,auth').catch(() => []) || [];
+        const subs = await ownerSubs(schoolId, 'owner') || [];
         if (subs.length) {
           const out = await sendToSubs(subs, () => ({ title, body: text, tag: 'owner-' + body.kind + '-' + body.alert_date,
             url: BASE + '/owner/index.html?alert=' + body.kind + '&date=' + body.alert_date }), false);
@@ -64,6 +66,18 @@ module.exports = async (req, res) => {
         }
       }
       return res.status(200).json({ ok: true, owner_phones: phones });
+    }
+    // Nov 2026: TeachBot's part of the "not done yet" alerts (api/not-done.js reads it at 4:30 PM)
+    if (body.action === 'not_done_teachers') {
+      if (!isDate(body.day)) return res.status(400).json({ ok: false, error: 'Day missing.' });
+      const d = body.data || {};
+      const names = l => (Array.isArray(l) ? l : []).slice(0, 80).map(x => ({ name: clip(x && x.name, 80), classes: clip(x && x.classes, 120) })).filter(x => x.name);
+      const data = { day: names(d.day), week: names(d.week), week_of: isDate(d.week_of) ? d.week_of : null, deadline: clip(d.deadline, 5), submitted: Number(d.submitted) || 0 };
+      try {
+        await sb('POST', 'not_done_feed?on_conflict=school_id,day,part', [{ school_id: schoolId, day: body.day, part: 'teachers', data, updated_at: new Date().toISOString() }],
+          'return=minimal,resolution=merge-duplicates');
+      } catch (e) { return res.status(200).json({ ok: false, error: 'Please run step-not-done.sql in ERP Supabase: ' + e.message }); }
+      return res.status(200).json({ ok: true, kept: data.day.length + data.week.length });
     }
     return res.status(400).json({ ok: false, error: 'Unknown action.' });
   } catch (e) {

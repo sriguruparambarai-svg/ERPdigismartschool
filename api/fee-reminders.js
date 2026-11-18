@@ -21,7 +21,7 @@
 
 const crypto = require('crypto');
 const { computeSchoolDues, istToday } = require('./_fees');
-const { sb, enc, getServiceKey, sendToSubs, subsForStudents, pushReady } = require('./_push');
+const { sb, enc, getServiceKey, sendToSubs, subsForStudents, pushReady, ownerSubs } = require('./_push');
 const { both, feeReminderTamil, taDate } = require('./_tamil');
 
 const BASE = 'https://erp.digismartschool.com';
@@ -207,7 +207,7 @@ async function runSchool(schoolId, todayIso, send) {
       school_id: schoolId, kind: 'fee_reminders', alert_date: todayIso, title, body, data: summary
     }], 'return=representation,resolution=ignore-duplicates').catch(() => []);
     if (Array.isArray(ins) && ins.length && pushReady()) {
-      const osubs = await sb('GET', 'owner_push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,endpoint,p256dh,auth').catch(() => []) || [];
+      const osubs = await ownerSubs(schoolId, 'owner') || [];
       if (osubs.length) {
         const out = await sendToSubs(osubs, () => ({
           title, body, tag: 'owner-fee-' + todayIso,

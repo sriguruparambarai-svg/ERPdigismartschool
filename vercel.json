@@ -43,6 +43,14 @@
     {
       "path": "/api/salary-run",
       "schedule": "30 13 * * *"
+    },
+    {
+      "path": "/api/not-done",
+      "schedule": "30 5,9 * * 1-6"
+    },
+    {
+      "path": "/api/not-done",
+      "schedule": "0 11 * * 1-6"
     }
   ],
   "rewrites": [

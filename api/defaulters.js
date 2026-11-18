@@ -593,6 +593,9 @@ module.exports = async (req, res) => {
           dSaved++;
         }
       }
+      // Nov 2026: note that this class's sheet came in today (api/not-done.js tells the principal which classes didn't)
+      await sb('POST', 'check_sheet_days?on_conflict=school_id,class,section,saved_on', [{ school_id: schoolId, class: sc.cls, section: sc.sec || '',
+        saved_on: istToday(), sheet_date: sheetDate, staff: staffName, saved_at: new Date().toISOString() }], 'return=minimal,resolution=merge-duplicates').catch(() => null);
       let corrNote = '';
       if (corrections.length) {
         const cw = await sb('POST', 'homework_corrections?on_conflict=school_id,class,section,hw_date,subject', corrections, 'return=minimal,resolution=merge-duplicates');

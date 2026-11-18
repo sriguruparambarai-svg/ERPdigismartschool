@@ -13,7 +13,7 @@
 // GET /api/evening-report                    (Vercel cron 12:30 UTC = 6 PM IST, Bearer CRON_SECRET)
 // GET /api/evening-report?key=…&school=…&dry=1&date=YYYY-MM-DD   → test run, nothing saved or sent
 
-const { sb, enc, getServiceKey, sendToSubs, pushReady } = require('./_push');
+const { sb, enc, getServiceKey, sendToSubs, pushReady, ownerSubs } = require('./_push');
 
 const BASE = 'https://erp.digismartschool.com';
 const DAY = 86400000;
@@ -233,7 +233,7 @@ async function runSchool(schoolId, day, send) {
   if (!Array.isArray(ins) || !ins.length) return { already_sent: true };
   let phones = 0;
   if (pushReady()) {
-    const subs = await safe(sb('GET', 'owner_push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,endpoint,p256dh,auth'), []) || [];
+    const subs = await ownerSubs(schoolId, 'owner') || [];
     if (subs.length) {
       const out = await sendToSubs(subs, () => ({ title, body, tag: 'owner-evening-' + day,
         url: BASE + '/owner/index.html?alert=evening_report&date=' + day }), false);

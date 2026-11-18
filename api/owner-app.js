@@ -62,6 +62,8 @@ function verifySigned(token) {
     return d;
   } catch (e) { return null; }
 }
+// The principal's alerts (api/not-done.js). The owner's own "still not done at 4:30 PM" alert is 'not_done_owner'.
+const PRINCIPAL_KINDS = ['not_done_am', 'not_done_pm', 'not_done_teachers'];
 function cleanPhone(p) { const d = String(p || '').replace(/\D/g, ''); return d.length > 10 ? d.slice(-10) : d; }
 
 async function schoolName(schoolId) {
@@ -74,14 +76,17 @@ async function passFor(user) {
   return {
     token: sign({ sid: user.school_id, uid: user.id, pv: user.pass_ver || 1, role: 'owner_app', exp: Date.now() + DAYS_30 }),
     school: { school_id: user.school_id, name: await schoolName(user.school_id) },
-    name: user.name
+    name: user.name,
+    role: user.role === 'principal' ? 'principal' : 'owner'
   };
 }
 // A pass is good only while the person exists and has not been reset since
 async function checkPass(token) {
   const d = verifySigned(token);
   if (!d || d.role !== 'owner_app' || !d.uid) return null;
-  const rows = await sb('GET', 'owner_app_users?id=eq.' + enc(d.uid) + '&select=id,school_id,name,pass_ver,must_change&limit=1') || [];
+  let rows;
+  try { rows = await sb('GET', 'owner_app_users?id=eq.' + enc(d.uid) + '&select=id,school_id,name,pass_ver,must_change,role&limit=1') || []; }
+  catch (e) { rows = await sb('GET', 'owner_app_users?id=eq.' + enc(d.uid) + '&select=id,school_id,name,pass_ver,must_change&limit=1') || []; }   // before step-not-done.sql
   const u = rows[0];
   if (!u || u.must_change || (u.pass_ver || 1) !== d.pv || String(u.school_id) !== String(d.sid)) return null;
   return u;
@@ -166,6 +171,11 @@ module.exports = async (req, res) => {
     const user = await checkPass(body.token);
     if (!user) return res.status(401).json({ ok: false, error: 'Please log in again.' });
     const schoolId = String(user.school_id);
+    // Nov 2026: a principal sees only the "not done yet" alerts — never fees, salary or the owner's reports
+    const isPrincipal = user.role === 'principal';
+    if (isPrincipal && (action === 'fee_history' || action === 'salary_get' || action === 'salary_decide')) {
+      return res.status(403).json({ ok: false, error: 'This is only in the owner\'s app.' });
+    }
 
     if (action === 'change_password') {
       const rows = await sb('GET', 'owner_app_users?id=eq.' + enc(user.id) + '&select=password,pass_ver&limit=1') || [];
@@ -206,8 +216,10 @@ module.exports = async (req, res) => {
     }
 
     if (action === 'alerts') {
-      const rows = await sb('GET', 'owner_alerts?school_id=eq.' + enc(schoolId) +
+      const kinds = '&kind=' + (isPrincipal ? 'in.(' : 'not.in.(') + PRINCIPAL_KINDS.join(',') + ')';
+      const rows = await sb('GET', 'owner_alerts?school_id=eq.' + enc(schoolId) + kinds +
         '&select=id,kind,alert_date,title,body,data,created_at&order=alert_date.desc,created_at.desc&limit=60') || [];
+      if (isPrincipal) return res.status(200).json({ ok: true, role: 'principal', school_name: await schoolName(schoolId), name: user.name, alerts: rows });
       let reminders = null;
       try {
         const fs = await sb('GET', 'fee_settings?school_id=eq.' + enc(schoolId) + '&select=auto_reminders&limit=1') || [];
@@ -215,7 +227,7 @@ module.exports = async (req, res) => {
         if (typeof c === 'string') c = JSON.parse(c);
         reminders = !!(c && c.on);
       } catch (e) {}
-      return res.status(200).json({ ok: true, school_name: await schoolName(schoolId), name: user.name, fee_reminders_on: reminders, alerts: rows });
+      return res.status(200).json({ ok: true, role: 'owner', school_name: await schoolName(schoolId), name: user.name, fee_reminders_on: reminders, alerts: rows });
     }
 
     if (action === 'fee_history') {

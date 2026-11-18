@@ -13,7 +13,7 @@
 // computeSalary / getRun / decide are also used by api/owner-app.js
 
 const crypto = require('crypto');
-const { sb, enc, getServiceKey, sendToSubs, pushReady } = require('./_push');
+const { sb, enc, getServiceKey, sendToSubs, pushReady, ownerSubs } = require('./_push');
 
 const BASE = 'https://erp.digismartschool.com';
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -135,7 +135,7 @@ async function prepareAndAsk(schoolId, month, by) {
   }], 'return=minimal,resolution=merge-duplicates');
   let phones = 0;
   if (pushReady()) {
-    const subs = await safe(sb('GET', 'owner_push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=id,endpoint,p256dh,auth'), []) || [];
+    const subs = await ownerSubs(schoolId, 'owner') || [];
     if (subs.length) {
       const out = await sendToSubs(subs, () => ({ title, body, tag: 'owner-salary-' + month,
         url: BASE + '/owner/index.html?alert=salary&month=' + month }), true);
