@@ -66,7 +66,7 @@ table.u-t th{font-size:11px;color:#9B928A;text-transform:uppercase}
 <script src="../js/sidebar.js"></script>
 <script>
 let rows = [];
-let show = 'all';   // all | today | week | late | never
+let show = 'all';   // all | today | week | late | never | off (alerts off)
 
 function token() { return sessionStorage.getItem('digismart_session_token') || ''; }
 
@@ -124,17 +124,18 @@ function render() {
   const q = document.getElementById('u-search').value.trim().toLowerCase();
   const inClass = rows.filter(r => !cls || r.class === cls);
 
-  const n = { today: 0, week: 0, late: 0, never: 0 };
-  inClass.forEach(r => n[group(r)]++);
+  const n = { today: 0, week: 0, late: 0, never: 0, off: 0 };
+  inClass.forEach(r => { n[group(r)]++; if (!r.alerts) n.off++; });
   const stat = (g, num, text) => '<div class="u-stat' + (show === g ? ' on' : '') + '" onclick="pick(\'' + g + '\')"><b>' + num + '</b><span>' + text + '</span></div>';
   document.getElementById('u-stats').innerHTML =
       stat('today', n.today, 'Opened today')
     + stat('week', n.week, 'Opened this week')
     + stat('late', n.late, 'Not opened for over a week')
-    + stat('never', n.never, 'Never opened');
+    + stat('never', n.never, 'Never opened')
+    + stat('off', n.off, 'Phone alerts off — gets no alerts');
 
   const list = inClass
-    .filter(r => show === 'all' || group(r) === show)
+    .filter(r => show === 'all' || (show === 'off' ? !r.alerts : group(r) === show))
     .filter(r => !q || String(r.name || '').toLowerCase().indexOf(q) !== -1)
     .sort((a, b) => {
       // Never opened first, then the longest gap, so the office calls those first
@@ -145,9 +146,10 @@ function render() {
   const box = document.getElementById('u-list');
   if (list.length === 0) { box.innerHTML = '<div class="u-card u-meta">No children in this list.</div>'; return; }
   box.innerHTML = '<div class="u-card"><div class="u-meta" style="margin:0 0 6px">' + list.length + ' child(ren)' + (show !== 'all' ? ' · tap the box again to show all' : '') + '</div>'
-    + '<div class="table-wrap"><table class="u-t"><tr><th>Student</th><th>Class</th><th>Last opened</th><th>Phone</th></tr>'
+    + '<div class="table-wrap"><table class="u-t"><tr><th>Student</th><th>Class</th><th>Last opened</th><th>Phone alerts</th><th>Phone</th></tr>'
     + list.map(r => '<tr><td><b>' + esc(r.name) + '</b></td><td>' + esc(r.class) + (r.section ? ' ' + esc(r.section) : '') + '</td>'
       + '<td>' + label(r) + '</td>'
+      + '<td>' + (r.alerts ? '<span class="u-chip g">✓ On' + (r.alerts > 1 ? ' · ' + r.alerts + ' phones' : '') + '</span>' : '<span class="u-chip r">✗ Off</span>') + '</td>'
       + '<td>' + (r.mobile ? '<a href="tel:' + esc(String(r.mobile).replace(/[^0-9+]/g, '')) + '" style="color:var(--maroon);font-weight:600;text-decoration:none">📞 ' + esc(r.mobile) + '</a>' : '<span class="u-meta">—</span>') + '</td></tr>').join('')
     + '</table></div></div>';
 }

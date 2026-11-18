@@ -5,7 +5,7 @@
 //   Parent:
 //     opened     {}               → notes that this child's parent opened the app now
 //   Office (owner, or staff with Parent Communication, Fees or Defaulters):
-//     list       {}               → every active child with first / last opening
+//     list       {}               → every active child with first / last opening, and phones with alerts on
 //     last_seen  { ids[] }        → { student_id: last_at } for those children (fee page)
 //
 // Only the time of opening is kept. Nothing about what the parent did in the app.
@@ -102,10 +102,14 @@ module.exports = async (req, res) => {
       if (!seen.ok) return res.status(500).json({ ok: false, error: 'Could not load app use. Has step-parent-seen.sql been run? ' + seen.raw });
       const map = {};
       (seen.data || []).forEach(x => { map[String(x.student_id)] = x; });
+      // Nov 2026: phones with alerts turned on (a parent can open the app yet never tap "Turn on alerts")
+      const al = await sb('GET', 'push_subscriptions?school_id=eq.' + enc(schoolId) + '&select=student_id&limit=20000');
+      const alerts = {};
+      if (al.ok) (al.data || []).forEach(x => { alerts[String(x.student_id)] = (alerts[String(x.student_id)] || 0) + 1; });
       const rows = (stu.data || []).map(s => {
         const v = map[String(s.id)] || {};
         return { id: s.id, name: s.full_name, class: s.class, section: s.section, mobile: s.mobile || '',
-          first_at: v.first_at || null, last_at: v.last_at || null };
+          first_at: v.first_at || null, last_at: v.last_at || null, alerts: alerts[String(s.id)] || 0 };
       });
       return res.status(200).json({ ok: true, rows });
     }
